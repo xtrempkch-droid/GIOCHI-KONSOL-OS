@@ -12,10 +12,17 @@ que você deve manter em qualquer PR:
 ## Antes de abrir PR
 
 ```sh
-make lint     # shell (sh -n), JSON, defconfigs atualizados
-make test     # 13 suítes: C/C++, integração (ciclo de vida e gadget), bootlogo, forge
+make lint     # shell (sh -n), JSON, defconfigs, links e arquivos versionados
+make test     # 14 suítes: C/C++, integração (ciclo de vida, gadget e Modo
+              # Desenvolvedor), bootlogo, forge
 tools/build-image.sh --check --all
 ```
+
+> ⚠️ **Nada de padrões soltos no `.gitignore`.** O git casa padrões com nomes de
+> *diretório* também: um `*.d` "inofensivo" já engoliu `scripts/init.d/` e
+> `rootfs_overlay/etc/init.d/` inteiros, e o build local continuou funcionando
+> porque os arquivos existiam na máquina. `tools/check-tracked.sh` (dentro de
+> `make lint`) falha se um arquivo do projeto estiver ignorado.
 
 Se você mexeu em `buildroot/board/giochi/devices/*.conf` ou nos templates de
 defconfig, rode também:

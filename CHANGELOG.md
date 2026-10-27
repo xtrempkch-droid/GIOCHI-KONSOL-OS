@@ -5,6 +5,18 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não publicado]
 
+### Corrigido
+- `scripts/init.d/*` (9 scripts) e `rootfs_overlay/etc/init.d/{rcS,rcK}` nunca
+  foram versionados: o padrão `*.d` do `.gitignore` casa também com **nomes de
+  diretório**, e `init.d/` era engolido. O build local funcionava e o checkout
+  do CI saía sem a sequência de boot (falhava em `make lint` com link
+  quebrado). Sem esses arquivos a imagem compilaria e não iniciaria.
+- `tools/check-tracked.sh` (novo, roda em `make lint`) falha quando um arquivo
+  do projeto está no `.gitignore` e confirma que os 11 scripts de init estão
+  versionados.
+- `post-build.sh`: script de init ausente agora é erro fatal, em vez de skip
+  silencioso que gerava imagem sem boot.
+
 ### Adicionado
 - Build multi-aparelho: `buildroot/board/giochi/devices/*.conf` como fonte única
   e defconfigs gerados por `tools/gen-defconfigs.sh` (X55, X35S, X35H,
