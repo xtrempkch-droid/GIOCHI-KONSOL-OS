@@ -345,7 +345,9 @@ lint:
 	           tools/check-buildroot-symbols.py tools/check-uboot.py \
 	           tools/check-links.py tools/make-bootlogo.py && echo "ok"
 
-test: $(TEST_BINS)
+# 'all' antes dos testes: a suite de integracao roda o giochi-init REAL, e num
+# clone limpo 'make test' sozinho nao o teria compilado.
+test: all $(TEST_BINS)
 	@sh tests/run_tests.sh "$(BIN)"
 
 install: all
