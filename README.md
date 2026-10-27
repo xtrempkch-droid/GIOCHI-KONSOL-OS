@@ -202,6 +202,7 @@ docs/           arquitetura, hardware, build, aparelhos, USB, QA, handoff
 | [docs/BOOTSPLASH.md](docs/BOOTSPLASH.md) | logo/bootsplash: assets, Launcher e ativação do U-Boot |
 | [docs/BUILD.md](docs/BUILD.md) | buildroot, kernel, cross-compile, assinatura |
 | [docs/QA-CHECKLIST.md](docs/QA-CHECKLIST.md) | checklist por camada e matriz de testes |
+| [docs/APPS.md](docs/APPS.md) | inventário dos 11 apps + artefatos: o que roda no console e no PC, o que falta |
 | [docs/roadmap.md](docs/roadmap.md) | o que falta, em ordem de risco, com critério de aceite |
 | [docs/HANDOFF.md](docs/HANDOFF.md) | estado por sessão, decisões e pendências |
 | [AGENTS.md](AGENTS.md) | direcionamentos para agentes de IA: armadilhas e protocolo |

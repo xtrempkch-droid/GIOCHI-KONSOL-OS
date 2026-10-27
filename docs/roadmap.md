@@ -18,7 +18,8 @@ Especificação normativa: [architecture-v1.2.md](./architecture-v1.2.md).
 | 5 | Gamepad (`rocknix-joypad`) e painel (X35S/X35H) ⛔ | não empacotado | essas duas placas |
 | 6 | USB na X35S/X35H 🧪 | não ancora (`ep0out`) | SSH/MTP nelas |
 | 7 | Update A/B de ponta a ponta 🧪 | contrato pronto, flip não testado | entrega de update |
-| 8 | Fase 2: keyring, chave exclusiva, Proton | fora de escopo v1.2 | — |
+| 8 | Loja (`giochi-store`) e Ports (`portmaster`) | **não existem** | duas abas da UI |
+| 9 | Fase 2: keyring, chave exclusiva, Proton | fora de escopo v1.2 | — |
 
 ---
 
@@ -173,7 +174,28 @@ explícita se o binário não tiver suporte). Falta o ciclo real.
 **Aceite:** update A→B e B→A em aparelho, com rollback automático quando a
 imagem nova não sobe.
 
-## 8. Pendências menores (não bloqueiam nada)
+## 8. Apps externos que a spec pede e não existem
+
+O Launcher aponta as abas Loja e Ports para binários que não estão na imagem:
+`APP:giochi-store` (§4.1.3) e `APP:portmaster` (§4.7). Hoje o `giochi-init`
+responde `ERR launch_failed` e loga o caminho ausente — antes era um `exit 127`
+silencioso. Falta o app.
+
+- [ ] **Loja** (`giochi-store`, RAM ≤ 40 MB, VRAM ≤ 8 MB): catálogo curado de
+      `.giochi` assinados, verificação de assinatura e `arch` antes de instalar
+      em `/user/games/`, e atualização de `/user/.cache/news.json` (hoje a Home
+      mostra as dicas compiladas porque ninguém escreve esse arquivo).
+- [ ] **Ports** (`portmaster`, RAM ≤ 30 MB, VRAM ≤ 4 MB): download de wrappers
+      ARM64 para `/user/ports/`, sem distribuir arquivos originais dos jogos.
+- [ ] Enquanto não existirem, decidir na UI: esconder as abas, ou mostrar um
+      aviso ("instale o componente") em vez de tentar lançar.
+- [ ] Se forem ficar de fora da v1.2, registrar isso na spec — hoje as duas
+      abas estão no `layout.json` e no §4.1.3/§4.7 como se existissem.
+
+**Aceite:** nenhuma aba do Launcher aponta para um binário inexistente sem
+aviso ao usuário.
+
+## 9. Pendências menores (não bloqueiam nada)
 
 - [ ] `giochi-thumbgen`: extrair `thumb.png`/`capa.png` do tar com libarchive
       (hoje só gera placeholder quando o pacote não traz thumbnail).
@@ -186,8 +208,12 @@ imagem nova não sobe.
 - [ ] Dongles: UI de rede (hoje só hotplug e scripts).
 - [ ] `tools/check-uboot.py`: comparar também a versão do U-Boot declarada com
       a mínima que tem o defconfig (hoje só valida existência).
+- [ ] `giochi-forge`: completar o lado "físico" — detectar o console por USB,
+      ler o `device_profile.json` do aparelho (hoje só `--profile`/`--device`),
+      transferir o `.giochi` e chamar o export do Godot → ARM64. Ver
+      [APPS.md](./APPS.md) para o que já funciona (`check`, `build`, `keys`).
 
-## 9. Fase 2 (fora de escopo da v1.2)
+## 10. Fase 2 (fora de escopo da v1.2)
 
 Registrado para não se perder; **não implemente sem decisão explícita**.
 

@@ -14,7 +14,8 @@ documentação e mensagens de erro.
 ## 0. ONDE PARAMOS
 
 Estado detalhado por sessão em [docs/HANDOFF.md](docs/HANDOFF.md); o que falta e
-em que ordem em [docs/roadmap.md](docs/roadmap.md).
+em que ordem em [docs/roadmap.md](docs/roadmap.md); inventário de cada app
+(console × PC) e o que não existe em [docs/APPS.md](docs/APPS.md).
 
 | O quê | Estado |
 |---|---|
@@ -402,6 +403,20 @@ uma suíte, registre-a lá **e** no respectivo alvo do `Makefile`.
 - `giochi-pack.sh` recusa rodar com tar não-GNU (exit 3), com o motivo.
 - Verificação: guarda testada ao contrário (reintroduzi o bug → rc=1);
   `make lint`, `make test` 15/15 e pack real gerando tar válido.
+
+### 2026-10-27 (8) — Copilot (inventário de componentes)
+
+- Confronto da lista consolidada de apps da v1.2 com o repositório:
+  [docs/roadmap.md](docs/roadmap.md) e novo [docs/APPS.md](docs/APPS.md).
+- Lacunas registradas: `giochi-store` e `portmaster` **não existem** (as abas
+  apontam para eles); `news.json` sem produtor; `giochi-thumbgen` sem extração
+  de imagem; `giochi-forge` sem detecção USB/transferência/export do Godot.
+- Defeito corrigido no caminho: app ausente produzia `exit 127` silencioso.
+  `spawn_child` agora testa `access(path, X_OK)` antes do `fork` e loga
+  `'<caminho>' ausente ou sem permissao de execucao`.
+- Divergências da lista × spec registradas: `layout.json` está em
+  `/usr/share/giochi` (não `/etc/giochi/layouts/default/`) e o **§4.5.4 não
+  existe** na v1.2 do repositório (a lista cita transferência por `scp`).
 
 ### 2026-10-27 (6) — Copilot (AGENTS.md + roadmap)
 

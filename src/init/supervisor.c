@@ -55,6 +55,15 @@ static int spawn_child(giochi_child *child)
     }
     argv[child->arg_count + 1] = NULL;
 
+    /* App externo opcional (Loja/Ports) pode nao estar instalado nesta imagem:
+     * sem este teste, execv falhava no filho e o unico rastro era um exit 127,
+     * sem dizer QUAL programa faltou nem o que fazer. */
+    if (access(path, X_OK) != 0) {
+        GLOG_ERR("%s: '%s' ausente ou sem permissao de execucao (%s)",
+                 child->name, path, strerror(errno));
+        return -1;
+    }
+
     pid = fork();
     if (pid < 0) {
         GLOG_ERR("fork(%s) falhou: %s", child->name, strerror(errno));

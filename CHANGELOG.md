@@ -6,6 +6,13 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 ## [Não publicado]
 
 ### Adicionado
+- **[docs/APPS.md](docs/APPS.md)**: inventário dos componentes da v1.2 separado
+  por onde rodam (console × PC) e por tipo, com estado real de cada um e as
+  lacunas — `giochi-store` e `portmaster` ainda não existem, `news.json` não tem
+  produtor, `giochi-thumbgen` não extrai imagem do pacote e `giochi-forge` não
+  detecta/transfere ainda.
+- Item 8 no [roadmap](docs/roadmap.md): apps externos que a spec pede e faltam,
+  com o que decidir na UI enquanto isso.
 - **`AGENTS.md`**: direcionamentos para agentes de IA — mapa do repositório,
   as 12 armadilhas silenciosas já resolvidas (com o sintoma, a causa e a guarda
   de cada uma), o que **não** foi verificado, os portões de verificação e o
