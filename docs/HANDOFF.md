@@ -245,6 +245,14 @@ TODO), **doc** (apenas especificação/script).
 - [QA-CHECKLIST.md](./QA-CHECKLIST.md) + matriz de testes.
 - `make test` (host): todas as suítes, incluindo Python.
 
+## Roadmap e instruções para agentes
+
+- O que falta, em ordem de risco e com critério de aceite:
+  [roadmap.md](./roadmap.md). Este HANDOFF conta o **passado** (o que foi feito e
+  por quê); o roadmap conta o **futuro**.
+- Convenções, armadilhas silenciosas e protocolo de registro:
+  [../AGENTS.md](../AGENTS.md).
+
 ## Pendências transversais
 
 1. `giochi-launcher`: desenho real dos widgets e medição de VRAM.

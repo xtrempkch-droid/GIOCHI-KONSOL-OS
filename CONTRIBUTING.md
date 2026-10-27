@@ -18,6 +18,11 @@ make test     # 14 suítes: C/C++, integração (ciclo de vida, gadget e Modo
 tools/build-image.sh --check --all
 ```
 
+> 🤖 **Agentes de IA:** leiam [AGENTS.md](AGENTS.md) antes de editar. Ele tem o
+> mapa do repositório, as armadilhas silenciosas já resolvidas (`.gitignore`
+> casando com diretório, símbolo inexistente descartado pelo Kconfig, `/etc`
+> somente leitura) e o protocolo para registrar o trabalho.
+>
 > ⚠️ **Nada de padrões soltos no `.gitignore`.** O git casa padrões com nomes de
 > *diretório* também: um `*.d` "inofensivo" já engoliu `scripts/init.d/` e
 > `rootfs_overlay/etc/init.d/` inteiros, e o build local continuou funcionando

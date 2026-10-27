@@ -6,6 +6,16 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 ## [Não publicado]
 
 ### Adicionado
+- **`AGENTS.md`**: direcionamentos para agentes de IA — mapa do repositório,
+  as 12 armadilhas silenciosas já resolvidas (com o sintoma, a causa e a guarda
+  de cada uma), o que **não** foi verificado, os portões de verificação e o
+  protocolo de registro por sessão.
+- **[docs/roadmap.md](docs/roadmap.md)**: ordem de trabalho por risco × impacto,
+  com critério de aceite por item, o que depende de hardware (🧪) e o que está
+  bloqueado por terceiros (⛔). Inclui a aritmética da escala de layout na X55
+  (×2 não cabe na vertical; ×1,5 deixa margem para 5 colunas).
+- `tools/check-links.py` valida também **âncoras** (`#secao`), não só o arquivo:
+  link para âncora inexistente levava o leitor ao topo da página sem erro.
 - **README reescrito** com galeria visual: `docs/screenshots/*.png` geradas por
   `tools/make-screenshots.py` a partir dos assets reais (`theme.json`,
   `layout.json`, `home.json`, `library.json`, `music.json`) e do splash de
