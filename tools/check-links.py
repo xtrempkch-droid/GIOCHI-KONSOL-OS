@@ -3,22 +3,20 @@
 
 from __future__ import annotations
 
+import glob
 import os
 import re
 import sys
 
-FILES = [
-    "README.md",
-    "CONTRIBUTING.md",
-    "CHANGELOG.md",
-    "docs/BUILD.md",
-    "docs/DEVICES.md",
-    "docs/USB.md",
-    "docs/BOOTSPLASH.md",
-    "docs/HANDOFF.md",
-    "docs/QA-CHECKLIST.md",
-    "buildroot/board/giochi/dts/README",
-]
+# A especificacao normativa vive em docs/architecture-*.md, nao no README.
+# Por isso os arquivos sao DESCOBERTOS, e nao listados a mao: a lista antiga
+# esquecia justamente a arquitetura (e o hardware), deixando a documentacao
+# mais importante sem verificacao de links.
+FILES = sorted(
+    glob.glob("*.md")
+    + glob.glob("docs/*.md")
+    + ["buildroot/board/giochi/dts/README"]
+)
 
 LINK = re.compile(r"\]\(([^)\s]+)\)")
 

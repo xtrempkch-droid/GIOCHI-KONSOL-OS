@@ -199,7 +199,9 @@ TODO), **doc** (apenas especificação/script).
 - `metadata.cpp` e `classify.py` rejeitam `runtime=proton` quando
   `proton.supported=false`; `BR2_PACKAGE_GIOCHI_PROTON=n` por padrão; flag
   `GIOCHI_ENABLE_PROTON` chega ao Launcher via Buildroot.
-- Critérios de ativação documentados em README §4.10 (não reescritos aqui).
+- Critérios de ativação documentados em
+  [architecture-v1.2.md §4.10](./architecture-v1.2.md) — o README deixou de
+  ser a especificação; ele só resume e aponta.
 
 ## Bootsplash — feito (Launcher ligado) / pré-pronto (U-Boot e kernel)
 
@@ -222,7 +224,7 @@ TODO), **doc** (apenas especificação/script).
 
 - `tools/bench-boot.sh`, `tools/stress-mem.sh`, `tools/stress-daemon.sh`.
 - [QA-CHECKLIST.md](./QA-CHECKLIST.md) + matriz de testes.
-- `make test` (host): 9 suítes, incluindo Python.
+- `make test` (host): todas as suítes, incluindo Python.
 
 ## Pendências transversais
 

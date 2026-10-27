@@ -13,7 +13,7 @@ previstos na especificação.
 ```sh
 make info      # mostra o que foi detectado
 make -j4       # build/host/bin/{giochi-init,giochi-musicd,giochi-launcher,...}
-make test      # 9 suítes (C, C++ e Python)
+make test      # todas as suítes (C, C++, integração e Python)
 ```
 
 | Biblioteca | Macro | Sem ela |

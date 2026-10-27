@@ -1,5 +1,12 @@
 # 📑 DOCUMENTO DE ARQUITETURA TÉCNICA: GIOCHI KONSOL OS — v1.1
 
+> ⚠️ **Documento histórico — não é a especificação vigente.** A versão
+> normativa é a [v1.2](./architecture-v1.2.md), que substitui integralmente esta
+> e todas as revisões de seção posteriores. Este arquivo é mantido como registro
+> do que foi decidido antes dos adendos (SSH via USB, dongles, Proton etc.).
+> Ele chegou a ser o `README.md` do repositório; quando o README virou um README
+> de verdade, a especificação foi movida para `docs/`.
+
 **Tipo de Documento:** Especificação de Requisitos e Engenharia de Sistemas Embarcados
 **Versão:** 1.1 (consolidada — substitui integralmente a v1.0)
 **Alvo Principal:** Dispositivos Portáteis ARM (Foco Inicial: Rockchip RK3326 / RK3566)

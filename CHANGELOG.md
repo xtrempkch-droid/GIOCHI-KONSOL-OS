@@ -16,6 +16,13 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
   versionados.
 - `post-build.sh`: script de init ausente agora é erro fatal, em vez de skip
   silencioso que gerava imagem sem boot.
+- `tools/check-links.py` passa a **descobrir** os arquivos Markdown em vez de
+  usar lista fixa: a especificação normativa (`docs/architecture-*.md`) e o
+  `hardware-e-drivers.md` não estavam sendo verificados. 10 → 15 arquivos.
+- Referências que ainda tratavam o README como especificação (`README §4.10` em
+  `docs/HANDOFF.md`) e contagens de suítes desatualizadas em README, BUILD,
+  HANDOFF e template de PR — números fixos em documentação desatualizam a cada
+  suíte nova, então passaram a ser descritos em vez de contados.
 
 ### Adicionado
 - Build multi-aparelho: `buildroot/board/giochi/devices/*.conf` como fonte única

@@ -56,8 +56,9 @@ elas o código usa os stubs previstos na especificação.
 
 ```sh
 make            # build/host/bin/{giochi-init,giochi-musicd,giochi-launcher,...}
-make test       # 13 suítes: C, C++, integração, USB e assets
-make lint       # shell, JSON, defconfigs e links
+make test       # unitários, integração (ciclo de vida, USB, Modo
+                # Desenvolvedor), bootlogo e forge
+make lint       # shell, JSON, defconfigs, links e arquivos versionados
 make bootlogo   # regenera o splash a partir de docs/logo.jpg (precisa de PIL)
 ```
 
