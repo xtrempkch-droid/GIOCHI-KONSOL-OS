@@ -326,6 +326,8 @@ lint:
 	@python3 tools/check-links.py
 	@echo "== arquivos versionados =="
 	@sh tools/check-tracked.sh .
+	@echo "== simbolos do buildroot =="
+	@tools/check-buildroot-symbols.py
 
 test: $(TEST_BINS)
 	@sh tests/run_tests.sh "$(BIN)"

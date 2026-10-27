@@ -6,6 +6,24 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 ## [Não publicado]
 
 ### Corrigido
+- **Build das imagens abortava** em `Makefile.legacy` com "You have legacy
+  configuration in your .config!" sem dizer qual símbolo era o culpado:
+  `BR2_PACKAGE_RFKILL` foi **removido** do Buildroot (o `rfkill` agora vem do
+  util-linux). Trocado por `BR2_PACKAGE_UTIL_LINUX_RFKILL`.
+- Três símbolos **inexistentes** no Buildroot 2024.02 eram descartados em
+  silêncio, deixando recursos fora da imagem sem nenhum aviso:
+  `BR2_PACKAGE_LIBMPG123` → `BR2_PACKAGE_MPG123` (o pacote chama-se `mpg123`),
+  `BR2_LINUX_KERNEL_INSTALL_INTREE` (nunca existiu; o `Image` já vai para
+  `images/`) e `BR2_TARGET_ROOTFS_SQUASHFS4_NO_XATTR` (o Buildroot não expõe
+  essa opção).
+- `tools/gen-defconfigs.sh` duplicava o bloco de DTS: o `awk` casava com o
+  comentário "Placeholders:" do topo do template, gerando
+  `override: reassigning to symbol BR2_LINUX_KERNEL_INTREE_DTS_NAME`. Os
+  marcadores de bloco agora só casam quando estão sozinhos na linha.
+- `tools/check-buildroot-symbols.py` (novo) compara cada `BR2_*` dos
+  defconfigs com a árvore do Buildroot e falha com LEGACY/INEXISTENTE. Roda em
+  `make lint` (quando `BUILDROOT_DIR` existe), no workflow de imagens e no
+  início de cada build em `tools/build-image.sh`.
 - `scripts/init.d/*` (9 scripts) e `rootfs_overlay/etc/init.d/{rcS,rcK}` nunca
   foram versionados: o padrão `*.d` do `.gitignore` casa também com **nomes de
   diretório**, e `init.d/` era engolido. O build local funcionava e o checkout

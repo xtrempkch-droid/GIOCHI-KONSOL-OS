@@ -211,6 +211,16 @@ build_device() {
     mkdir -p "$out"
     echo "== compilando $id -> $out =="
 
+    # Kconfig descarta simbolos inexistentes em silencio e aborta em
+    # BR2_LEGACY sem apontar o culpado. Falhar aqui evita descobrir isso
+    # depois de horas de build (ver tools/check-buildroot-symbols.py).
+    if [ -x "$ROOT/tools/check-buildroot-symbols.py" ]; then
+        "$ROOT/tools/check-buildroot-symbols.py" --buildroot "$buildroot" || {
+            echo "ERRO $id: simbolos invalidos no defconfig (acima)" >&2
+            return 1
+        }
+    fi
+
     # Defconfig efetivo = gerado + overrides dinamicos (DTS externo).
     effective="$out/defconfig"
     cp "$ROOT/buildroot/configs/$GIOCHI_DEFCONFIG" "$effective"

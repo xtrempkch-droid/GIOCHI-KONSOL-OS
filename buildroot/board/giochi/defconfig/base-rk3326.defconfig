@@ -2,7 +2,11 @@
 #
 # Template consumido por tools/gen-defconfigs.sh. NAO editar os arquivos
 # gerados em buildroot/configs/: altere aqui e rode `make defconfigs`.
-# Placeholders: @GIOCHI_DEVICE@ @GIOCHI_SOC@ @ISSUE@ @DTS_LINES@
+# O gerador substitui os marcadores inline (aparelho, SoC e a linha de
+# ISSUE do login) e troca os blocos de DTS e de U-Boot. Um bloco so e
+# trocado quando o marcador esta SOZINHO na linha; por isso este
+# comentario nao cita marcador nenhum (senao o bloco sairia duplicado
+# e o Buildroot avisaria "override: reassigning to symbol").
 
 BR2_aarch64=y
 BR2_cortex_a35=y
@@ -32,7 +36,9 @@ BR2_PACKAGE_BUSYBOX_CONFIG_FRAGMENT_FILES="$(BR2_EXTERNAL_GIOCHI_PATH)/board/gio
 # --- rootfs A/B: SquashFS ro, LZ4 (obrigatorio no RK3326) -------------
 BR2_TARGET_ROOTFS_SQUASHFS=y
 BR2_TARGET_ROOTFS_SQUASHFS4_LZ4=y
-BR2_TARGET_ROOTFS_SQUASHFS4_NO_XATTR=y
+# Sem xattr: o Buildroot 2024.02 nao expoe essa opcao (xattrs sao
+# sempre gravados). Antes havia BR2_TARGET_ROOTFS_SQUASHFS4_NO_XATTR,
+# um simbolo INEXISTENTE que era descartado em silencio.
 
 # --- kernel (S1) -------------------------------------------------------
 BR2_LINUX_KERNEL=y
@@ -44,7 +50,7 @@ BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="$(BR2_EXTERNAL_GIOCHI_PATH)/board/giochi
 BR2_LINUX_KERNEL_DTS_SUPPORT=y
 @DTS_LINES@
 BR2_LINUX_KERNEL_IMAGE=y
-BR2_LINUX_KERNEL_INSTALL_INTREE=y
+
 
 # --- U-Boot (ADR-01) ---------------------------------------------------
 @UBOOT_LINES@
@@ -63,7 +69,7 @@ BR2_PACKAGE_SDL2_IMAGE=y
 # --- audio (ADR-08) ----------------------------------------------------
 BR2_PACKAGE_ALSA_LIB=y
 BR2_PACKAGE_ALSA_UTILS=y
-BR2_PACKAGE_LIBMPG123=y
+BR2_PACKAGE_MPG123=y
 BR2_PACKAGE_FLAC=y
 BR2_PACKAGE_LIBVORBIS=y
 
@@ -84,7 +90,10 @@ BR2_PACKAGE_WPA_SUPPLICANT_PASSPHRASE=y
 BR2_PACKAGE_IW=y
 BR2_PACKAGE_BLUEZ5_UTILS=y
 BR2_PACKAGE_BLUEZ5_UTILS_CLIENT=y
-BR2_PACKAGE_RFKILL=y
+# rfkill vem do util-linux desde o Buildroot 2022.02: o pacote
+# standalone foi REMOVIDO e BR2_PACKAGE_RFKILL agora e um simbolo
+# legacy que liga BR2_LEGACY (o build aborta em Makefile.legacy).
+BR2_PACKAGE_UTIL_LINUX_RFKILL=y
 
 # --- USB com o PC: MTP (userspace) + rede/SSH via USB -------------------
 BR2_PACKAGE_GIOCHI_MTPD=y

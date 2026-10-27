@@ -92,6 +92,13 @@ jobs:
           mkdir -p .cache/buildroot-dl .cache/ccache
           echo "BR2_DL_DIR=$GITHUB_WORKSPACE/.cache/buildroot-dl" >> "$GITHUB_ENV"
 
+      - name: Validar simbolos dos defconfigs
+        run: |
+          # Kconfig descarta em silencio simbolos inexistentes e aborta com
+          # BR2_LEGACY sem dizer qual simbolo e o culpado. Falhar aqui da o
+          # nome do simbolo antes de gastar 1-3 h de build.
+          tools/check-buildroot-symbols.py --buildroot "$BUILDROOT_DIR"
+
       - name: Configurar ccache
         run: |
           echo "BR2_CCACHE=y" >> "$GITHUB_ENV"

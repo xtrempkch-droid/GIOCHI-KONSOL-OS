@@ -73,10 +73,13 @@ BR2_TARGET_UBOOT=n"
 
     out="$tmp/$defconfig"
     # awk (e nao sed) porque DTS_LINES/UBOOT_LINES sao blocos multi-linha.
+    # As ancoras ^...$ importam: sem elas o comentario "Placeholders: ..." do
+    # topo do template tambem casa e o bloco sai DUPLICADO (o Buildroot avisa
+    # "override: reassigning to symbol").
     awk -v dev="$id" -v soc="$soc" -v issue="Giochi Konsol OS v1.2 - $name" \
         -v dts="$dts_lines" -v uboot="$uboot_lines" '
-        /@DTS_LINES@/   { print dts;   next }
-        /@UBOOT_LINES@/ { print uboot; next }
+        /^[[:space:]]*@DTS_LINES@[[:space:]]*$/   { print dts;   next }
+        /^[[:space:]]*@UBOOT_LINES@[[:space:]]*$/ { print uboot; next }
         {
             gsub(/@GIOCHI_DEVICE@/, dev)
             gsub(/@GIOCHI_SOC@/, soc)

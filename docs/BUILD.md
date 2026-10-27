@@ -47,6 +47,29 @@ O diretório `buildroot/` é uma árvore `BR2_EXTERNAL` completa.
 `buildroot/board/giochi/devices/*.conf` + `defconfig/base-<soc>.defconfig`.
 Altere a fonte e rode `make defconfigs`.
 
+### Versão do Buildroot: 2024.02.x
+
+O projeto é validado contra o **LTS 2024.02.x**. Isso importa porque o Kconfig
+**descarta símbolos em silêncio** quando eles não existem naquela versão — o
+build não avisa e o recurso simplesmente não entra na imagem. Dois casos reais
+que já quebraram o build:
+
+| Sintoma | Causa | Correto |
+|---|---|---|
+| `Makefile.legacy:9: *** "You have legacy configuration"` | símbolo virou *legacy* | `BR2_PACKAGE_RFKILL` → `BR2_PACKAGE_UTIL_LINUX_RFKILL` |
+| pacote/recurso ausente, sem aviso | símbolo inexistente, descartado | `BR2_PACKAGE_LIBMPG123` → `BR2_PACKAGE_MPG123` |
+
+Antes de qualquer build (e no CI), valide os símbolos contra a árvore real:
+
+```sh
+BUILDROOT_DIR=/caminho/para/buildroot tools/check-buildroot-symbols.py
+```
+
+Ele lista `LEGACY` (aborta o build) e `INEXISTENTE` (seria descartado) por
+defconfig. `make lint` roda essa checagem automaticamente quando
+`BUILDROOT_DIR` está definido, e `tools/build-image.sh` a executa antes de
+compilar cada aparelho.
+
 ```sh
 export BUILDROOT_DIR=/caminho/para/buildroot
 
