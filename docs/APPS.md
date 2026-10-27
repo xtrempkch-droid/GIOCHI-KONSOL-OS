@@ -11,7 +11,9 @@ Legenda de estado:
 - ⛔ **não implementado** — referenciado pela spec, sem código
 - 🔒 **reservado** — fora do escopo v1.2, por decisão da spec
 
-Especificação: [architecture-v1.2.md](./architecture-v1.2.md) (+ [adendo 4.6.1](<Registro na Spec (v1.2 — Adendo à Seção 4.6).md>)).
+Fonte: [Lista Consolidada de Aplicativos (v1.2)](<Lista Consolidada de Aplicativos do Giochi Konsol OS (v1.2).md>),
+confrontada com o código. Especificação: [architecture-v1.2.md](./architecture-v1.2.md)
+(+ [adendo 4.6.1](<Registro na Spec (v1.2 — Adendo à Seção 4.6).md>)).
 Ordem de trabalho: [roadmap.md](./roadmap.md).
 
 ---
