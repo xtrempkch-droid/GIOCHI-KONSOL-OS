@@ -90,10 +90,14 @@ indicado "host". Referências: [architecture-v1.2.md](./architecture-v1.2.md) §
 | U5 | Troca em runtime reanexa | `echo MASS` → `ls /sys/kernel/config/usb_gadget/giochi/UDC` | preenchido após a troca |
 | U6 | Sem UDC (X35S/X35H) | log `nenhum UDC` e sistema segue | não fatal |
 | U7 | MTP lista arquivos | PC abre "Giochi" e vê `games/`, `music/` | lista `/user` |
-| U8 | Rede no mesmo gadget | `ip addr` no PC mostra `10.55.0.2/24` | DHCP ok |
-| U9 | SSH por chave | `ssh root@10.55.0.1` com chave em `/user/ssh/authorized_keys` | login |
-| U10 | SSH não escuta fora do USB | `netstat -ltn \| grep :22` no console | só `10.55.0.1:22` |
-| U11 | Sem chave/senha | não sobe dropbear (padrão seguro) | log explicativo |
+| U8 | Rede no mesmo gadget | `ip addr` no PC (estático `10.55.0.1/24`) vê o console | `usb0` no console = `10.55.0.2/24` |
+| U8b | Modo Desenvolvedor desligado (padrão) | `settings.json` sem `developer` → console sem IP e sem `dropbear` | 0 MB em repouso |
+| U8c | Ativar pelo menu | Configurações → Sistema → Modo Desenvolvedor → A | `OK dev_mode ON` no log |
+| U9 | SSH por chave | `ssh root@10.55.0.2` com chave em `/user/ssh/authorized_keys` | login |
+| U9b | SSH por senha | `GIOCHI_ROOT_PASSWORD` no build → `ssh root@10.55.0.2` pede senha | login |
+| U10 | SSH não escuta fora do USB | `netstat -ltn \| grep :22` no console | só `10.55.0.2:22` |
+| U11 | Sem chave/senha | não sobe dropbear mesmo com o modo ativo | log explicativo |
+| U11b | Desativar o modo | `DEV_MODE OFF` → IP removido e `dropbear` encerrado | volta a 0 MB |
 | U12 | Troca MTP→MASS | `pidof umtprd` some; `usb0` continua | rede permanece |
 | U13 | Mass Storage desmonta /user | `mountpoint /user` = falso durante MASS | exigência do kernel |
 

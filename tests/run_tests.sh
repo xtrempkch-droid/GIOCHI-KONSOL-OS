@@ -60,6 +60,18 @@ if [ -x "$ROOT/tests/integration/usbgadget_test.sh" ]; then
     fi
 fi
 
+# Modo Desenvolvedor / SSH via USB (adendo 4.6.1).
+if [ -x "$ROOT/tests/integration/devmode_test.sh" ]; then
+    total=$((total + 1))
+    if "$ROOT/tests/integration/devmode_test.sh" \
+            "$ROOT/scripts/init.d" "$BIN" >/dev/null 2>&1; then
+        echo "OK     devmode (integracao)"
+    else
+        echo "FALHA  devmode (integracao)"
+        fail=$((fail + 1))
+    fi
+fi
+
 if [ -d "$ROOT/src/forge" ] && command -v python3 >/dev/null 2>&1; then
     total=$((total + 1))
     if PYTHONPATH="$ROOT/src/forge" python3 -m unittest discover \

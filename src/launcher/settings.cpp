@@ -60,6 +60,7 @@ void giochi_settings_defaults(giochi_settings *settings)
 
     settings->wifi_enabled = 0;
     settings->bluetooth_enabled = 0;
+    settings->developer_ssh_usb_enabled = 0;
 }
 
 static void copy_string(char *dst, size_t dstsz, const gj_value *obj,
@@ -118,6 +119,14 @@ static void read_store(giochi_settings *s, const gj_value *section)
 {
     copy_string(s->store_region, sizeof(s->store_region), section, "region");
     copy_string(s->store_source, sizeof(s->store_source), section, "source");
+}
+
+/* Adendo 4.6.1 — "developer": { "ssh_usb_enabled": false }. */
+static void read_developer(giochi_settings *s, const gj_value *section)
+{
+    s->developer_ssh_usb_enabled = gj_as_bool(
+        gj_object_get(section, "ssh_usb_enabled"),
+        s->developer_ssh_usb_enabled);
 }
 
 static void read_network(giochi_settings *s, const gj_value *section)
@@ -183,6 +192,7 @@ int giochi_settings_load(giochi_settings *settings, const char *user_dir,
     read_sound(settings, gj_object_get(doc, "sound"));
     read_store(settings, gj_object_get(doc, "store"));
     read_network(settings, gj_object_get(doc, "network"));
+    read_developer(settings, gj_object_get(doc, "developer"));
 
     gj_free(doc);
     return 0;
@@ -260,7 +270,8 @@ int giochi_settings_save(const giochi_settings *settings, const char *user_dir,
         "    \"wifi_credentials\": [],\n"
         "    \"bluetooth_enabled\": %s,\n"
         "    \"bluetooth_paired\": []\n"
-        "  }\n"
+        "  },\n"
+        "  \"developer\": { \"ssh_usb_enabled\": %s }\n"
         "}\n",
         settings->schema_version, settings->theme_id, settings->accent_color,
         settings->font_scale, settings->ui_scale,
@@ -271,7 +282,8 @@ int giochi_settings_save(const giochi_settings *settings, const char *user_dir,
         settings->store_region, settings->store_source,
         settings->wifi_enabled ? "true" : "false",
         ssid_json,
-        settings->bluetooth_enabled ? "true" : "false");
+        settings->bluetooth_enabled ? "true" : "false",
+        settings->developer_ssh_usb_enabled ? "true" : "false");
 
     if (n < 0 || (size_t)n >= sizeof(buf)) {
         if (err != NULL && errsz > 0) {

@@ -20,6 +20,8 @@ void test_defaults(void)
     CHECK(s.master_volume == 70);
     CHECK(s.font_scale > 0.99 && s.font_scale < 1.01);
     CHECK(s.wifi_enabled == 0);
+    /* Adendo 4.6.1: Modo Desenvolvedor desativado por padrao. */
+    CHECK(s.developer_ssh_usb_enabled == 0);
 }
 
 void test_roundtrip(void)
@@ -33,6 +35,7 @@ void test_roundtrip(void)
     giochi_settings_defaults(&saved);
     saved.master_volume = 42;
     saved.wifi_enabled = 1;
+    saved.developer_ssh_usb_enabled = 1;
     snprintf(saved.wifi_last_ssid, sizeof(saved.wifi_last_ssid), "Casa \"5G\"");
     snprintf(saved.language, sizeof(saved.language), "en-US");
 
@@ -40,6 +43,7 @@ void test_roundtrip(void)
     CHECK(giochi_settings_load(&loaded, dir, err, sizeof(err)) == 0);
     CHECK(loaded.master_volume == 42);
     CHECK(loaded.wifi_enabled == 1);
+    CHECK(loaded.developer_ssh_usb_enabled == 1);
     CHECK_STR_EQ(loaded.wifi_last_ssid, "Casa \"5G\"");
     CHECK_STR_EQ(loaded.language, "en-US");
 
@@ -69,6 +73,7 @@ void test_out_of_range_clamped(void)
     CHECK(s.master_volume == 100);
     CHECK(s.font_scale <= 2.0);
     CHECK_STR_EQ(s.usb_mode, "mtp");
+    CHECK(s.developer_ssh_usb_enabled == 0);
 
     unlink((std::string(dir) + "/settings.json").c_str());
     rmdir(dir);

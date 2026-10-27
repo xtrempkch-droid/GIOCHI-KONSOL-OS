@@ -417,6 +417,34 @@ meujogo.giochi/
 
 **Fora de escopo v1.2:** automação `libusb`; ADB; WebUSB.
 
+### 4.6.1 SSH via USB (Modo Desenvolvedor)
+
+Acesso remoto ao console via SSH sobre USB, sem depender de rede Wi-Fi/Ethernet.
+É o canal de diagnóstico/integração usado no bring-up dos aparelhos.
+
+- **Função:** console remoto (shell) por cima do gadget USB, independente de rede.
+- **Ativação:** manual, em Configurações → Sistema → **Modo Desenvolvedor**.
+  **Desativado por padrão.** O Launcher persiste
+  `developer.ssh_usb_enabled` em `/user/settings.json` e envia `DEV_MODE ON|OFF`
+  ao `giochi-init`, que roda `S55usbnet` e `S62sshd`.
+- **Implementação:** gadget USB com função de rede (`ecm`/`rndis`) + Dropbear
+  escutando **exclusivamente** em `usb0`.
+- **IP padrão:** console `10.55.0.2/24`; PC `10.55.0.1/24` (**estático** — não há
+  servidor DHCP no console).
+- **Orçamento:** +1,5 MB SquashFS; 0 MB RAM em repouso; ≤ 3 MB RAM quando ativo.
+- **Segurança:** escuta apenas em `usb0` (nunca `0.0.0.0`); autenticação por
+  senha (`/etc/giochi/root_password`) **ou** chave
+  (`/user/ssh/authorized_keys`); desativado por padrão. Sem nenhuma das duas o
+  daemon não sobe e o motivo vai para o log.
+- **Compatibilidade:** Linux/macOS (ECM nativo); Windows (RNDIS, pode exigir driver).
+- **Fora de escopo v1.2:** SSH sobre Wi-Fi; autenticação por chave exclusiva
+  (fase 2); túnel reverso.
+
+**Impacto no `device_profile.json`:** `"developer": { "ssh_usb": <bool> }` —
+reflete o **estado atual** (lido de `settings.json`), não a capacidade.
+
+**Impacto no `settings.json`:** `"developer": { "ssh_usb_enabled": false }`.
+
 ### 4.7 Quarta aba — Ports (PortMaster)
 
 - **Tipo:** app externo `APP:portmaster`, lançado por `giochi-init`.

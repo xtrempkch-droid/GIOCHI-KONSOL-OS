@@ -145,14 +145,21 @@ TODO), **doc** (apenas especificação/script).
   respondido pelo `umtprd` (pacote `giochi-mtpd`) sobre FunctionFS
   (`CONFIG_USB_F_FS`). Sem isso o PC via o device e não listava arquivos — era
   a lacuna funcional do USB.
-- **SSH via USB**: `usb0` = `10.55.0.1/24`, `udhcpd` entrega `10.55.0.2`,
-  `dropbear` escuta **somente** nesse IP. Chave em
-  `/user/ssh/authorized_keys`; senha só em imagem de teste
-  (`GIOCHI_TEST_PASSWORD=1`).
+- **SSH via USB (adendo §4.6.1, Modo Desenvolvedor)**: console `usb0` =
+  `10.55.0.2/24`, PC `10.55.0.1/24` **estático** (não há DHCP no console).
+  `dropbear` escuta **somente** em `10.55.0.2:22`. Desativado por padrão:
+  `S55usbnet`/`S62sshd` saem antes de carregar qualquer daemon (0 MB em
+  repouso). Autenticação por senha **ou** chave — chave em
+  `/user/ssh/authorized_keys`, senha por `GIOCHI_ROOT_PASSWORD` no build.
+- `DEV_MODE ON|OFF` (control.sock) liga/desliga o Modo Desenvolvedor; o
+  Launcher alterna em Configurações → Sistema → Modo Desenvolvedor e persiste
+  `developer.ssh_usb_enabled` em `settings.json`.
 - `USB_MODE` em runtime reaplica rede + MTP; o modo é persistido pelo Launcher
   em `settings.json` (o `settings.json` é propriedade dele, §4.9.5).
-- Teste: `tests/integration/usbgadget_test.sh` valida o configfs gerado
-  (rede sempre presente, ffs no modo MTP, mass no modo MASS, `off` desanexa).
+- Testes: `tests/integration/usbgadget_test.sh` valida o configfs gerado
+  (rede sempre presente, ffs no modo MTP, mass no modo MASS, `off` desanexa) e
+  `tests/integration/devmode_test.sh` valida o contrato do adendo nos scripts
+  de init (IPs, gate do Modo Desenvolvedor, bind só em `10.55.0.2:22`).
 
 ## S10b — USB gadget (histórico)
 

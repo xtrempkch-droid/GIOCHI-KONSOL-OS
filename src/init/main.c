@@ -180,6 +180,24 @@ static int handle_command(const char *cmd, char *reply, size_t replysz,
         return 0;
     }
 
+    /* Adendo 4.6.1: Modo Desenvolvedor (SSH via USB). */
+    if (strcmp(verb, "DEV_MODE") == 0) {
+        const char *net[] = { "/etc/init.d/S55usbnet", "start", NULL };
+        const char *ssh[] = { "/etc/init.d/S62sshd", "start", NULL };
+
+        if (arg == NULL || (strcmp(arg, "ON") != 0 && strcmp(arg, "OFF") != 0)) {
+            (void)snprintf(reply, replysz, "ERR invalid_mode");
+            return -1;
+        }
+        /* O gadget ja expoe ecm.usb0 em qualquer modo; nao mexemos no modo
+         * MTP/Mass Storage escolhido pelo usuario. Os scripts releem
+         * settings.json, onde o Launcher acabou de gravar a flag. */
+        (void)giochi_run(net);
+        (void)giochi_run(ssh);
+        (void)snprintf(reply, replysz, "OK dev_mode %s", arg);
+        return 0;
+    }
+
     if (strcmp(verb, "SET_THEME") == 0) {
         if (arg == NULL || *arg == '\0') {
             (void)snprintf(reply, replysz, "ERR missing_theme");

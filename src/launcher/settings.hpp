@@ -28,6 +28,10 @@ typedef struct {
     int wifi_enabled;
     char wifi_last_ssid[64];
     int bluetooth_enabled;
+
+    /* Adendo 4.6.1: SSH via USB (Modo Desenvolvedor). Desativado por padrao;
+     * com 0 nao ha IP nem dropbear (0 MB em repouso). */
+    int developer_ssh_usb_enabled;
 } giochi_settings;
 
 void giochi_settings_defaults(giochi_settings *settings);

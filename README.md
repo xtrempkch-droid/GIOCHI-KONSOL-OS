@@ -81,14 +81,17 @@ ou Balena Etcher. O cartão sai com A/B (SquashFS), partição `/user` (ext4) e
 
 ### Inspecionar o aparelho por USB
 
-O console expõe rede no mesmo gadget do MTP, em todos os modos:
+O console expõe rede no mesmo gadget do MTP. O **Modo Desenvolvedor** (SSH via
+USB) vem **desativado**; ligue em Configurações → Sistema → Modo Desenvolvedor.
 
 ```sh
-ssh root@10.55.0.1        # PC recebe 10.55.0.2 por DHCP
+sudo ip addr add 10.55.0.1/24 dev usb0    # PC: estático, não há DHCP
+ssh root@10.55.0.2                        # console
 ```
 
-Chave pública em `/user/ssh/authorized_keys`; senha apenas em imagem de teste
-(`GIOCHI_TEST_PASSWORD=1`). Detalhes em [docs/USB.md](docs/USB.md).
+Autenticação por chave pública em `/user/ssh/authorized_keys` ou por senha de
+root definida no build (`GIOCHI_ROOT_PASSWORD`). Detalhes em
+[docs/USB.md](docs/USB.md).
 
 ## Como funciona
 
@@ -141,7 +144,7 @@ docs/           arquitetura, hardware, build, aparelhos, QA, handoff
 | [docs/architecture-v1.1.md](docs/architecture-v1.1.md) | versão anterior, para histórico |
 | [docs/hardware-e-drivers.md](docs/hardware-e-drivers.md) | hardware de teste, GPIO, DTS, correções (F1–F12) |
 | [docs/DEVICES.md](docs/DEVICES.md) | aparelhos, DTS, geração de imagem |
-| [docs/USB.md](docs/USB.md) | MTP, Mass Storage e **SSH via USB** (10.55.0.1) |
+| [docs/USB.md](docs/USB.md) | MTP, Mass Storage e **SSH via USB** (10.55.0.2, Modo Desenvolvedor) |
 | [docs/BOOTSPLASH.md](docs/BOOTSPLASH.md) | logo/bootsplash: assets, Launcher e ativação do U-Boot |
 | [docs/BUILD.md](docs/BUILD.md) | buildroot, kernel, cross-compile, assinatura |
 | [docs/QA-CHECKLIST.md](docs/QA-CHECKLIST.md) | checklist por camada e matriz de testes |

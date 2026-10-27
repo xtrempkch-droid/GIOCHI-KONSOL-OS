@@ -6,6 +6,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "giochi_json.h"
+
 #ifndef GIOCHI_SOC
 #define GIOCHI_SOC "rk3326"
 #endif
@@ -74,10 +76,39 @@ const char *giochi_device_id(void)
     return GIOCHI_DEVICE;
 }
 
+/* Adendo 4.6.1: "developer": { "ssh_usb": <estado atual> }.
+ *
+ * Reflete o que esta LIGADO agora (settings.json), nao a capacidade da build.
+ * Sem settings legivel => false (padrao seguro).
+ */
+static int developer_ssh_usb_active(const char *settings_path)
+{
+    char err[96];
+    gj_value *doc;
+    const gj_value *dev;
+    int enabled = 0;
+
+    if (settings_path == NULL) {
+        return 0;
+    }
+    doc = gj_parse_file(settings_path, err, sizeof(err));
+    if (doc == NULL) {
+        return 0;
+    }
+    dev = gj_object_get(doc, "developer");
+    if (dev != NULL) {
+        enabled = gj_as_bool(gj_object_get(dev, "ssh_usb_enabled"), 0);
+    }
+    gj_free(doc);
+    return enabled;
+}
+
 int giochi_device_profile_write(const char *path)
 {
     giochi_device_values d = device_values();
     char device_id[96];
+    char settings[512];
+    int ssh_usb = 0;
     char buf[4096];
     char dir[512];
     char *slash;
@@ -89,6 +120,10 @@ int giochi_device_profile_write(const char *path)
     } else {
         (void)snprintf(device_id, sizeof(device_id), "giochi-%s-%s-001",
                        d.soc, d.device);
+    }
+
+    if (giochi_path(settings, sizeof(settings), "/user/settings.json") == 0) {
+        ssh_usb = developer_ssh_usb_active(settings);
     }
 
     n = snprintf(buf, sizeof(buf),
@@ -109,6 +144,7 @@ int giochi_device_profile_write(const char *path)
         "  \"engine\": { \"godot_min\": \"3.5\", \"godot_max\": \"4.3\", \"renderer\": \"compatibility\" },\n"
         "  \"network\": { \"wifi_usb\": true, \"bluetooth_usb\": true, \"integrated\": %s },\n"
         "  \"usb_gadget\": { \"mtp\": true, \"mass_storage\": %s },\n"
+        "  \"developer\": { \"ssh_usb\": %s },\n"
         "  \"proton\": { \"supported\": false, \"reason\": \"%s\", \"min_ram_mb\": 4096, \"min_vulkan\": \"1.1\", \"fex_required\": true }\n"
         "}\n",
         device_id, d.soc, d.cpu_model, d.cpu_max_mhz, d.gpu_model,
@@ -116,6 +152,7 @@ int giochi_device_profile_write(const char *path)
         d.display_width, d.display_height, d.display_refresh_hz,
         d.integrated_radio ? "true" : "false",
         d.usb_gadget_ok ? "true" : "false",
+        ssh_usb ? "true" : "false",
         d.proton_reason);
 
     if (n < 0 || (size_t)n >= sizeof(buf)) {

@@ -175,6 +175,20 @@ void control_command(Launcher &app, const char *command)
 }
 
 /* Secao 4.9.4: modo USB via control.sock + persistencia em settings.json. */
+/* Adendo 4.6.1: Modo Desenvolvedor (SSH via USB), desativado por padrao. */
+void set_developer_mode(Launcher &app, bool enabled)
+{
+    app.settings.developer_ssh_usb_enabled = enabled ? 1 : 0;
+
+    char err[128] = {0};
+    if (giochi_settings_save(&app.settings, app.options.user_dir.c_str(), err,
+                             sizeof(err)) != 0) {
+        GLOG_WARN("settings.json: nao foi possivel gravar developer (%s)", err);
+    }
+    control_command(app, enabled ? "DEV_MODE ON" : "DEV_MODE OFF");
+    GLOG_INFO("Modo Desenvolvedor: %s", enabled ? "ativado" : "desativado");
+}
+
 void set_usb_mode(Launcher &app, const char *mode)
 {
     std::string upper = std::strcmp(mode, "mass") == 0 ? "MASS" : "MTP";
@@ -196,7 +210,11 @@ void set_hint(Launcher &app)
     const char *hint = "L/R aba  A ok  B voltar  Select ajustes  Home inicio";
 
     if (app.overlay.open) {
-        hint = "A entrar  B fechar  Select fechar";
+        if (app.overlay.level == 0) {
+            hint = "A entrar  B fechar  Select fechar";
+        } else {
+            hint = "A aplicar  B voltar  Select fechar";
+        }
     } else if (std::strcmp(tab, "home") == 0) {
         hint = "L/R aba  A abrir  Select ajustes";
     } else if (std::strcmp(tab, "music") == 0) {
@@ -284,15 +302,21 @@ void handle_action(Launcher &app, giochi::Action action)
         if (app.overlay.open) {
             const char *item = giochi_overlay_current(&app.overlay);
 
-            if (std::strcmp(item, "Desligar") == 0) {
-                control_command(app, "POWEROFF");
-            } else if (std::strcmp(item, "Sistema") == 0) {
-                /* Alterna MTP <-> Mass Storage (secao 4.9.3, item Sistema).
-                 * A rede USB (SSH em 10.55.0.1) continua ativa nos dois. */
+            if (app.overlay.level == 0) {
+                if (std::strcmp(item, "Desligar") == 0) {
+                    control_command(app, "POWEROFF");
+                } else {
+                    (void)giochi_overlay_enter(&app.overlay);
+                }
+            } else if (app.overlay.index == GIOCHI_SYSTEM_USB_MODE_INDEX) {
+                /* Alterna MTP <-> Mass Storage. A rede USB continua ativa. */
                 const char *next = std::strcmp(app.settings.usb_mode, "mtp") == 0
                                        ? "mass" : "mtp";
 
                 set_usb_mode(app, next);
+            } else if (app.overlay.index == GIOCHI_SYSTEM_DEV_MODE_INDEX) {
+                set_developer_mode(app,
+                                   app.settings.developer_ssh_usb_enabled == 0);
             }
         } else if (std::strcmp(giochi_layout_tab_id(&app.layout,
                                                     app.current_tab),
@@ -304,7 +328,7 @@ void handle_action(Launcher &app, giochi::Action action)
         break;
     case giochi::ActionBack:
         if (app.overlay.open) {
-            giochi_overlay_close(&app.overlay);
+            (void)giochi_overlay_back(&app.overlay);
         } else {
             app.current_tab = app.layout.default_index;
         }

@@ -123,7 +123,7 @@ if [ "$NET_OK" = "1" ]; then
     echo "02:47:69:6f:63:68" > functions/${NET_FUNCTION:-ecm}.usb0/dev_addr 2>/dev/null || true
     echo "02:47:69:6f:63:69" > functions/${NET_FUNCTION:-ecm}.usb0/host_addr 2>/dev/null || true
     ln -sf functions/${NET_FUNCTION:-ecm}.usb0 configs/c.1/ 2>/dev/null
-    log "rede USB = ${NET_FUNCTION:-ecm} (10.55.0.1/24)"
+    log "rede USB = ${NET_FUNCTION:-ecm} (console 10.55.0.2/24)"
 else
     log "aviso: kernel sem funcao de rede USB (ECM/RNDIS)"
 fi

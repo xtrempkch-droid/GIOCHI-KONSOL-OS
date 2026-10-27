@@ -16,6 +16,21 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 - `docs/DEVICES.md` com matriz de aparelhos e receita de DTS externo.
 - CI (`.github/workflows/ci.yml`) e workflow de imagens
   (`.github/workflows/images.yml`).
+- Adendo §4.6.1 — **Modo Desenvolvedor (SSH via USB)**:
+  - `developer.ssh_usb_enabled` em `settings.json` e bloco `developer` em
+    `defaults.json`/`schemas/settings.schema.json`; `developer.ssh_usb` no
+    `device_profile.json` reflete o estado atual.
+  - Configurações → Sistema → **Modo Desenvolvedor** (desligado por padrão) e
+    comando `DEV_MODE ON|OFF` em `control.sock`.
+  - Console `10.55.0.2/24` e PC `10.55.0.1/24` **estático** (não há DHCP no
+    console; `udhcpd` removido do rootfs).
+  - `S55usbnet`/`S62sshd` saem sem carregar nada quando o modo está desligado
+    (0 MB em repouso); dropbear escuta **só** em `10.55.0.2:22`, com
+    autenticação por senha **ou** chave.
+  - `/etc/dropbear` passa a ser symlink para `/user/.ssh/dropbear` (a raiz é
+    SquashFS somente leitura).
+- `tests/integration/devmode_test.sh` (19 checagens) cobrindo o contrato do
+  adendo 4.6.1 nos scripts de init.
 
 ## [1.2.0] — 2026-10
 

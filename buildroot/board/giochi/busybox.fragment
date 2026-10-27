@@ -23,10 +23,8 @@ CONFIG_FREE=y
 CONFIG_TR=y
 CONFIG_AWK=y
 CONFIG_XXD=y
-# --- rede USB / SSH (secao 4.6) ---------------------------------------
-CONFIG_UDHCPD=y
-CONFIG_FEATURE_UDHCPD_WRITE_LEASES_EARLY=y
-CONFIG_DHCPD_LEASES_FILE="/run/giochi/udhcpd.leases"
+# --- rede USB / SSH (adendo 4.6.1) ------------------------------------
+# Sem DHCP no console: o PC usa 10.55.0.1/24 estatico e o console 10.55.0.2.
 CONFIG_PIDOF=y
 CONFIG_CHPASSWD=y
 CONFIG_IP=y

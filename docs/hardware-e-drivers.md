@@ -235,8 +235,9 @@ funciona, porque o `btrtl` liga o flow control por comando do próprio firmware.
 * `dr_mode` **não** é definido no DTS da placa: vem do `rk356x.dtsi` como **`otg`**.
   Portanto a X55 **não precisa** de nenhuma variante "peripheral" — o papel é
   negociado por OTG. (CONFIRMADO: `state = configured`, `g_ether` carregado.)
-* Gadget: `g_ether` → interface `usb0`, IP fixo **10.55.0.1/24**. **Não há DHCP**;
-  do lado do PC configure estático `10.55.0.2/24`.
+* Gadget: `g_ether` → interface `usb0`, IP fixo **10.55.0.2/24**. **Não há DHCP**;
+  do lado do PC configure estático `10.55.0.1/24`. (Ordem definida no adendo
+  §4.6.1 da spec v1.2 — a nota anterior deste documento tinha os dois invertidos.)
 * Firmware/kernel: `CONFIG_USB_GADGET`, `CONFIG_USB_ETH` (módulo),
   `CONFIG_USB_DWC3{,_DUAL_ROLE}`, `CONFIG_USB_CONFIGFS_ECM`.
 
@@ -573,11 +574,11 @@ loop".
 
 ```sh
 modprobe g_ether            # cria usb0
-ip addr add 10.55.0.1/24 dev usb0
+ip addr add 10.55.0.2/24 dev usb0
 ip link set usb0 up
 ```
 
-Do PC: endereço **estático** `10.55.0.2/24` (não há DHCP no gadget). Para SSH do root
+Do PC: endereço **estático** `10.55.0.1/24` (não há DHCP no gadget). Para SSH do root
 por senha no Debian 12, é preciso um drop-in, porque o padrão é
 `PermitRootLogin prohibit-password`:
 
@@ -689,7 +690,8 @@ nada.
 | `dwc3 ... failed to enable ep0out` (X35S/X35H) | gadget aborta no controlador; UDC fica `not attached`; não é o papel OTG | **F12** (provável hardware) |
 | `mmc3: Failed to initialize a non-removable card` (X35H) | SDIO do rádio não responde: sem Wi-Fi e sem BT | medir `pwrseq`/regulador no aparelho |
 | `ssh root@...` recusa a senha certa | `PermitRootLogin prohibit-password` | **F10** |
-| PC fica em `169.254.x.x` no cabo | gadget não faz DHCP | IP estático `10.55.0.2/24` |
+| PC fica em `169.254.x.x` no cabo | gadget não faz DHCP | IP estático `10.55.0.1/24` no PC |
+| SSH recusa conexão sem motivo | Modo Desenvolvedor desligado (§4.6.1) | ativar em Configurações → Sistema |
 | Sem controle | nó `rocknix-joypad` aninhado | **F7** |
 
 ---
@@ -723,7 +725,7 @@ hciconfig -a                                      # MAC real + UP RUNNING
 
 # 7. USB gadget
 ls /sys/class/udc/                                # fcc00000.usb
-ip addr show usb0                                 # 10.55.0.1/24
+ip addr show usb0                                 # 10.55.0.2/24 (Modo Desenvolvedor)
 ```
 
 ---

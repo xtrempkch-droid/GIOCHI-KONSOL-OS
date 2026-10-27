@@ -114,44 +114,61 @@ fi
 
 # --- rede USB / SSH (secao 4.6) ---------------------------------------
 install -d "$TARGET_DIR/etc"
-# udhcpd.conf nao depende do aparelho: vem do overlay. Garante que existe.
-[ -f "$TARGET_DIR/etc/udhcpd.conf" ] || \
-    install -m 0644 "$BOARD_DIR/rootfs_overlay/etc/udhcpd.conf" \
-        "$TARGET_DIR/etc/udhcpd.conf"
-
 # Funcao de rede do gadget: ECM (Linux/macOS) ou RNDIS (Windows sem driver).
 # Pode ser sobrescrita por aparelho no .conf (GIOCHI_USB_NET).
 usb_net=$(dev_key USB_NET)
 [ -n "${usb_net:-}" ] || usb_net=ecm
 cat > "$TARGET_DIR/etc/giochi/usb-net.conf" <<CONF
-# Gerado por post-build.sh — rede USB (SSH em 10.55.0.1).
+# Gerado por post-build.sh — rede USB (adendo 4.6.1).
+# Console 10.55.0.2/24; PC 10.55.0.1/24 (estatico, sem DHCP no console).
 GIOCHI_USB_NET=$usb_net
-GIOCHI_USB_IP=10.55.0.1
+GIOCHI_USB_IP=10.55.0.2
 GIOCHI_USB_PREFIX=24
 CONF
-echo "post-build: rede USB = $usb_net (10.55.0.1/24)"
+echo "post-build: rede USB = $usb_net (console 10.55.0.2/24, PC 10.55.0.1/24)"
 
-# SSH por chave: o usuario coloca authorized_keys em /user/ssh/ (rw).
+# SSH (Modo Desenvolvedor, adendo 4.6.1): desativado por padrao.
 install -d "$TARGET_DIR/user/ssh"
 if [ ! -f "$TARGET_DIR/user/ssh/README" ]; then
     cat > "$TARGET_DIR/user/ssh/README" <<'DOC'
-Coloque aqui o arquivo authorized_keys (formato OpenSSH, uma chave por linha)
-para habilitar: ssh root@10.55.0.1   (via cabo USB, rede 10.55.0.1/24)
+Modo Desenvolvedor (SSH via USB) — desativado por padrao.
+Ative em Configuracoes -> Sistema -> Modo Desenvolvedor.
+
+Depois de ativo:
+  PC: 10.55.0.1/24 (estatico)   Console: 10.55.0.2/24
+  ssh root@10.55.0.2
+
+Autenticacao por chave: coloque aqui authorized_keys (formato OpenSSH,
+uma chave por linha):
 
   ssh-keygen -t ed25519
   (cole ~/.ssh/id_ed25519.pub em /user/ssh/authorized_keys)
+
+Autenticacao por senha: a imagem precisa ter /etc/giochi/root_password
+(gerada com GIOCHI_ROOT_PASSWORD=<senha> no build) ou defina a senha de
+root pelo console serial.
 DOC
 fi
 
-# Senha de root APENAS em imagem de teste (GIOCHI_TEST_PASSWORD=1).
-# Sem isso, o SSH so aceita chave — padrao seguro.
-if [ "${GIOCHI_TEST_PASSWORD:-0}" = "1" ]; then
+# dropbear le a lista de chaves de /etc/dropbear/authorized_keys, mas a raiz
+# e squashfs (somente leitura). Apontamos /etc/dropbear para a particao rw:
+# assim o S62sshd instala /user/ssh/authorized_keys em tempo de execucao.
+if [ -d "$TARGET_DIR/etc/dropbear" ] && [ ! -L "$TARGET_DIR/etc/dropbear" ]; then
+    rm -rf "$TARGET_DIR/etc/dropbear"
+fi
+ln -sfn /user/.ssh/dropbear "$TARGET_DIR/etc/dropbear"
+
+# Senha de root (adendo 4.6.1: autenticacao por senha OU chave).
+# So e gravada quando o build pede explicitamente; sem ela o acesso e por
+# chave. O Modo Desenvolvedor continua desligado por padrao de qualquer forma.
+if [ -n "${GIOCHI_ROOT_PASSWORD:-}" ] || \
+   [ "${GIOCHI_TEST_PASSWORD:-0}" = "1" ]; then
     test_pass=${GIOCHI_ROOT_PASSWORD:-giochi}
     echo "$test_pass" > "$TARGET_DIR/etc/giochi/root_password"
     chmod 0600 "$TARGET_DIR/etc/giochi/root_password"
     echo "post-build: ******************************************************" >&2
-    echo "post-build: senha de root de TESTE ativa (root/$test_pass)" >&2
-    echo "post-build: NAO distribua esta imagem" >&2
+    echo "post-build: senha de root definida (root/$test_pass)" >&2
+    echo "post-build: o SSH so sobe com o Modo Desenvolvedor ativo" >&2
     echo "post-build: ******************************************************" >&2
 fi
 
