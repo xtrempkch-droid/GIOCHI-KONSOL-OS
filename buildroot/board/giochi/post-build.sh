@@ -51,7 +51,7 @@ fi
 # --- scripts de init --------------------------------------------------
 install -d "$TARGET_DIR/etc/init.d"
 for s in S05update S10storage S20graphics S30swap S40dongle S50usb \
-         S99launcher; do
+         S55usbnet S62sshd S99launcher; do
     [ -f "$SCRIPTS_DIR/$s" ] && install -m 0755 "$SCRIPTS_DIR/$s" \
         "$TARGET_DIR/etc/init.d/$s"
 done
@@ -112,6 +112,49 @@ else
     echo "post-build: aviso: bootlogo.rgba ausente (rode 'make bootlogo')" >&2
 fi
 
+# --- rede USB / SSH (secao 4.6) ---------------------------------------
+install -d "$TARGET_DIR/etc"
+# udhcpd.conf nao depende do aparelho: vem do overlay. Garante que existe.
+[ -f "$TARGET_DIR/etc/udhcpd.conf" ] || \
+    install -m 0644 "$BOARD_DIR/rootfs_overlay/etc/udhcpd.conf" \
+        "$TARGET_DIR/etc/udhcpd.conf"
+
+# Funcao de rede do gadget: ECM (Linux/macOS) ou RNDIS (Windows sem driver).
+# Pode ser sobrescrita por aparelho no .conf (GIOCHI_USB_NET).
+usb_net=$(dev_key USB_NET)
+[ -n "${usb_net:-}" ] || usb_net=ecm
+cat > "$TARGET_DIR/etc/giochi/usb-net.conf" <<CONF
+# Gerado por post-build.sh — rede USB (SSH em 10.55.0.1).
+GIOCHI_USB_NET=$usb_net
+GIOCHI_USB_IP=10.55.0.1
+GIOCHI_USB_PREFIX=24
+CONF
+echo "post-build: rede USB = $usb_net (10.55.0.1/24)"
+
+# SSH por chave: o usuario coloca authorized_keys em /user/ssh/ (rw).
+install -d "$TARGET_DIR/user/ssh"
+if [ ! -f "$TARGET_DIR/user/ssh/README" ]; then
+    cat > "$TARGET_DIR/user/ssh/README" <<'DOC'
+Coloque aqui o arquivo authorized_keys (formato OpenSSH, uma chave por linha)
+para habilitar: ssh root@10.55.0.1   (via cabo USB, rede 10.55.0.1/24)
+
+  ssh-keygen -t ed25519
+  (cole ~/.ssh/id_ed25519.pub em /user/ssh/authorized_keys)
+DOC
+fi
+
+# Senha de root APENAS em imagem de teste (GIOCHI_TEST_PASSWORD=1).
+# Sem isso, o SSH so aceita chave — padrao seguro.
+if [ "${GIOCHI_TEST_PASSWORD:-0}" = "1" ]; then
+    test_pass=${GIOCHI_ROOT_PASSWORD:-giochi}
+    echo "$test_pass" > "$TARGET_DIR/etc/giochi/root_password"
+    chmod 0600 "$TARGET_DIR/etc/giochi/root_password"
+    echo "post-build: ******************************************************" >&2
+    echo "post-build: senha de root de TESTE ativa (root/$test_pass)" >&2
+    echo "post-build: NAO distribua esta imagem" >&2
+    echo "post-build: ******************************************************" >&2
+fi
+
 # --- identidade do aparelho em runtime --------------------------------
 # Lido pelo Launcher (buttons.map), por S20graphics (painel/rotacao) e por
 # S50usb (suporte a gadget). Formato chave=valor, sem espacos.
@@ -129,6 +172,7 @@ GIOCHI_WIFI="$(dev_key WIFI)"
 GIOCHI_BT="$(dev_key BT)"
 GIOCHI_USB_GADGET=$(dev_key USB_GADGET)
 GIOCHI_TESTED=$(dev_key TESTED)
+GIOCHI_USB_NET=$usb_net
 GIOCHI_TEST_IMAGE=${GIOCHI_TEST_IMAGE:-0}
 CONF
 

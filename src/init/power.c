@@ -4,6 +4,7 @@
 #include "giochi_util.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -115,6 +116,9 @@ int giochi_usb_mode_set(const char *mode)
         return -1;
     }
     GLOG_INFO("usb_mode alterado para %s", arg);
+
+    /* settings.json e propriedade do Launcher (secao 4.9.5): ele persiste o
+     * novo modo ao aplicar a opcao na UI. Aqui apenas o estado de runtime. */
     return 0;
 }
 

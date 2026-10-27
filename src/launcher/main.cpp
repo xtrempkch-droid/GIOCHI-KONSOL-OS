@@ -174,6 +174,22 @@ void control_command(Launcher &app, const char *command)
     GLOG_INFO("controle: %s -> %s", command, reply);
 }
 
+/* Secao 4.9.4: modo USB via control.sock + persistencia em settings.json. */
+void set_usb_mode(Launcher &app, const char *mode)
+{
+    std::string upper = std::strcmp(mode, "mass") == 0 ? "MASS" : "MTP";
+
+    giochi_strlcpy(app.settings.usb_mode, mode, sizeof(app.settings.usb_mode));
+
+    char err[128] = {0};
+    if (giochi_settings_save(&app.settings, app.options.user_dir.c_str(), err,
+                             sizeof(err)) != 0) {
+        GLOG_WARN("settings.json: nao foi possivel gravar usb_mode (%s)", err);
+    }
+    control_command(app, (std::string("USB_MODE ") + upper).c_str());
+}
+
+
 void set_hint(Launcher &app)
 {
     const char *tab = giochi_layout_tab_id(&app.layout, app.current_tab);
@@ -270,6 +286,13 @@ void handle_action(Launcher &app, giochi::Action action)
 
             if (std::strcmp(item, "Desligar") == 0) {
                 control_command(app, "POWEROFF");
+            } else if (std::strcmp(item, "Sistema") == 0) {
+                /* Alterna MTP <-> Mass Storage (secao 4.9.3, item Sistema).
+                 * A rede USB (SSH em 10.55.0.1) continua ativa nos dois. */
+                const char *next = std::strcmp(app.settings.usb_mode, "mtp") == 0
+                                       ? "mass" : "mtp";
+
+                set_usb_mode(app, next);
             }
         } else if (std::strcmp(giochi_layout_tab_id(&app.layout,
                                                     app.current_tab),

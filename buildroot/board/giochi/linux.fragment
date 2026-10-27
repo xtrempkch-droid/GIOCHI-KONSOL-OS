@@ -58,6 +58,17 @@ CONFIG_USB_CONFIGFS_F_MTP=y
 CONFIG_USB_CONFIGFS_F_MASS_STORAGE=y
 CONFIG_USB_F_MTP=y
 CONFIG_USB_F_MASS_STORAGE=y
+# MTP real: f_mtp do kernel e apenas o wrapper; o protocolo MTP roda no
+# userspace (umtprd) sobre FunctionFS. Sem F_FS o MTP nao funciona.
+CONFIG_USB_FUNCTIONFS=y
+CONFIG_USB_F_FS=y
+CONFIG_USB_CONFIGFS_F_FS=y
+CONFIG_USB_CONFIGFS_ECM=y
+CONFIG_USB_CONFIGFS_ECM_SUBSET=y
+CONFIG_USB_CONFIGFS_RNDIS=y
+CONFIG_USB_F_ECM=y
+CONFIG_USB_F_RNDIS=y
+CONFIG_USB_CONFIGFS_ACM=y
 
 # --- graficos (ADR-04/05/06) ------------------------------------------
 CONFIG_DRM=y

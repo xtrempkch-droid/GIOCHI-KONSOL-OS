@@ -1,0 +1,96 @@
+#!/bin/sh
+# Giochi Konsol OS v1.2 — ciclo de vida do umtprd (MTP).
+#
+# Uso: giochi-mtpd start|stop|status|restart
+#
+# Pre-condicoes para 'start':
+#   - gadget configfs criado e anexado ao UDC (giochi-usb-mode)
+#   - FunctionFS montado em /dev/ffs-mtp (feito por giochi-usb-mode)
+#
+# O daemon NAO e supervisionado pelo giochi-init de proposito: ele depende do
+# gadget, que muda de modo em runtime (MTP <-> Mass Storage). Se ele morrer,
+# 'giochi-usb-mode mtp' o relanca.
+set -u
+
+CONF=${MTPD_CONF:-/etc/umtprd.conf}
+PIDFILE=${MTPD_PIDFILE:-/run/giochi/umtprd.pid}
+FFS_DIR=${FFS_DIR:-/dev/ffs-mtp}
+BIN=${MTPD_BIN:-/usr/sbin/umtprd}
+LOG=${MTPD_LOG:-/run/giochi/umtprd.log}
+
+log() { logger -t giochi-mtpd -- "$*" 2>/dev/null || echo "giochi-mtpd: $*" >&2; }
+
+running_pid() {
+    [ -f "$PIDFILE" ] || return 1
+    pid=$(cat "$PIDFILE" 2>/dev/null) || return 1
+    [ -n "${pid:-}" ] || return 1
+    kill -0 "$pid" 2>/dev/null || return 1
+    echo "$pid"
+}
+
+do_start() {
+    if pid=$(running_pid); then
+        log "ja em execucao (pid $pid)"
+        return 0
+    fi
+
+    [ -x "$BIN" ] || { log "binario ausente: $BIN"; return 1; }
+    [ -c "$FFS_DIR/ep0" ] || {
+        log "FunctionFS nao montado em $FFS_DIR (gadget fora do modo MTP?)"
+        return 1
+    }
+
+    mkdir -p "$(dirname "$PIDFILE")" 2>/dev/null || true
+    "$BIN" -c "$CONF" >>"$LOG" 2>&1 &
+    pid=$!
+    echo "$pid" > "$PIDFILE"
+
+    # Espera o ep0 abrir de fato (o responder falha rapido se nao abrir).
+    i=0
+    while [ "$i" -lt 20 ]; do
+        kill -0 "$pid" 2>/dev/null || {
+            log "umtprd terminou ao iniciar (ver $LOG)"
+            rm -f "$PIDFILE"
+            return 1
+        }
+        [ "$i" -ge 3 ] && break
+        sleep 0.1
+        i=$((i + 1))
+    done
+    log "iniciado (pid $pid, storage em $CONF)"
+    return 0
+}
+
+do_stop() {
+    pid=$(running_pid) || { rm -f "$PIDFILE"; return 0; }
+
+    kill "$pid" 2>/dev/null
+    i=0
+    while [ "$i" -lt 30 ]; do
+        kill -0 "$pid" 2>/dev/null || break
+        sleep 0.1
+        i=$((i + 1))
+    done
+    kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null
+    rm -f "$PIDFILE"
+    log "parado (pid $pid)"
+    return 0
+}
+
+case "${1:-status}" in
+    start)   do_start ;;
+    stop)    do_stop ;;
+    restart) do_stop; do_start ;;
+    status)
+        if pid=$(running_pid); then
+            echo "running $pid"
+        else
+            echo "stopped"
+            exit 1
+        fi
+        ;;
+    *)
+        echo "uso: $0 start|stop|restart|status" >&2
+        exit 2
+        ;;
+esac

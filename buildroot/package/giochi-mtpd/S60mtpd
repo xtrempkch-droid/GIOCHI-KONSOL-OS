@@ -1,0 +1,31 @@
+#!/bin/sh
+# Giochi Konsol OS v1.2 — S60mtpd (secao 4.6).
+# Sobe o responder MTP se o gadget estiver em modo MTP. Roda depois de
+# S50usb (gadget) e S55usbnet (rede), conforme /etc/inittab -> rcS.
+set -u
+
+TAG=S60mtpd
+log() { logger -t "$TAG" -- "$*" 2>/dev/null || echo "$TAG: $*" >&2; }
+
+# Aparelho sem USB funcional (X35S/X35H, F12): nada a fazer.
+[ -f /etc/giochi/usb_gadget_disabled ] && {
+    log "gadget indisponivel neste aparelho"; exit 0; }
+
+[ -x /usr/sbin/giochi-mtpd ] || { log "giochi-mtpd ausente"; exit 0; }
+
+mode=mtp
+if [ -f /run/giochi/usb_mode ]; then
+    mode=$(tr -d '[:space:]' < /run/giochi/usb_mode)
+fi
+
+if [ "$mode" != "mtp" ]; then
+    log "modo atual '$mode': MTP nao iniciado"
+    exit 0
+fi
+
+if /usr/sbin/giochi-mtpd start; then
+    log "MTP ativo"
+else
+    log "aviso: MTP nao iniciou (FunctionFS ausente?); USB segue como rede"
+fi
+exit 0

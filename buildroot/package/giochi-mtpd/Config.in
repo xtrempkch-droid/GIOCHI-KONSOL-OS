@@ -1,0 +1,22 @@
+config BR2_PACKAGE_GIOCHI_MTPD
+	bool "giochi-mtpd (uMTP-Responder)"
+	depends on BR2_USE_MMU
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	help
+	  Daemon MTP do Giochi Konsol OS (secao 4.6).
+
+	  O f_mtp do kernel e apenas o transporte; o protocolo MTP precisa de
+	  um responder no userspace. Sem este pacote o PC detecta o
+	  dispositivo USB mas nao lista arquivos.
+
+	  Usa uMTP-Responder (umtprd) sobre FunctionFS, leve e sem glib.
+
+if BR2_PACKAGE_GIOCHI_MTPD
+
+config BR2_PACKAGE_GIOCHI_MTPD_STORAGE
+	string "ponto de montagem exposto por MTP"
+	default "/user"
+	help
+	  Diretorio exposto ao PC. O padrao (/user) contem games/, music/,
+	  ports/ e .giochi/, ou seja tudo o que o usuario copia.
+endif

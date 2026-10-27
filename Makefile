@@ -310,7 +310,10 @@ lint:
 	          buildroot/board/giochi/giochi-dongle-hotplug \
 	          buildroot/board/giochi/rootfs_overlay/etc/init.d/rc[SK] \
 	          buildroot/board/giochi/rootfs_overlay/etc/giochi/lib.sh \
-	          tests/integration/lifecycle_test.sh; do \
+	          tests/integration/lifecycle_test.sh \
+	          tests/integration/usbgadget_test.sh \
+	          buildroot/package/giochi-mtpd/giochi-mtpd \
+	          buildroot/package/giochi-mtpd/S60mtpd; do \
 		[ -f "$$f" ] || continue; \
 		sh -n "$$f" || { echo "ERRO de sintaxe: $$f"; exit 1; }; \
 	done; echo "ok"

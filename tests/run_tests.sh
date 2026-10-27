@@ -48,6 +48,18 @@ if command -v python3 >/dev/null 2>&1; then
     fi
 fi
 
+# Gadget USB composto (rede + MTP) contra configfs falso.
+if [ -x "$ROOT/tests/integration/usbgadget_test.sh" ]; then
+    total=$((total + 1))
+    if "$ROOT/tests/integration/usbgadget_test.sh" \
+            "$ROOT/scripts/giochi-usb-mode" >/dev/null 2>&1; then
+        echo "OK     usb-gadget (integracao)"
+    else
+        echo "FALHA  usb-gadget (integracao)"
+        fail=$((fail + 1))
+    fi
+fi
+
 if [ -d "$ROOT/src/forge" ] && command -v python3 >/dev/null 2>&1; then
     total=$((total + 1))
     if PYTHONPATH="$ROOT/src/forge" python3 -m unittest discover \

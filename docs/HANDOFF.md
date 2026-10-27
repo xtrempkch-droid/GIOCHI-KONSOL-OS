@@ -137,7 +137,24 @@ TODO), **doc** (apenas especificação/script).
 - `schemas/metadata.schema.json` (draft-07).
 - TODO: extração do PNG do tar antes do decode; `zstd -1` no metadata.
 
-## S10 — USB gadget — feito (boot e runtime)
+## S10 — USB gadget — feito (boot, runtime, MTP real e SSH)
+
+- **Gadget composto**: `ecm.usb0` (ou `rndis.usb0`) está em **todos** os modos,
+  ao lado de `ffs.mtp` ou `mass_storage.0`. É por ele que se faz SSH.
+- **MTP de verdade**: o `f_mtp` do kernel é só transporte; o protocolo é
+  respondido pelo `umtprd` (pacote `giochi-mtpd`) sobre FunctionFS
+  (`CONFIG_USB_F_FS`). Sem isso o PC via o device e não listava arquivos — era
+  a lacuna funcional do USB.
+- **SSH via USB**: `usb0` = `10.55.0.1/24`, `udhcpd` entrega `10.55.0.2`,
+  `dropbear` escuta **somente** nesse IP. Chave em
+  `/user/ssh/authorized_keys`; senha só em imagem de teste
+  (`GIOCHI_TEST_PASSWORD=1`).
+- `USB_MODE` em runtime reaplica rede + MTP; o modo é persistido pelo Launcher
+  em `settings.json` (o `settings.json` é propriedade dele, §4.9.5).
+- Teste: `tests/integration/usbgadget_test.sh` valida o configfs gerado
+  (rede sempre presente, ffs no modo MTP, mass no modo MASS, `off` desanexa).
+
+## S10b — USB gadget (histórico)
 
 - `scripts/giochi-usb-mode <mtp|mass|off>`: desanexa UDC, limpa links/funções,
   recria a identificação (serial de `/user/.giochi/serial`), vincula a função e
@@ -204,7 +221,7 @@ TODO), **doc** (apenas especificação/script).
 
 1. `giochi-launcher`: desenho real dos widgets e medição de VRAM.
 2. `giochi-musicd`: decodificação PCM (mpg123/FLAC/vorbis) → ALSA `dmix`.
-3. Daemon MTP de userland (Partição C via `f_mtp`); o gadget já está pronto.
+3. ~~Daemon MTP de userland~~ — feito (`giochi-mtpd`/umtprd).
 4. `S05update`: nome final da variável de env do U-Boot para o flip de slot.
    Update remoto (Wi-Fi) continua fora: só SD/arquivo, como na §4.3.
 5. `giochi-thumbgen`: extração de `thumb.png`/`capa.png` do tar (libarchive).

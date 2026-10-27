@@ -13,7 +13,7 @@ que você deve manter em qualquer PR:
 
 ```sh
 make lint     # shell (sh -n), JSON, defconfigs atualizados
-make test     # 12 suítes: unitários C/C++, forge, integração, bootlogo
+make test     # 13 suítes: C/C++, integração (ciclo de vida e gadget), bootlogo, forge
 tools/build-image.sh --check --all
 ```
 

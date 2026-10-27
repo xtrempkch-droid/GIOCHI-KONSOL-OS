@@ -167,6 +167,15 @@ static int handle_command(const char *cmd, char *reply, size_t replysz,
             (void)snprintf(reply, replysz, "ERR usb_mode_failed");
             return -1;
         }
+        /* A rede USB e recriada junto com o gadget: reaplica IP/DHCP e o
+         * responder MTP. Best-effort — o modo ja foi trocado. */
+        {
+            const char *net[] = { "/etc/init.d/S55usbnet", "start", NULL };
+            const char *mtp[] = { "/etc/init.d/S60mtpd", "start", NULL };
+
+            (void)giochi_run(net);
+            (void)giochi_run(mtp);
+        }
         (void)snprintf(reply, replysz, "OK usb_mode %s", arg);
         return 0;
     }

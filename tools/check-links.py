@@ -13,6 +13,7 @@ FILES = [
     "CHANGELOG.md",
     "docs/BUILD.md",
     "docs/DEVICES.md",
+    "docs/USB.md",
     "docs/BOOTSPLASH.md",
     "docs/HANDOFF.md",
     "docs/QA-CHECKLIST.md",

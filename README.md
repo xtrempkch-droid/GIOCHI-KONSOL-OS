@@ -30,7 +30,7 @@ armazenamento em microSD (single ou dual slot). Rede e Bluetooth são
 | `.giochi`: pack, extract (ustar embutido), thumbgen | ✅ pack/extract, 🟡 thumbnails | [tools/](tools/) |
 | Update A/B com Ed25519 + SHA-256 | ✅ funcional (verificado ponta a ponta) | [tools/giochi-verify.c](tools/giochi-verify.c) |
 | `giochi-forge`: detecção, classificação, assinatura | ✅ funcional | [src/forge](src/forge) |
-| USB gadget MTP / Mass Storage | 🟡 configfs pronto, daemon MTP pendente | [scripts/giochi-usb-mode](scripts/giochi-usb-mode) |
+| USB: MTP + rede/SSH + Mass Storage (gadget composto) | ✅ funcional | [scripts/giochi-usb-mode](scripts/giochi-usb-mode), [docs/USB.md](docs/USB.md) |
 | Dongles USB Wi-Fi/BT | ✅ hotplug e scripts, 🟡 UI de rede | [scripts/init.d/S40dongle](scripts/init.d/S40dongle) |
 
 ## Aparelhos
@@ -56,7 +56,7 @@ elas o código usa os stubs previstos na especificação.
 
 ```sh
 make            # build/host/bin/{giochi-init,giochi-musicd,giochi-launcher,...}
-make test       # 12 suítes: C, C++, integração e assets
+make test       # 13 suítes: C, C++, integração, USB e assets
 make lint       # shell, JSON, defconfigs e links
 make bootlogo   # regenera o splash a partir de docs/logo.jpg (precisa de PIL)
 ```
@@ -79,6 +79,17 @@ ou Balena Etcher. O cartão sai com A/B (SquashFS), partição `/user` (ext4) e
 > (`GIOCHI_UBOOT_BIN=... tools/build-image.sh x55`). Detalhes em
 > [docs/DEVICES.md](docs/DEVICES.md#bootloader-mainline-não-cobre-estes-aparelhos).
 
+### Inspecionar o aparelho por USB
+
+O console expõe rede no mesmo gadget do MTP, em todos os modos:
+
+```sh
+ssh root@10.55.0.1        # PC recebe 10.55.0.2 por DHCP
+```
+
+Chave pública em `/user/ssh/authorized_keys`; senha apenas em imagem de teste
+(`GIOCHI_TEST_PASSWORD=1`). Detalhes em [docs/USB.md](docs/USB.md).
+
 ## Como funciona
 
 ```
@@ -86,6 +97,7 @@ BootROM → U-Boot (A/B + bootcount) → kernel 6.12 → BusyBox init (/etc/init
         → giochi-init (supervisor) → Gamescope (DRM/KMS) → giochi-launcher
                                         ↘ jogo / app externo
                                         ↘ giochi-musicd (persistente)
+                                        ↘ umtprd (MTP) + usb0 (SSH)
 ```
 
 - **Supervisor** (`giochi-init`): dono do Launcher, jogos, apps e daemons.
@@ -129,6 +141,7 @@ docs/           arquitetura, hardware, build, aparelhos, QA, handoff
 | [docs/architecture-v1.1.md](docs/architecture-v1.1.md) | versão anterior, para histórico |
 | [docs/hardware-e-drivers.md](docs/hardware-e-drivers.md) | hardware de teste, GPIO, DTS, correções (F1–F12) |
 | [docs/DEVICES.md](docs/DEVICES.md) | aparelhos, DTS, geração de imagem |
+| [docs/USB.md](docs/USB.md) | MTP, Mass Storage e **SSH via USB** (10.55.0.1) |
 | [docs/BOOTSPLASH.md](docs/BOOTSPLASH.md) | logo/bootsplash: assets, Launcher e ativação do U-Boot |
 | [docs/BUILD.md](docs/BUILD.md) | buildroot, kernel, cross-compile, assinatura |
 | [docs/QA-CHECKLIST.md](docs/QA-CHECKLIST.md) | checklist por camada e matriz de testes |

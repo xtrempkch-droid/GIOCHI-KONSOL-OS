@@ -89,6 +89,13 @@ indicado "host". Referências: [architecture-v1.2.md](./architecture-v1.2.md) §
 | U4 | Modo inválido | `USB_MODE XYZ` → `ERR invalid_mode` |
 | U5 | Troca em runtime reanexa | `echo MASS` → `ls /sys/kernel/config/usb_gadget/giochi/UDC` | preenchido após a troca |
 | U6 | Sem UDC (X35S/X35H) | log `nenhum UDC` e sistema segue | não fatal |
+| U7 | MTP lista arquivos | PC abre "Giochi" e vê `games/`, `music/` | lista `/user` |
+| U8 | Rede no mesmo gadget | `ip addr` no PC mostra `10.55.0.2/24` | DHCP ok |
+| U9 | SSH por chave | `ssh root@10.55.0.1` com chave em `/user/ssh/authorized_keys` | login |
+| U10 | SSH não escuta fora do USB | `netstat -ltn \| grep :22` no console | só `10.55.0.1:22` |
+| U11 | Sem chave/senha | não sobe dropbear (padrão seguro) | log explicativo |
+| U12 | Troca MTP→MASS | `pidof umtprd` some; `usb0` continua | rede permanece |
+| U13 | Mass Storage desmonta /user | `mountpoint /user` = falso durante MASS | exigência do kernel |
 
 ## Dongles (S11)
 

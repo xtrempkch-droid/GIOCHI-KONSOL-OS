@@ -13,7 +13,7 @@
 ## Como foi validado
 
 - [ ] `make lint`
-- [ ] `make test` (12 suítes)
+- [ ] `make test` (13 suítes)
 - [ ] `tools/build-image.sh --check --all --fallback-dts`
 - [ ] Build de imagem real: aparelho `______`
 - [ ] Teste em hardware: aparelho `______` (diga o que funcionou)
