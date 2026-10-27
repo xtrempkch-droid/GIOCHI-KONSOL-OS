@@ -1,12 +1,14 @@
 # build
+#
+# Objetos intermediarios (.o/.d/.a) vivem em build/ e output/, ja ignorados
+# abaixo. NAO use padroes soltos como *.d aqui: o glob do git tambem casa com
+# DIRETORIOS, entao *.d engolia scripts/init.d/ e
+# buildroot/board/giochi/rootfs_overlay/etc/init.d/ — o checkout do CI ficava
+# sem a sequencia de boot inteira. tools/check-tracked.sh protege essa regra.
 build/
 output/
 dist/
 .cache/
-*.o
-*.d
-*.a
-*.so
 
 # artefatos de pacote/assinatura
 *.giochi

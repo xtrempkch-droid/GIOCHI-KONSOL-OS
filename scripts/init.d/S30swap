@@ -1,0 +1,192 @@
+#!/bin/sh
+# Giochi Konsol OS v1.2 — S30swap (secoes 3.1 e 3.2).
+#
+# Camada 3.1 (zRAM):
+#   - 512 MB em sistemas de 1 GB; 1 GB em sistemas de 2 GB.
+#   - LZ4 (mandatorio no RK3326); ZSTD aceitavel no RK3566.
+#   - swapon -p 100 (zRAM) e -p 10 (swapfile em SD).
+#   - vm.swappiness=100 e GLOBAL; a priorizacao e so por -p.
+#
+# Camada 3.2 (Parallel RAID Swap, opcional — Modo A do Slot 2):
+#   - Só ativa com SWAP_MODE=A (Slot 2 dedicado a swap).
+#   - Swapfile 256 MB (min) / 512 MB (recomendado em 2 GB).
+#   - Validacao por throughput RANDOM 4K (nao sequencial 1M).
+#   - Diferenca aceitavel entre os dois slots: <= 10%.
+#
+# Requer BusyBox (dd, awk, df, date); NAO usa bc — toda aritmetica em awk.
+set -u
+
+TAG=S30swap
+SWAP_MODE=${SWAP_MODE:-B}
+ZRAM_LZ4=${ZRAM_LZ4:-1}
+SETTINGS=${SETTINGS:-/user/settings.json}
+
+# POSIX: '.' que falha ABORTA shells nao-interativos (o '|| true' nao
+# protege). Sem o lib.sh o script segue com os defaults propria.
+if [ -r /etc/giochi/lib.sh ]; then
+    . /etc/giochi/lib.sh
+fi
+
+log() { logger -t "$TAG" -- "$*" 2>/dev/null || echo "$TAG: $*" >&2; }
+
+# --- 3.1 zRAM -------------------------------------------------------------
+setup_zram() {
+    modprobe zram 2>/dev/null || { log "aviso: modulo zram indisponivel"; return 0; }
+    [ -e /sys/block/zram0/disksize ] || return 0
+
+    mem_kb=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
+    # 512 MB para <= 1.5 GB; 1 GB acima disso (spec 3.1).
+    if [ "$((mem_kb / 1024))" -le 1536 ]; then
+        size_mb=512
+    else
+        size_mb=1024
+    fi
+
+    if [ "$ZRAM_LZ4" = "1" ]; then
+        echo lz4 > /sys/block/zram0/comp_algorithm 2>/dev/null || \
+            log "aviso: LZ4 indisponivel no zram (usando default)"
+    fi
+
+    # Reset defensivo: zramctl/echo 1 > reset antes de redimensionar.
+    [ -e /sys/block/zram0/reset ] && echo 1 > /sys/block/zram0/reset 2>/dev/null
+    echo "$((size_mb * 1024 * 1024))" > /sys/block/zram0/disksize 2>/dev/null || {
+        log "ERRO: nao foi possivel definir disksize"; return 1; }
+
+    mkswap /dev/zram0 >/dev/null 2>&1 || { log "ERRO: mkswap zram"; return 1; }
+    swapon -p 100 /dev/zram0 2>/dev/null || { log "ERRO: swapon zram"; return 1; }
+    log "zram0 ${size_mb} MB, prioridade 100"
+}
+
+# swappiness e global (3.1): nao e o mecanismo de priorizacao.
+set_swappiness() {
+    if [ -w /proc/sys/vm/swappiness ]; then
+        echo 100 > /proc/sys/vm/swappiness 2>/dev/null && \
+            log "vm.swappiness=100" || log "aviso: swappiness nao ajustado"
+    fi
+}
+
+# --- 3.2 RAID swap -------------------------------------------------------
+SWAP_SIZE_MB=${SWAP_SIZE_MB:-}
+SD1=${SD1:-/user}
+SD2=${SD2:-}
+
+[ -n "$SD2" ] || SD2=$(giochi_slot2_mount 2>/dev/null)
+
+size_for_ram() {
+    mem_mb=$(awk '/MemTotal/ {print int($2 / 1024)}' /proc/meminfo)
+    if [ -n "$SWAP_SIZE_MB" ]; then
+        echo "$SWAP_SIZE_MB"
+    elif [ "$mem_mb" -ge 1900 ]; then
+        echo 512          # recomendado em 2 GB
+    else
+        echo 256          # minimo
+    fi
+}
+
+swap_ok() {
+    _mnt=$1
+    [ -n "${_mnt:-}" ] && [ -d "$_mnt" ] || return 1
+    _free=$(df -m "$_mnt" | awk 'NR==2 {print $4}')
+    [ "${_free:-0}" -ge $((swap_size + 50)) ] || return 1
+    return 0
+}
+
+# Throughput random 4K (representativo de swap), em ms.
+bench() {
+    _mnt=$1
+    _start=$(date +%s%N)
+    _i=0
+    while [ "$_i" -lt 50 ]; do
+        dd if=/dev/urandom of="$_mnt/.bench" bs=4k count=1 conv=fsync 2>/dev/null
+        _i=$((_i + 1))
+    done
+    _end=$(date +%s%N)
+    rm -f "$_mnt/.bench"
+    echo $(( (_end - _start) / 1000000 ))
+}
+
+create_swapfile() {
+    _mnt=$1
+    _file="$_mnt/swapfile"
+
+    if [ -f "$_file" ]; then
+        _cur=$(awk '/SwapTotal/ {print $2}' /proc/meminfo)
+        log "swapfile existente em $_mnt"
+        return 0
+    fi
+    log "criando swapfile de ${swap_size} MB em $_mnt"
+    dd if=/dev/urandom of="$_file" bs=1M count="$swap_size" 2>/dev/null || {
+        log "ERRO: dd falhou em $_mnt"; return 1; }
+    chmod 600 "$_file"
+    mkswap "$_file" >/dev/null 2>&1 || { log "ERRO: mkswap em $_mnt"; return 1; }
+    return 0
+}
+
+raid_swap() {
+    swap_size=$(size_for_ram)
+
+    sd1_ok=1; sd2_ok=1
+    swap_ok "$SD1" || sd1_ok=0
+    swap_ok "${SD2:-}" || sd2_ok=0
+
+    [ "$sd1_ok" = "0" ] && log "SKIP: $SD1 ausente ou sem espaco"
+    [ "$sd2_ok" = "0" ] && log "SKIP: ${SD2:-<slot 2>} ausente ou sem espaco"
+    if [ "$sd1_ok" = "0" ] && [ "$sd2_ok" = "0" ]; then
+        log "RAID swap indisponivel; apenas zRAM ativo"
+        return 0
+    fi
+
+    create_swapfile "$SD1" 2>/dev/null || sd1_ok=0
+    [ -n "${SD2:-}" ] && { create_swapfile "$SD2" 2>/dev/null || sd2_ok=0; }
+
+    # Um unico slot: swap simples, sem benchmark.
+    if [ "$sd1_ok" = "0" ] || [ "$sd2_ok" = "0" ]; then
+        one=${SD1}; [ "$sd1_ok" = "0" ] && one=$SD2
+        [ -n "${one:-}" ] && swapon -p 10 "$one/swapfile" 2>/dev/null && \
+            log "swap single em $one (prioridade 10)"
+        return 0
+    fi
+
+    t1=$(bench "$SD1" 2>/dev/null || echo 999999)
+    t2=$(bench "$SD2" 2>/dev/null || echo 999999)
+
+    diff_pct=$(awk -v a="$t1" -v b="$t2" 'BEGIN {
+        if (a <= 0 || b <= 0) { print 100; exit }
+        d = (a > b) ? (a - b) / a : (b - a) / b
+        printf "%.2f", d * 100
+    }')
+
+    if awk -v d="$diff_pct" 'BEGIN { exit !(d <= 10.0) }'; then
+        log "RAID swap ativado (diferenca ${diff_pct}%; ${t1} ms x ${t2} ms)"
+        swapon -p 10 "$SD1/swapfile" 2>/dev/null || log "aviso: swapon $SD1"
+        swapon -p 10 "$SD2/swapfile" 2>/dev/null || log "aviso: swapon $SD2"
+    else
+        log "swap single (diferenca ${diff_pct}% > 10%)"
+        if [ "$t1" -le "$t2" ]; then
+            swapon -p 10 "$SD1/swapfile" 2>/dev/null || log "aviso: swapon $SD1"
+        else
+            swapon -p 10 "$SD2/swapfile" 2>/dev/null || log "aviso: swapon $SD2"
+        fi
+    fi
+}
+
+# --- main ---------------------------------------------------------------
+setup_zram
+set_swappiness
+
+if [ "$SWAP_MODE" != "A" ]; then
+    log "SWAP_MODE=$SWAP_MODE: RAID swap (slot 2) desativado"
+    log "swap ativo:"; cat /proc/swaps 2>/dev/null || true
+    exit 0
+fi
+
+# 3.2: Modo A exige habilitacao explicita. A UI de Configuracoes (4.9.3) ainda
+# nao expoe o item; o marcador e escrito pelo S10storage ao detectar o slot.
+if [ -f /run/giochi/swap_enabled ] && \
+   [ "$(cat /run/giochi/swap_enabled 2>/dev/null)" = "0" ]; then
+    log "RAID swap desabilitado pelo usuario (swap_enabled=0)"
+    exit 0
+fi
+
+raid_swap
+log "swap ativo:"; cat /proc/swaps 2>/dev/null || true

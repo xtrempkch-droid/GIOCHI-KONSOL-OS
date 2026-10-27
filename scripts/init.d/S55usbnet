@@ -1,0 +1,69 @@
+#!/bin/sh
+# Giochi Konsol OS v1.2 — S55usbnet (adendo 4.6.1: SSH via USB).
+#
+# Modo Desenvolvedor: DESATIVADO por padrao. Com developer.ssh_usb_enabled
+# = false este script sai imediatamente — nenhum processo fica em memoria
+# (orcamento do adendo: 0 MB em repouso).
+#
+# Quando ativo:
+#   console/usb0 = 10.55.0.2/24   (adendo 4.6.1)
+#   PC           = 10.55.0.1/24   (estatico no PC; NAO ha DHCP no console)
+set -u
+
+TAG=S55usbnet
+IFACE=${USB_NET_IFACE:-usb0}
+CONSOLE_IP=${USB_NET_IP:-10.55.0.2}
+PREFIX=${USB_NET_PREFIX:-24}
+SETTINGS=${SETTINGS:-/user/settings.json}
+
+# POSIX: '.' que falha ABORTA shells nao-interativos (o '|| true' nao
+# protege). Sem o lib.sh o script segue com os defaults propria.
+if [ -r /etc/giochi/lib.sh ]; then
+    . /etc/giochi/lib.sh
+fi
+
+log() { logger -t "$TAG" -- "$*" 2>/dev/null || echo "$TAG: $*" >&2; }
+
+[ -f /etc/giochi/usb_gadget_disabled ] && exit 0
+
+# --- gate do Modo Desenvolvedor (adendo 4.6.1) --------------------------
+dev_enabled=0
+if [ -f "$SETTINGS" ]; then
+    if command -v jq >/dev/null 2>&1; then
+        [ "$(jq -r '.developer.ssh_usb_enabled // false' "$SETTINGS" 2>/dev/null)" = "true" ] && dev_enabled=1
+    else
+        sed -n 's/.*"ssh_usb_enabled"[[:space:]]*:[[:space:]]*true.*/1/p' \
+            "$SETTINGS" 2>/dev/null | grep -q 1 && dev_enabled=1
+    fi
+fi
+
+if [ "$dev_enabled" != "1" ]; then
+    # Desliga o que uma sessao anterior possa ter deixado (adendo: o estado
+    # desativado nao pode manter endereco nem daemon).
+    /etc/init.d/S62sshd stop 2>/dev/null
+    if ip addr show dev "$IFACE" 2>/dev/null | grep -q "inet $CONSOLE_IP/"; then
+        ip addr del "$CONSOLE_IP/$PREFIX" dev "$IFACE" 2>/dev/null
+    fi
+    exit 0
+fi
+
+# A interface so existe depois do bind no UDC: espera ate 3 s (secao 1.4).
+if ! giochi_wait_for "/sys/class/net/$IFACE" 30 2>/dev/null; then
+    log "aviso: $IFACE nao apareceu; rede USB indisponivel"
+    exit 0
+fi
+
+if ! ip addr show dev "$IFACE" 2>/dev/null | grep -q "inet $CONSOLE_IP/"; then
+    ip addr add "$CONSOLE_IP/$PREFIX" dev "$IFACE" 2>/dev/null || {
+        log "ERRO: falha ao configurar $IFACE"; exit 1; }
+fi
+ip link set "$IFACE" up 2>/dev/null || log "aviso: ip link up falhou"
+
+# rp_filter pode descartar pacotes assimetricos da rede USB.
+for f in /proc/sys/net/ipv4/conf/"$IFACE"/rp_filter \
+         /proc/sys/net/ipv4/conf/all/rp_filter; do
+    [ -w "$f" ] && echo 2 > "$f" 2>/dev/null
+done
+
+log "Modo Desenvolvedor: $IFACE = $CONSOLE_IP/$PREFIX (PC: 10.55.0.1/24)"
+exit 0

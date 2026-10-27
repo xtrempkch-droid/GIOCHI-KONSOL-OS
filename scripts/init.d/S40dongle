@@ -1,0 +1,76 @@
+#!/bin/sh
+# Giochi Konsol OS v1.2 — S40dongle (ADR-14 / secao 1.4 / 4.11).
+# Dongles USB sao opcionais: nada aqui e obrigatorio para o boot.
+set -u
+
+TAG=S40dongle
+SETTINGS=${SETTINGS:-/user/settings.json}
+MDEV_CONF=${MDEV_CONF:-/etc/mdev.conf}
+
+log() { logger -t "$TAG" -- "$*" 2>/dev/null || echo "$TAG: $*" >&2; }
+
+# (a) modulos presentes na SquashFS, mas NAO carregados no boot.
+for mod in 8188eu rtl8192cu 8812au mt7601u ath9k_htc btusb; do
+    [ -d "/sys/module/$mod" ] && continue
+    modprobe -n "$mod" >/dev/null 2>&1 || log "aviso: modulo $mod ausente"
+done
+
+# (b) regra de VID:PID -> modulo. mdev chama este script com ACTION=add.
+DONGLE_TABLE="
+0bda:8179:8188eu
+0bda:8176:rtl8192cu
+0bda:8812:8812au
+0bda:881a:8812au
+0b50:7601:mt7601u
+0cf3:9271:ath9k_htc
+0a12:0001:btusb
+0bda:8771:btusb
+0a5c:21e8:btusb
+"
+
+dongle_modprobe() {
+    vidpid=$(echo "$1" | tr 'A-Z' 'a-z')
+    for entry in $DONGLE_TABLE; do
+        case "$entry" in
+            "$vidpid":*) modprobe "${entry##*:}" 2>/dev/null \
+                             || log "falha ao carregar ${entry##*:}"; return 0 ;;
+        esac
+    done
+    log "dongle $vidpid nao reconhecido (ignorado)"
+}
+
+# Bloco sugerido para /etc/mdev.conf (ver buildroot/board/giochi/mdev.conf):
+#   (usb[0-9]+/.*)  root:root 660  * /usr/sbin/giochi-dongle-hotplug $ACTION $DEVPATH
+if [ "${ACTION:-}" = "add" ] && [ -n "${DEVPATH:-}" ]; then
+    vidpid=$(cat "/sys${DEVPATH}/idVendor" 2>/dev/null):$(cat "/sys${DEVPATH}/idProduct" 2>/dev/null)
+    [ "${vidpid%:*}" != "" ] && dongle_modprobe "$vidpid"
+    exit 0
+fi
+
+# (c/d) interfaces opcionais conforme settings.json.
+wifi_enabled=0
+bt_enabled=0
+if [ -f "$SETTINGS" ] && command -v jq >/dev/null 2>&1; then
+    wifi_enabled=$(jq -r '.network.wifi_enabled // false' "$SETTINGS" 2>/dev/null)
+    bt_enabled=$(jq -r '.network.bluetooth_enabled // false' "$SETTINGS" 2>/dev/null)
+fi
+
+if [ -e /sys/class/net/wlan0 ]; then
+    log "wlan0 detectado"
+    if [ "$wifi_enabled" = "true" ]; then
+        wpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant.conf >/dev/null 2>&1 \
+            || log "aviso: wpa_supplicant falhou"
+        udhcpc -i wlan0 -q -n -t 3 >/dev/null 2>&1 || log "aviso: udhcpc falhou"
+    fi
+else
+    log "nenhum adaptador Wi-Fi (custo zero)"
+fi
+
+if [ -e /sys/class/bluetooth/hci0 ]; then
+    log "hci0 detectado"
+    if [ "$bt_enabled" = "true" ]; then
+        bluetoothd -n >/dev/null 2>&1 &
+    fi
+else
+    log "nenhum adaptador Bluetooth (custo zero)"
+fi

@@ -1,0 +1,54 @@
+#!/bin/sh
+# Giochi Konsol OS v1.2 — S05update (ADR-12 / secao 4.3).
+# Aplica giochi_update.img da particao C no slot INATIVO, apos verificar
+# assinatura Ed25519 + SHA-256. Assinatura invalida nao consome o arquivo.
+set -u
+
+# POSIX: '.' que falha ABORTA shells nao-interativos (o '|| true' nao
+# protege). Sem o lib.sh o script segue com os defaults propria.
+if [ -r /etc/giochi/lib.sh ]; then
+    . /etc/giochi/lib.sh
+fi
+
+UPDATE_IMG=${UPDATE_IMG:-/user/giochi_update.img}
+MANIFEST=${MANIFEST:-/user/giochi_update.manifest.json}
+SIG=${SIG:-/user/giochi_update.sig}
+PUBKEY=${PUBKEY:-/etc/giochi/pubkey.ed25519}
+VERIFY=${VERIFY:-/usr/bin/giochi-verify}
+# Layout (secao 1.3): p2 = B1, p3 = B2. O numero do disco NAO e fixo: nos
+# aparelhos de referencia o SD e mmcblk1 (hardware-e-drivers.md §2).
+active_slot=$(giochi_active_slot)
+[ -n "${active_slot:-}" ] || active_slot=2
+default_inactive=$(giochi_inactive_part)
+[ -n "${default_inactive:-}" ] || default_inactive=/dev/mmcblk1p3
+INACTIVE_SLOT_BLOCK=${INACTIVE_SLOT_BLOCK:-$default_inactive}
+TAG=S05update
+
+log() { logger -t "$TAG" -- "$*" 2>/dev/null || echo "$TAG: $*" >&2; }
+fail() { log "ERRO: $*"; exit 1; }
+
+[ -f "$UPDATE_IMG" ] || { log "sem imagem de update; nada a fazer"; exit 0; }
+[ -f "$SIG" ] || fail "assinatura ausente ($SIG)"
+[ -f "$PUBKEY" ] || fail "chave publica ausente ($PUBKEY)"
+
+log "verificando assinatura de $UPDATE_IMG"
+if [ -f "$MANIFEST" ]; then
+    "$VERIFY" --image "$UPDATE_IMG" --sig "$SIG" --pubkey "$PUBKEY" \
+              --manifest "$MANIFEST" || fail "imagem recusada (assinatura/SHA-256)"
+else
+    "$VERIFY" --image "$UPDATE_IMG" --sig "$SIG" --pubkey "$PUBKEY" \
+              || fail "imagem recusada (assinatura)"
+fi
+
+log "slot ativo=$active_slot; gravando $INACTIVE_SLOT_BLOCK"
+dd if="$UPDATE_IMG" of="$INACTIVE_SLOT_BLOCK" bs=1M conv=fsync \
+    || fail "falha de escrita no slot inativo"
+
+# TODO(S12): o flip de slot usa fw_setenv; o nome da variavel depende do
+# layout de env do U-Boot (board/giochi/boot.cmd documenta bootcount/altboot).
+fw_setenv giochi_next_slot "$INACTIVE_SLOT_BLOCK" 2>/dev/null \
+    || log "aviso: fw_setenv indisponivel; flip manual necessario"
+
+sync
+rm -f "$UPDATE_IMG" "$SIG" "$MANIFEST"
+log "update aplicado; reinicie para ativar o novo slot"

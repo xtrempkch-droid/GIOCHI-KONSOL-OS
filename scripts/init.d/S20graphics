@@ -1,0 +1,77 @@
+#!/bin/sh
+# Giochi Konsol OS v1.2 — S20graphics (ADR-04/05, S8).
+# Sobe Gamescope com backend DRM puro e executa o Launcher.
+set -u
+
+TAG=S20graphics
+SOC=$(tr -d '\0' </proc/device-tree/compatible 2>/dev/null | tr ',' '\n' | head -n1)
+[ -n "${SOC:-}" ] || SOC=${GIOCHI_SOC:-rk3326}
+
+log() { logger -t "$TAG" -- "$*" 2>/dev/null || echo "$TAG: $*" >&2; }
+
+# Painel/rotacao do aparelho (gerado por post-build.sh).
+DEVICE_CONF=/etc/giochi/device.conf
+PANEL=640x480
+ROTATION=0
+if [ -f "$DEVICE_CONF" ]; then
+    panel=$(sed -n 's/^GIOCHI_PANEL=//p' "$DEVICE_CONF" | head -n1)
+    rotation=$(sed -n 's/^GIOCHI_ROTATION=//p' "$DEVICE_CONF" | head -n1)
+    [ -n "${panel:-}" ] && PANEL=$panel
+    [ -n "${rotation:-}" ] && ROTATION=$rotation
+fi
+
+# A resolucao logica inverte quando o painel esta em 90/270.
+PANEL_W=${PANEL%x*}
+PANEL_H=${PANEL#*x}
+case "$ROTATION" in
+    90|270)
+        GIOCHI_WIDTH=${GIOCHI_WIDTH:-$PANEL_H}
+        GIOCHI_HEIGHT=${GIOCHI_HEIGHT:-$PANEL_W}
+        ;;
+    *)
+        GIOCHI_WIDTH=${GIOCHI_WIDTH:-$PANEL_W}
+        GIOCHI_HEIGHT=${GIOCHI_HEIGHT:-$PANEL_H}
+        ;;
+esac
+export GIOCHI_WIDTH GIOCHI_HEIGHT
+log "painel=$PANEL rotacao=$ROTATION => ${GIOCHI_WIDTH}x${GIOCHI_HEIGHT}"
+
+case "$SOC" in
+    rk3566*)
+        export MESA_LOADER_DRIVER_OVERRIDE=panfrost
+        ;;
+    rk3326*)
+        # Mali-G31 usa Panfrost; Lima fica disponivel para GPUs Utgard.
+        if ! ls /sys/bus/platform/drivers/panfrost >/dev/null 2>&1; then
+            export MESA_LOADER_DRIVER_OVERRIDE=panfrost
+        fi
+        ;;
+    *)
+        log "SoC '$SOC' nao reconhecido; usando defaults do Mesa"
+        ;;
+esac
+
+export GIOCHI_SOC="$SOC"
+
+# S99launcher nao deve subir um segundo supervisor.
+mkdir -p /run/giochi
+: > /run/giochi/launcher.lock 2>/dev/null || true
+
+# Sanidade (S8): modetest deve listar o conector ativo em 640x480@60.
+if command -v modetest >/dev/null 2>&1; then
+    modetest -c >/dev/null 2>&1 || log "aviso: modetest falhou"
+fi
+
+# Gamescope canonico (backend DRM puro, sem XWayland, sem shell):
+#   gamescope --backend drm --fullscreen --embedded \
+#             -W 640 -H 480 -r 60 -- /usr/bin/giochi-init
+# Fallback documentado (S8): sem DRM puro, rodar o Launcher direto no KMS
+# (backend headless) enquanto o suporte a DRM estabiliza.
+if command -v gamescope >/dev/null 2>&1; then
+    exec gamescope --backend drm --fullscreen --embedded \
+         -W "${GIOCHI_WIDTH:-640}" -H "${GIOCHI_HEIGHT:-480}" \
+         -r "${GIOCHI_REFRESH:-60}" -- /usr/bin/giochi-init
+fi
+
+log "gamescope ausente; executando giochi-init direto (fallback S8)"
+exec /usr/bin/giochi-init

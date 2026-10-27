@@ -324,6 +324,8 @@ lint:
 	@sh tools/gen-defconfigs.sh --check
 	@echo "== markdown =="
 	@python3 tools/check-links.py
+	@echo "== arquivos versionados =="
+	@sh tools/check-tracked.sh .
 
 test: $(TEST_BINS)
 	@sh tests/run_tests.sh "$(BIN)"

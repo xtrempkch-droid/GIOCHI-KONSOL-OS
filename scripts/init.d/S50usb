@@ -1,0 +1,50 @@
+#!/bin/sh
+# Giochi Konsol OS v1.2 — S50usb (secao 4.6).
+# Aplica no boot o modo USB persistido em /user/settings.json chamando o
+# mesmo helper usado em runtime por control.sock (USB_MODE), evitando duas
+# implementacoes de configfs divergirem.
+set -u
+
+TAG=S50usb
+SETTINGS=${SETTINGS:-/user/settings.json}
+HELPER=${HELPER:-/usr/sbin/giochi-usb-mode}
+
+# POSIX: '.' que falha ABORTA shells nao-interativos (o '|| true' nao
+# protege). Sem o lib.sh o script segue com os defaults propria.
+if [ -r /etc/giochi/lib.sh ]; then
+    . /etc/giochi/lib.sh
+fi
+
+log() { logger -t "$TAG" -- "$*" 2>/dev/null || echo "$TAG: $*" >&2; }
+
+# Aparelhos sem USB funcional (X35S/X35H, hardware-e-drivers.md F12).
+if [ -f /etc/giochi/usb_gadget_disabled ]; then
+    log "USB gadget indisponivel neste aparelho; nada a configurar"
+    exit 0
+fi
+
+mode=mtp
+if [ -f "$SETTINGS" ]; then
+    if command -v jq >/dev/null 2>&1; then
+        mode=$(jq -r '.system.usb_mode // "mtp"' "$SETTINGS" 2>/dev/null)
+    else
+        mode=$(sed -n 's/.*"usb_mode"[[:space:]]*:[[:space:]]*"\([a-z]*\)".*/\1/p' \
+                    "$SETTINGS" 2>/dev/null | head -n1)
+    fi
+fi
+
+case "$mode" in
+    mass|MASS) mode=mass ;;
+    mtp|MTP)   mode=mtp ;;
+    *)         log "modo '$mode' invalido; usando mtp"; mode=mtp ;;
+esac
+
+[ -x "$HELPER" ] || { log "aviso: $HELPER ausente; gadget nao configurado"; exit 0; }
+
+if "$HELPER" "$mode"; then
+    log "gadget USB configurado em modo $mode"
+else
+    # X35S/X35H nao ancoram (hardware-e-drivers.md F12): nao e fatal.
+    log "aviso: gadget USB indisponivel neste aparelho; seguindo sem USB"
+fi
+exit 0

@@ -49,12 +49,23 @@ if [ -d "$ASSETS_DIR/devices/$GIOCHI_LAYOUT" ]; then
 fi
 
 # --- scripts de init --------------------------------------------------
+# Sem estes scripts a imagem nao inicia: falta de um deles e erro fatal, nao
+# um skip silencioso (foi assim que um .gitignore errado passou despercebido).
 install -d "$TARGET_DIR/etc/init.d"
+missing_init=""
 for s in S05update S10storage S20graphics S30swap S40dongle S50usb \
          S55usbnet S62sshd S99launcher; do
-    [ -f "$SCRIPTS_DIR/$s" ] && install -m 0755 "$SCRIPTS_DIR/$s" \
-        "$TARGET_DIR/etc/init.d/$s"
+    if [ -f "$SCRIPTS_DIR/$s" ]; then
+        install -m 0755 "$SCRIPTS_DIR/$s" "$TARGET_DIR/etc/init.d/$s"
+    else
+        missing_init="$missing_init $s"
+    fi
 done
+if [ -n "$missing_init" ]; then
+    echo "post-build: ERRO scripts de init ausentes:$missing_init" >&2
+    echo "post-build: verifique se scripts/init.d esta versionado" >&2
+    exit 1
+fi
 
 # --- helpers ----------------------------------------------------------
 install -d "$TARGET_DIR/usr/sbin"

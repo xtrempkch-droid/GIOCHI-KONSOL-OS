@@ -1,0 +1,12 @@
+#!/bin/sh
+# Giochi Konsol OS v1.2 — rcS. Executa os scripts S* em ordem.
+set -u
+
+for script in /etc/init.d/S[0-9][0-9]*; do
+    case "$script" in
+        */rcS|*/rcK) continue ;;
+    esac
+    [ -x "$script" ] || continue
+    logger -t rcS -- "start $script" 2>/dev/null || true
+    "$script" start 2>/dev/null || "$script"
+done

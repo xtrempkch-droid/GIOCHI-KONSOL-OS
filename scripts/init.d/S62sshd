@@ -1,0 +1,120 @@
+#!/bin/sh
+# Giochi Konsol OS v1.2 — S62sshd (adendo 4.6.1: SSH via USB).
+#
+# Modo Desenvolvedor: DESATIVADO por padrao. Sobe somente quando
+# developer.ssh_usb_enabled = true em /user/settings.json.
+#
+#   ssh -p 22 root@10.55.0.2        (PC em 10.55.0.1/24)
+#
+# Autenticacao (adendo): senha OU chave.
+#   - chave: /user/ssh/authorized_keys (particao rw)
+#   - senha: root precisa ter senha definida (/etc/giochi/root_password
+#     aplicado no boot, ou 'passwd' pelo console serial)
+# Sem nenhuma das duas, o daemon nao sobe e o motivo vai para o log.
+set -u
+
+TAG=S62sshd
+Iface=${USB_NET_IFACE:-usb0}
+BindAddr=${USB_SSH_BIND:-10.55.0.2}
+Port=${USB_SSH_PORT:-22}
+KeysDir=${USB_SSH_KEYS:-/user/.ssh}
+AuthKeys=${USB_SSH_AUTHKEYS:-/user/ssh/authorized_keys}
+Settings=${SETTINGS:-/user/settings.json}
+PidFile=${USB_SSH_PIDFILE:-/run/giochi/dropbear.pid}
+# /etc/dropbear e um symlink para /user/.ssh/dropbear (post-build.sh): a
+# raiz squashfs e somente leitura, /user nao.
+AuthKeysDir=${USB_SSH_AUTHKEYS_DIR:-/etc/dropbear}
+
+# POSIX: '.' que falha ABORTA shells nao-interativos (o '|| true' nao
+# protege). Sem o lib.sh o script segue com os defaults propria.
+if [ -r /etc/giochi/lib.sh ]; then
+    . /etc/giochi/lib.sh
+fi
+
+log() { logger -t "$TAG" -- "$*" 2>/dev/null || echo "$TAG: $*" >&2; }
+
+[ -f /etc/giochi/usb_gadget_disabled ] && exit 0
+
+dev_enabled=0
+if [ -f "$Settings" ]; then
+    if command -v jq >/dev/null 2>&1; then
+        [ "$(jq -r '.developer.ssh_usb_enabled // false' "$Settings" 2>/dev/null)" = "true" ] && dev_enabled=1
+    else
+        sed -n 's/.*"ssh_usb_enabled"[[:space:]]*:[[:space:]]*true.*/1/p' \
+            "$Settings" 2>/dev/null | grep -q 1 && dev_enabled=1
+    fi
+fi
+
+do_stop() {
+    [ -f "$PidFile" ] || return 0
+    pid=$(cat "$PidFile" 2>/dev/null)
+    [ -n "${pid:-}" ] && kill "$pid" 2>/dev/null
+    rm -f "$PidFile"
+}
+
+if [ "$dev_enabled" != "1" ]; then
+    do_stop
+    exit 0
+fi
+
+command -v dropbear >/dev/null 2>&1 || { log "dropbear ausente"; exit 0; }
+
+giochi_wait_for "/sys/class/net/$Iface" 30 2>/dev/null || {
+    log "aviso: $Iface ausente; sshd nao sobe"
+    exit 0
+}
+
+mkdir -p "$KeysDir" "$(dirname "$AuthKeys")" 2>/dev/null || true
+chmod 700 "$KeysDir" 2>/dev/null || true
+
+# Chaves de host: geradas na primeira vez (particao rw, persistem).
+for key in ed25519 rsa; do
+    [ -f "$KeysDir/dropbear_${key}_host_key" ] || \
+        dropbearkey -t "$key" -f "$KeysDir/dropbear_${key}_host_key" \
+            >/dev/null 2>&1 || log "aviso: falha ao gerar chave $key"
+done
+
+# authorized_keys para onde o dropbear le.
+if [ -f "$AuthKeys" ]; then
+    install -d -m 0700 "$AuthKeysDir" 2>/dev/null || true
+    install -m 0600 "$AuthKeys" "$AuthKeysDir/authorized_keys" 2>/dev/null
+    log "authorized_keys instalada ($(wc -l <"$AuthKeys") chave(s))"
+fi
+
+# Senha de root: aplicada se o arquivo existir (imagem de desenvolvimento).
+if [ -f /etc/giochi/root_password ]; then
+    pass=$(cat /etc/giochi/root_password 2>/dev/null)
+    if [ -n "${pass:-}" ] && echo "root:$pass" | chpasswd 2>/dev/null; then
+        password_ok=1
+        log "autenticacao por senha habilitada (root)"
+    fi
+fi
+: "${password_ok:=0}"
+
+if [ ! -s "$AuthKeysDir/authorized_keys" ] && [ "$password_ok" != "1" ]; then
+    log "Modo Desenvolvedor ativo, mas sem chave e sem senha: SSH nao sobe"
+    log "  chave: /user/ssh/authorized_keys | senha: /etc/giochi/root_password"
+    exit 0
+fi
+
+if pidof dropbear >/dev/null 2>&1; then
+    log "dropbear ja em execucao"
+    exit 0
+fi
+
+mkdir -p "$(dirname "$PidFile")" 2>/dev/null || true
+
+# Escuta SO no endereco da rede USB (adendo 4.6.1).
+set -- -p "$BindAddr:$Port" -P "$PidFile"
+for key in ed25519 rsa; do
+    host_key="$KeysDir/dropbear_${key}_host_key"
+    [ -f "$host_key" ] && set -- "$@" -r "$host_key"
+done
+
+if dropbear "$@" 2>/dev/null; then
+    log "dropbear em $BindAddr:$Port (root)"
+else
+    log "ERRO: dropbear falhou ao iniciar"
+    exit 1
+fi
+exit 0

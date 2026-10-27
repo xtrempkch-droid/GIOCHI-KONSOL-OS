@@ -1,0 +1,12 @@
+#!/bin/sh
+# Giochi Konsol OS v1.2 — S99launcher.
+# Ultimo estagio: se o gamescope nao assumiu (S20graphics), sobe o supervisor.
+set -u
+
+if [ -e /run/giochi/launcher.lock ]; then
+    logger -t S99launcher -- "giochi-init ja em execucao" 2>/dev/null
+    exit 0
+fi
+
+: > /run/giochi/launcher.lock 2>/dev/null || true
+exec /usr/bin/giochi-init

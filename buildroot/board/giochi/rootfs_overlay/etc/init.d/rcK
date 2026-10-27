@@ -1,0 +1,9 @@
+#!/bin/sh
+# Giochi Konsol OS v1.2 — rcK: desmonta e sincroniza no shutdown.
+set -u
+
+sync
+swapoff -a 2>/dev/null || true
+for fs in /user /user2; do
+    mountpoint -q "$fs" && umount "$fs" 2>/dev/null || true
+done
