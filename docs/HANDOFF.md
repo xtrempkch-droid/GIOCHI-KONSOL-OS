@@ -245,6 +245,21 @@ TODO), **doc** (apenas especificação/script).
 - [QA-CHECKLIST.md](./QA-CHECKLIST.md) + matriz de testes.
 - `make test` (host): todas as suítes, incluindo Python.
 
+## Estado do CI (evidência, não suposição)
+
+Última verificação no **runner real** (GitHub Actions), em 2026-10-27:
+
+| Workflow | Commit | Resultado | O que prova |
+|---|---|---|---|
+| **CI** | `eb32b18` | ✅ success | `make lint` (18 .md, âncoras inclusas), build e as 15 suítes |
+| **CI** | `b84b9ef` | ✅ success | correção dos símbolos do defconfig |
+| **Images** (x55) | `b84b9ef` | 🔄 em execução | passou `Validar simbolos dos defconfigs` e `Preflight`; o erro de `BR2_LEGACY` **não ocorre mais** e o build seguiu para os pacotes de host |
+| Images | `b096b8a`, `019b39b` | ❌ failure | histórico: `Makefile.legacy` (corrigido em `b84b9ef`) |
+
+O que isso **ainda não** prova: que a imagem gerada liga no aparelho. Quando o
+run terminar, baixe o artefato, grave e registre aqui o resultado (é o item 1 do
+[roadmap](./roadmap.md)).
+
 ## Roadmap e instruções para agentes
 
 - O que falta, em ordem de risco e com critério de aceite:
