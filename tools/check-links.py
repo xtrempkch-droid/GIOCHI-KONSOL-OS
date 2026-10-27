@@ -19,6 +19,9 @@ FILES = sorted(
 )
 
 LINK = re.compile(r"\]\(([^)\s]+)\)")
+# Imagens/HTML tambem contam: um <img src="..."> quebrado passa despercebido
+# pelo padrao de markdown e quebra a pagina no GitHub.
+HTML_SRC = re.compile(r"<img\s[^>]*src=\"([^\"]+)\"", re.I)
 
 
 def main() -> int:
@@ -30,11 +33,14 @@ def main() -> int:
         checked += 1
         base = os.path.dirname(rel) or "."
         text = open(rel, encoding="utf-8").read()
-        for link in LINK.findall(text):
+        for link in LINK.findall(text) + HTML_SRC.findall(text):
             if link.startswith(("http://", "https://", "mailto:", "#")):
                 continue
             path = link.split("#", 1)[0]
             if not path:
+                continue
+            # Placeholder de exemplo em documentacao ("...", "${VAR}").
+            if path in ("...", "\u2026") or "..." in path or "{" in path:
                 continue
             full = os.path.normpath(os.path.join(base, path))
             if not os.path.exists(full):

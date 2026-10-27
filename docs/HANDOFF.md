@@ -40,6 +40,14 @@ TODO), **doc** (apenas especificação/script).
 
 - `uboot.fragment` (bootcount em env FAT, redundant env, bootcommand).
 - `boot.cmd` (rollback com `bootcount > 3`), `mkbootimg.sh`, `genimage.cfg`.
+- **X55 agora sai com U-Boot mainline**: `powkiddy-x55-rk3566` existe upstream
+  desde a **v2024.07** (pinamos 2024.10) + BL31/DDR do `rkbin`. A doc anterior
+  dizia que não existia defconfig para nenhum aparelho — estava desatualizada.
+  Referência que confirmou isso: `xtrempkch-droid/Walkmam_RK3566` (bring-up dos
+  mesmos aparelhos), que também fixa `rk3568_bl31_v1.43.elf` /
+  `rk3566_ddr_1056MHz_v1.18.bin` e os offsets 32 KiB / 8 MiB.
+- `tools/check-uboot.py` valida defconfig, símbolos do fragmento e os blobs do
+  rkbin por aparelho; roda em `make lint` quando `UBOOT_DIR`/`RKBIN_DIR` existem.
 - Pendência: `S05update` chama `fw_setenv giochi_next_slot` — o nome da variável
   deve ser fixado junto do layout de env real.
 
@@ -202,6 +210,17 @@ TODO), **doc** (apenas especificação/script).
 - Critérios de ativação documentados em
   [architecture-v1.2.md §4.10](./architecture-v1.2.md) — o README deixou de
   ser a especificação; ele só resume e aponta.
+
+## Imagens de documentação — feito
+
+- `tools/make-screenshots.py` (+ `make screenshots`) gera `docs/screenshots/`
+  a partir dos assets reais: tema, layout, regiões e o `bootlogo.rgba`.
+- `docs/SCREENSHOTS.md` deixa explícito que são **renders do layout**, não
+  capturas de hardware — o desenho dos widgets no SDL2 ainda é esboço.
+- `tests/test_screenshots.py` amarra isso: dimensões, cor de fundo vinda do
+  tema, acento presente, letterbox da X55 e splash idêntico ao asset.
+- Quando `render.cpp` ficar completo, o caminho passa a ser captura no aparelho
+  (`fbgrab`/DRM) e substituição dos arquivos.
 
 ## Bootsplash — feito (Launcher ligado) / pré-pronto (U-Boot e kernel)
 

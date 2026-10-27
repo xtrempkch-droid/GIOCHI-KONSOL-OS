@@ -282,6 +282,9 @@ defconfigs:
 
 # Gera assets/bootlogo/{bootlogo.rgba,<aparelho>/splash.bmp} a partir de
 # docs/logo.jpg. Requer Pillow; sem ele, avisa e nao falha o build.
+screenshots:
+	@python3 tools/make-screenshots.py
+
 bootlogo:
 	@python3 tools/make-bootlogo.py || { \
 		rc=$$?; \
@@ -322,12 +325,25 @@ lint:
 	@python3 -c 'import glob,json,sys; [json.load(open(p)) for p in glob.glob("assets/*.json")+glob.glob("assets/devices/*/*.json")+glob.glob("schemas/*.json")]; print("ok")'
 	@echo "== defconfigs =="
 	@sh tools/gen-defconfigs.sh --check
+	@# Um bloco de DTS por defconfig: se o gerador casar o marcador tambem em
+	@# comentario, o bloco sai duplicado e o Buildroot avisa "override:
+	@# reassigning to symbol". Falhar aqui pega isso antes do build.
+	@for f in buildroot/configs/*_defconfig; do \
+		n=$$(grep -cE '^BR2_LINUX_KERNEL_INTREE_DTS_NAME=|^BR2_LINUX_KERNEL_CUSTOM_DTS_PATH=|^# DTS externo' "$$f"); \
+		[ "$$n" -eq 1 ] || { echo "ERRO $$f: $$n blocos de DTS (esperado 1)"; exit 1; }; \
+	done; echo "ok"
 	@echo "== markdown =="
 	@python3 tools/check-links.py
 	@echo "== arquivos versionados =="
 	@sh tools/check-tracked.sh .
 	@echo "== simbolos do buildroot =="
 	@tools/check-buildroot-symbols.py
+	@echo "== u-boot/rkbin =="
+	@tools/check-uboot.py
+	@echo "== ferramentas python =="
+	@python3 -m py_compile tools/make-screenshots.py \
+	           tools/check-buildroot-symbols.py tools/check-uboot.py \
+	           tools/check-links.py tools/make-bootlogo.py && echo "ok"
 
 test: $(TEST_BINS)
 	@sh tests/run_tests.sh "$(BIN)"

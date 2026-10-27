@@ -5,6 +5,22 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não publicado]
 
+### Adicionado
+- **README reescrito** com galeria visual: `docs/screenshots/*.png` geradas por
+  `tools/make-screenshots.py` a partir dos assets reais (`theme.json`,
+  `layout.json`, `home.json`, `library.json`, `music.json`) e do splash de
+  verdade (`assets/bootlogo/bootlogo.rgba`). `make screenshots` regenera;
+  [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md) explica o que as imagens são e o
+  que **não** são (o desenho dos widgets no SDL2 ainda é esboço).
+- **U-Boot mainline na X55**: `devices/x55.conf` passou para
+  `GIOCHI_UBOOT_UPSTREAM=yes` com `powkiddy-x55-rk3566` (existe desde a v2024.07)
+  + BL31/DDR do `rkbin`. A imagem da X55 sai **bootável de fábrica**.
+- `tools/check-uboot.py`: valida defconfig, símbolos do `uboot.fragment` e os
+  blobs de TPL/BL31 declarados por aparelho. Roda em `make lint`.
+- `tests/test_screenshots.py` (6 checagens): dimensões, cor de fundo vinda do
+  tema, acento presente, letterbox da X55 e splash idêntico ao asset.
+- `tools/check-links.py` agora valida também as tags de imagem HTML.
+
 ### Corrigido
 - **Build das imagens abortava** em `Makefile.legacy` com "You have legacy
   configuration in your .config!" sem dizer qual símbolo era o culpado:

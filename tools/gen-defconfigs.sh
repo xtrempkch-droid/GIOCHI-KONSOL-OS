@@ -36,6 +36,11 @@ render() {
     defconfig=$(sed -n 's/^GIOCHI_DEFCONFIG=//p' "$conf" | head -n1)
     uboot_defconfig=$(sed -n 's/^GIOCHI_UBOOT_DEFCONFIG=//p' "$conf" | head -n1)
     uboot_upstream=$(sed -n 's/^GIOCHI_UBOOT_UPSTREAM=//p' "$conf" | head -n1)
+    uboot_version=$(sed -n 's/^GIOCHI_UBOOT_VERSION=//p' "$conf" | head -n1)
+    uboot_tpl=$(sed -n 's/^GIOCHI_UBOOT_TPL=//p' "$conf" | head -n1)
+    uboot_bl31=$(sed -n 's/^GIOCHI_UBOOT_BL31=//p' "$conf" | head -n1)
+    # Minimo que tem o defconfig da X55 no U-Boot mainline (ver docs/DEVICES.md).
+    : "${uboot_version:=2024.10}"
 
     [ -n "$id" ] && [ -n "$soc" ] && [ -n "$defconfig" ] || {
         echo "gen-defconfigs: $conf incompleto (ID/SOC/DEFCONFIG)" >&2
@@ -49,13 +54,32 @@ render() {
     }
 
     if [ "$uboot_upstream" = "yes" ] && [ -n "$uboot_defconfig" ]; then
-        uboot_lines="BR2_TARGET_UBOOT=y
+        # BL31/TPL do rkbin: sem eles o SPL do RK3566 nao inicializa a DDR.
+        rkbin_lines=""
+        if [ -n "$uboot_tpl" ] && [ -n "$uboot_bl31" ]; then
+            rkbin_lines="BR2_TARGET_UBOOT_NEEDS_ROCKCHIP_RKBIN=y
+BR2_PACKAGE_ROCKCHIP_RKBIN=y
+BR2_PACKAGE_ROCKCHIP_RKBIN_TPL_FILENAME=\"$uboot_tpl\"
+BR2_PACKAGE_ROCKCHIP_RKBIN_BL31_FILENAME=\"$uboot_bl31\""
+        fi
+
+        uboot_lines="# U-Boot mainline $uboot_version (defconfig $uboot_defconfig).
+BR2_TARGET_UBOOT=y
 BR2_TARGET_UBOOT_BUILD_SYSTEM_KCONFIG=y
+BR2_TARGET_UBOOT_CUSTOM_VERSION=y
+BR2_TARGET_UBOOT_CUSTOM_VERSION_VALUE=\"$uboot_version\"
 BR2_TARGET_UBOOT_BOARD_DEFCONFIG=\"$uboot_defconfig\"
 BR2_TARGET_UBOOT_CONFIG_FRAGMENT_FILES=\"\$(BR2_EXTERNAL_GIOCHI_PATH)/board/giochi/uboot.fragment\"
 BR2_TARGET_UBOOT_NEEDS_PYTHON3=y
 BR2_TARGET_UBOOT_NEEDS_PYLIBFDT=y
-BR2_TARGET_UBOOT_NEEDS_OPENSSL=y"
+BR2_TARGET_UBOOT_NEEDS_OPENSSL=y
+BR2_TARGET_UBOOT_NEEDS_PYELFTOOLS=y"
+        # 'set -e' aborta com "$(... && ...)" quando o teste falha, entao a
+        # concatenacao e feita em um if explicito.
+        if [ -n "$rkbin_lines" ]; then
+            uboot_lines="$uboot_lines
+$rkbin_lines"
+        fi
     else
         # Sem defconfig mainline: o build NAO tenta compilar U-Boot e a imagem
         # sai sem bootloader (use o do vendor). Ver docs/DEVICES.md.

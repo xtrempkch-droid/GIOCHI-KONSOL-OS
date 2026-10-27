@@ -70,37 +70,58 @@ A imagem usa o DTB da RG353V, é gravada com `/etc/giochi/test_image` e
 **não é suportada** — painel e controles provavelmente não funcionam. Serve
 para validar boot, supervisor, sockets e update.
 
-## Bootloader: mainline não cobre estes aparelhos
+## Bootloader
 
-| Aparelho | Defconfig U-Boot mainline | Situação |
+| Aparelho | Defconfig U-Boot mainline | Como a imagem sai |
 |---|---|---|
-| `x55`, `x35s`, `x35h` | **não existe** (`powkiddy-*`/rk3326 ausentes) | use o U-Boot do vendor (ROCKNIX/Rockchip) |
-| `rk3326-generic` | **não existe** para RK3326 | use idbloader + `u-boot.itb` do vendor |
-| `rk3566-generic` | `quartz64-a-rk3566` | compila; serve para bring-up |
+| `x55` | **`powkiddy-x55-rk3566`** (upstream desde a v2024.07) | **bootável de fábrica** (U-Boot mainline + BL31/DDR do rkbin) |
+| `rk3566-generic` | `quartz64-a-rk3566` | bootável (bring-up; painel/controles do genérico) |
+| `x35s`, `x35h` | **não existe** (`powkiddy-x35s`/`x35h` ausentes) | sem bootloader: grave o do vendor antes |
+| `rk3326-generic` | **não existe** para RK3326 | sem bootloader: idbloader + `u-boot.itb` do vendor |
 
-Por isso o defconfig é gerado com `BR2_TARGET_UBOOT=n` nos aparelhos sem
-suporte, e o `post-image.sh` **automaticamente** empacota com
-`genimage-no-uboot.cfg` (partições p1..p4, sem região de bootloader).
+> ⚠️ **Correção de versão anterior desta documentação.** Ela afirmava que o
+> U-Boot mainline não tinha defconfig para *nenhum* aparelho. Isso é falso para
+> a X55 desde o **U-Boot 2024.07** (`configs/powkiddy-x55-rk3566_defconfig`).
+> Verificado contra v2024.04 (ausente),
+> v2024.07, v2024.10 e v2025.01 (presentes), e por `tools/check-uboot.py`
+> (confere defconfig, símbolos e blobs do rkbin).
 
-Três caminhos:
+Para X55 a cadeia completa é montada pelo Buildroot, sem passo manual:
+
+```
+rkbin (BL31 + DDR/TPL)  →  U-Boot SPL  →  u-boot-rockchip.bin  →  genimage.cfg (offset 32 KiB)
+```
+
+- `BR2_TARGET_UBOOT_CUSTOM_VERSION_VALUE="2024.10"` — 2024.07 é o mínimo; o
+  2024.10 é o pinado (LTS seguinte).
+- `BR2_PACKAGE_ROCKCHIP_RKBIN_BL31_FILENAME="bin/rk35/rk3568_bl31_v1.43.elf"`
+- `BR2_PACKAGE_ROCKCHIP_RKBIN_TPL_FILENAME="bin/rk35/rk3566_ddr_1056MHz_v1.18.bin"`
+
+Sem BL31/TPL o SPL do RK3566 **não inicializa a DDR** — a placa liga e morre.
+Esses caminhos existem no commit de rkbin pinado pelo Buildroot 2024.02
+(`b4558da0`); se você trocar a versão do Buildroot, reconfira com
+`tools/check-buildroot-symbols.py` e com um `ls` no tree do rkbin.
+
+### Aparelhos sem defconfig mainline (X35S, X35H, RK3326)
+
+Nesses o `post-image.sh` cai automaticamente em `genimage-no-uboot.cfg`
+(partições p1..p4, sem região de bootloader):
 
 ```sh
-# A) Bootloader do vendor já compilado (recomendado para X55)
-GIOCHI_UBOOT_BIN=/caminho/u-boot-rockchip.bin tools/build-image.sh x55
+# A) Bootloader do vendor já compilado
+GIOCHI_UBOOT_BIN=/caminho/u-boot-rockchip.bin tools/build-image.sh x35s
 
-# B) Tree do U-Boot do vendor (com defconfig powkiddy-x55-rk3566)
-GIOCHI_UBOOT_DIR=/caminho/u-boot tools/build-image.sh x55
+# B) Tree do U-Boot do vendor
+GIOCHI_UBOOT_DIR=/caminho/u-boot tools/build-image.sh x35s
 
-# C) Sem bootloader: gere a imagem e grave o vendor antes no cartão
-tools/build-image.sh x55
-# depois, no cartão: dd do idbloader/uboot no offset 32 KiB
+# C) Sem bootloader: grave o vendor antes no cartão (offset 32 KiB)
+tools/build-image.sh x35s
 ```
 
 `--vendor-uboot` transforma o aviso em **erro no preflight** (útil na CI quando
 você exige que a imagem venha com bootloader).
 
-> Sem o bootloader correto a placa **não liga** — não é bug da imagem. O
-> `extlinux.conf`/`boot.scr` gerados assumem o vendor U-Boot da ROCKNIX.
+> Sem o bootloader correto a placa **não liga** — não é bug da imagem.
 
 ## Componentes fora do mainline
 

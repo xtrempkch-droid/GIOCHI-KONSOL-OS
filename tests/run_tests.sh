@@ -48,6 +48,17 @@ if command -v python3 >/dev/null 2>&1; then
     fi
 fi
 
+# Imagens de documentacao: contrato com os assets reais (tema/layout/splash).
+if command -v python3 >/dev/null 2>&1; then
+    total=$((total + 1))
+    if (cd "$ROOT" && python3 -m unittest tests.test_screenshots) >/dev/null 2>&1; then
+        echo "OK     screenshots (python)"
+    else
+        echo "FALHA  screenshots (python)"
+        fail=$((fail + 1))
+    fi
+fi
+
 # Gadget USB composto (rede + MTP) contra configfs falso.
 if [ -x "$ROOT/tests/integration/usbgadget_test.sh" ]; then
     total=$((total + 1))
