@@ -1,0 +1,166 @@
+name: Images
+
+# Build completo das imagens de cartao (Buildroot). Nao roda em PR por padrao:
+# cada aparelho leva 1-3 h em runner de 4 vCPU.
+on:
+  workflow_dispatch:
+    inputs:
+      devices:
+        description: "Aparelhos separados por espaco, ou 'all'. Vazio = x55"
+        required: false
+        default: "x55"
+      fallback_dts:
+        description: "Permitir DTS de fallback (imagens de TESTE)"
+        type: boolean
+        default: false
+      buildroot_ref:
+        description: "Tag/branch do Buildroot LTS"
+        required: false
+        default: "2024.02.x"
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    name: matriz de aparelhos
+    runs-on: ubuntu-24.04
+    outputs:
+      devices: ${{ steps.list.outputs.devices }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: list
+        run: |
+          set -eu
+          requested="${{ github.event.inputs.devices }}"
+          # Release sem input: so o aparelho validado em hardware.
+          if [ -z "$requested" ]; then
+            requested="x55"
+          fi
+          if [ "$requested" = "all" ]; then
+            requested=$(tools/build-image.sh --list | tr '\n' ' ')
+          fi
+          json=$(printf '%s\n' $requested | sort -u | \
+                 python3 -c 'import json,sys; print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))')
+          echo "devices=$json" >> "$GITHUB_OUTPUT"
+          echo "aparelhos: $json"
+
+  build:
+    name: imagem ${{ matrix.device }}
+    needs: matrix
+    if: needs.matrix.outputs.devices != '[]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        device: ${{ fromJSON(needs.matrix.outputs.devices) }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependencias de build
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential git wget curl cpio unzip rsync bc file \
+            libncurses-dev python3 python3-setuptools python3-pip \
+            dosfstools mtools e2fsprogs device-tree-compiler bison flex \
+            libssl-dev libelf-dev python3-pil
+
+      - name: Cache do Buildroot (dl + ccache)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ github.workspace }}/.cache/buildroot-dl
+            ${{ github.workspace }}/.cache/ccache
+          key: br-${{ matrix.device }}-${{ github.event.inputs.buildroot_ref || 'release' }}-${{ hashFiles('buildroot/**') }}
+          restore-keys: |
+            br-${{ matrix.device }}-
+            br-
+
+      - name: Baixar Buildroot
+        run: |
+          set -eu
+          ref="${{ github.event.inputs.buildroot_ref || '2024.02.x' }}"
+          git clone --depth 1 --branch "$ref" \
+            https://github.com/buildroot/buildroot.git "$RUNNER_TEMP/buildroot"
+          echo "BUILDROOT_DIR=$RUNNER_TEMP/buildroot" >> "$GITHUB_ENV"
+          mkdir -p .cache/buildroot-dl .cache/ccache
+          echo "BR2_DL_DIR=$GITHUB_WORKSPACE/.cache/buildroot-dl" >> "$GITHUB_ENV"
+
+      - name: Configurar ccache
+        run: |
+          echo "BR2_CCACHE=y" >> "$GITHUB_ENV"
+          echo "BR2_CCACHE_DIR=$GITHUB_WORKSPACE/.cache/ccache" >> "$GITHUB_ENV"
+
+      - name: DTS externo (quando o aparelho exigir)
+        run: |
+          set -eu
+          # DTS de terceiros NAO ficam no repositorio. Para X35S/X35H, ou o
+          # mantenedor adiciona o arquivo, ou o build usa --fallback-dts.
+          if [ -d buildroot/board/giochi/dts ]; then
+            ls -l buildroot/board/giochi/dts || true
+          fi
+
+      - name: Regenerar assets de bootsplash
+        run: |
+          set -eu
+          make bootlogo
+          python3 -m unittest tests.test_bootlogo -v
+
+      - name: Preflight
+        run: |
+          args="${{ matrix.device }}"
+          if [ "${{ github.event.inputs.fallback_dts }}" = "true" ]; then
+            args="$args --fallback-dts"
+          fi
+          tools/build-image.sh --check $args
+
+      - name: Build da imagem
+        run: |
+          args="${{ matrix.device }}"
+          if [ "${{ github.event.inputs.fallback_dts }}" = "true" ]; then
+            args="$args --fallback-dts"
+          fi
+          tools/build-image.sh $args --jobs "$(nproc)"
+
+      - name: Tamanho e checksum
+        run: |
+          set -eu
+          img="dist/${{ matrix.device }}/giochi-${{ matrix.device }}-sdcard.img"
+          test -f "$img"
+          ls -lh "$img"
+          ( cd "$(dirname "$img")" && sha256sum "$(basename "$img")" \
+              > "$(basename "$img").sha256" && cat "$(basename "$img").sha256" )
+
+      - name: Publicar artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: giochi-${{ matrix.device }}
+          path: |
+            dist/${{ matrix.device }}/*.img
+            dist/${{ matrix.device }}/*.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: anexar ao release
+    needs: [matrix, build]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/**/*.img
+            artifacts/**/*.sha256
+          fail_on_unmatched_files: false

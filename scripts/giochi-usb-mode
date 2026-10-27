@@ -1,0 +1,112 @@
+#!/bin/sh
+# Giochi Konsol OS v1.2 — giochi-usb-mode (secao 4.6 / 4.9.4).
+#
+# Reconfigura o gadget configfs do console. Chamado por:
+#   - S50usb no boot (modo de /user/settings.json)
+#   - giochi-init ao receber "USB_MODE MTP|MASS" em control.sock
+#
+# Uso: giochi-usb-mode <mtp|mass|off>
+set -u
+
+MODE=$(echo "${1:-mtp}" | tr 'A-Z' 'a-z')
+TAG=giochi-usb
+GADGET=${GADGET:-/sys/kernel/config/usb_gadget/giochi}
+VID=${GIOCHI_USB_VID:-0x1d6b}
+PID=${GIOCHI_USB_PID:-0x0104}
+SERIAL_FILE=/user/.giochi/serial
+
+. /etc/giochi/lib.sh 2>/dev/null || true
+
+log() { logger -t "$TAG" -- "$*" 2>/dev/null || echo "$TAG: $*" >&2; }
+
+case "$MODE" in
+    mtp|mass|off) ;;
+    *) log "modo invalido '$MODE' (mtp|mass|off)"; exit 2 ;;
+esac
+
+mountpoint -q /sys/kernel/config 2>/dev/null || \
+    mount -t configfs none /sys/kernel/config 2>/dev/null || {
+        log "configfs indisponivel"; exit 1; }
+
+if [ ! -d "$GADGET" ]; then
+    mkdir -p "$GADGET" || { log "mkdir $GADGET falhou"; exit 1; }
+fi
+cd "$GADGET" || exit 1
+
+# Desanexa antes de mexer nas funcoes (evita EBUSY).
+if [ -s UDC ]; then
+    echo "" > UDC 2>/dev/null || true
+fi
+for link in configs/c.1/mtp.* configs/c.1/mass_storage.*; do
+    [ -e "$link" ] && rm -f "$link"
+done
+for fn in functions/mtp.*; do
+    [ -d "$fn" ] && rmdir "$fn" 2>/dev/null
+done
+[ -d functions/mass_storage.0 ] && rmdir functions/mass_storage.0 2>/dev/null
+
+if [ "$MODE" = "off" ]; then
+    log "gadget desativado"
+    exit 0
+fi
+
+# --- identificacao --------------------------------------------------------
+echo "$VID" > idVendor
+echo "$PID" > idProduct
+echo 0x0100 > bcdDevice
+
+mkdir -p strings/0x409 configs/c.1/strings/0x409
+echo "Giochi Konsol OS" > strings/0x409/manufacturer
+echo "Giochi" > strings/0x409/product
+if [ -r "$SERIAL_FILE" ]; then
+    serial=$(tr -d '[:space:]' < "$SERIAL_FILE")
+else
+    serial="giochi-0001"
+fi
+echo "${serial:-giochi-0001}" > strings/0x409/serialnumber
+echo "Giochi" > configs/c.1/strings/0x409/configuration
+echo 250 > configs/c.1/MaxPower
+
+# --- funcao ---------------------------------------------------------------
+user_part=$(giochi_user_part 2>/dev/null)
+
+if [ "$MODE" = "mtp" ]; then
+    mkdir -p functions/mtp.0 || {
+        log "kernel sem CONFIG_USB_F_MTP; usando mass storage"
+        MODE=mass
+    }
+fi
+
+if [ "$MODE" = "mtp" ]; then
+    ln -sf functions/mtp.0 configs/c.1/ 2>/dev/null || {
+        log "nao foi possivel vincular f_mtp"; exit 1; }
+    log "gadget = MTP (particao C exposta com acesso simultaneo)"
+else
+    [ -n "${user_part:-}" ] || { log "particao /user nao encontrada"; exit 1; }
+    mkdir -p functions/mass_storage.0 || {
+        log "kernel sem CONFIG_USB_F_MASS_STORAGE"; exit 1; }
+
+    # Mass Storage exige a particao DESMONTADA enquanto conectado.
+    if mountpoint -q /user 2>/dev/null; then
+        sync
+        umount /user 2>/dev/null || {
+            log "nao foi possivel desmontar /user (em uso)"; exit 1; }
+    fi
+    echo 0 > functions/mass_storage.0/stall
+    echo 1 > functions/mass_storage.0/lun.0/removable
+    echo 1 > functions/mass_storage.0/lun.0/cdrom
+    echo 0 > functions/mass_storage.0/lun.0/cdrom
+    echo "$user_part" > functions/mass_storage.0/lun.0/file
+    ln -sf functions/mass_storage.0 configs/c.1/ || {
+        log "nao foi possivel vincular f_mass_storage"; exit 1; }
+    log "gadget = Mass Storage ($user_part)"
+fi
+
+# --- anexa ao controlador -------------------------------------------------
+udc=${GIOCHI_UDC:-$(ls /sys/class/udc 2>/dev/null | head -n1)}
+if [ -z "${udc:-}" ]; then
+    log "nenhum UDC disponivel; gadget configurado mas inativo"
+    exit 0
+fi
+echo "$udc" > UDC || { log "falha ao anexar ao UDC $udc"; exit 1; }
+log "gadget anexado em $udc (modo $MODE)"

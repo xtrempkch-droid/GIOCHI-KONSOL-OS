@@ -1,0 +1,26 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://giochi.local/schemas/metadata.schema.json",
+  "title": "Giochi Konsol OS v1.2 — metadata.json (.giochi)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "developer", "version", "arch", "runtime", "entrypoint"],
+  "properties": {
+    "title": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "developer": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+([-+][0-9A-Za-z.-]+)?$"
+    },
+    "arch": { "enum": ["aarch64"] },
+    "runtime": { "enum": ["godot", "retroarch", "proton"] },
+    "graphics_api": { "enum": ["gles2", "gles3"] },
+    "graphics_api_fallback": { "enum": ["gles2", "gles3"] },
+    "buttons_map": { "type": "string", "default": "default" },
+    "entrypoint": {
+      "type": "string",
+      "pattern": "^bin/[^/].*$",
+      "not": { "pattern": "\\.\\." }
+    }
+  }
+}

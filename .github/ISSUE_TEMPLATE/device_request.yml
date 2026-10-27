@@ -1,0 +1,52 @@
+name: Novo aparelho
+description: Pedido/registro de suporte a uma placa RK3326/RK3566
+labels: [device]
+body:
+  - type: input
+    id: model
+    attributes:
+      label: Modelo
+      placeholder: Powkiddy X55, Anbernic RG353V, placa custom...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: soc
+    attributes:
+      label: SoC
+      options: [RK3566, RK3326, outro]
+    validations:
+      required: true
+
+  - type: input
+    id: dts
+    attributes:
+      label: DTS/DTB de origem
+      description: Caminho no kernel mainline ou repositório de terceiros (com licença).
+      placeholder: rockchip/rk3566-powkiddy-x55 ou URL do DTS
+    validations:
+      required: true
+
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Hardware conhecido
+      placeholder: |
+        painel: 720x1280 (driver hx8394)
+        rotação: 270
+        áudio: RK817 (i2s1_8ch)
+        wi-fi: RTL8821CS via SDIO
+        bluetooth: RTL8821CS via uart1
+        usb gadget: sim/não
+        botões: BTN_EAST==A ou remapeado?
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: ready
+    attributes:
+      label: Checklist
+      options:
+        - label: Tenho o aparelho para testar
+        - label: Sei o DTB correto (tela preta costuma ser DTB errado)
+        - label: Aceito enviar dmesg completo e foto da tela

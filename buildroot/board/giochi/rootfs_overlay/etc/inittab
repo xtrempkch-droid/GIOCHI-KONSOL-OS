@@ -1,0 +1,19 @@
+# Giochi Konsol OS v1.2 — /etc/inittab (ADR-02: BusyBox init, sem systemd).
+# Ordem da secao S3: S05 -> S10 -> S20 -> S30 -> S40dongle -> S50usb -> S99launcher
+
+::sysinit:/bin/mount -t proc proc /proc
+::sysinit:/bin/mount -t sysfs sysfs /sys
+::sysinit:/bin/mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs /run
+::sysinit:/bin/mount -t devtmpfs devtmpfs /dev
+::sysinit:/bin/mkdir -p /dev/pts /dev/shm /run/giochi /var/log
+::sysinit:/bin/mount -t devpts devpts /dev/pts
+::sysinit:/bin/mount -t tmpfs -o nosuid,nodev tmpfs /dev/shm
+::sysinit:/bin/mount -a
+::sysinit:/bin/hostname -F /etc/hostname
+::sysinit:/etc/init.d/rcS
+
+# Sem getty: o console e consumido pelo Launcher (secao 4.1).
+tty1::respawn:/usr/bin/giochi-init
+::ctrlaltdel:/sbin/reboot
+::shutdown:/etc/init.d/rcK
+::restart:/sbin/init

@@ -1,0 +1,18 @@
+{
+  "id": "default",
+  "bindings": {
+    "up": "BTN_DPAD_UP",
+    "down": "BTN_DPAD_DOWN",
+    "left": "BTN_DPAD_LEFT",
+    "right": "BTN_DPAD_RIGHT",
+    "a": "BTN_A",
+    "b": "BTN_B",
+    "x": "BTN_X",
+    "y": "BTN_Y",
+    "l": "BTN_TL",
+    "r": "BTN_TR",
+    "start": "BTN_START",
+    "select": "BTN_SELECT",
+    "home": "BTN_MODE"
+  }
+}

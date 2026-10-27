@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentação de hardware
+    url: https://github.com/xtrempkch-droid/GIOCHI-KONSOL-OS/blob/main/docs/hardware-e-drivers.md
+    about: GPIO, DTS, painéis, áudio e as correções F1–F12 antes de abrir issue
+  - name: Aparelhos e imagens
+    url: https://github.com/xtrempkch-droid/GIOCHI-KONSOL-OS/blob/main/docs/DEVICES.md
+    about: Como gerar imagem, DTS externo e fallback de teste
+  - name: Checklist de QA
+    url: https://github.com/xtrempkch-droid/GIOCHI-KONSOL-OS/blob/main/docs/QA-CHECKLIST.md
+    about: Comandos e valores esperados por camada

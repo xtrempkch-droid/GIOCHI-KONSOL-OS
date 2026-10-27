@@ -1,0 +1,6 @@
+config BR2_PACKAGE_GIOCHI_ASSETS
+	bool "giochi-assets (layouts, tema, defaults)"
+	default y
+	help
+	  Instala layout.json (schema 1.6), home/library/music.json,
+	  theme.json e defaults.json em /usr/share/giochi.

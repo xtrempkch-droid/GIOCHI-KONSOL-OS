@@ -1,0 +1,27 @@
+config BR2_PACKAGE_GIOCHI_INIT
+	bool "giochi-init"
+	depends on BR2_USE_MMU
+	help
+	  Supervisor (ADR-10): pai do Launcher, jogos, apps e daemons.
+	  Expoe /run/giochi/control.sock (comandos de texto), a FIFO
+	  /run/giochi/transition e regenera device_profile.json no boot.
+
+if BR2_PACKAGE_GIOCHI_INIT
+
+config BR2_PACKAGE_GIOCHI_INIT_SOC
+	string "SoC alvo (rk3326|rk3566)"
+	default "rk3326"
+	help
+	  Seleciona os valores embutidos em device_profile.json.
+
+config BR2_PACKAGE_GIOCHI_INIT_DEVICE
+	string "aparelho de referencia (generic|x55|x35s|x35h)"
+	default "generic"
+	help
+	  Perfil de hardware de docs/hardware-e-drivers.md §1. Em rk3566:
+	    x55   -> painel 720x1280, Wi-Fi/BT integrados (RTL8821CS)
+	    x35s  -> painel 640x480, rádio nao medido, USB nao ancora (F12)
+	    x35h  -> mesmo DTB da x35s, sem radio integrado, USB nao ancora
+	  Fora desses nomes usa os valores genericos do SoC.
+
+endif

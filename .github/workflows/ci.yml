@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: lint (shell, JSON, defconfigs)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sintaxe de shell, JSON e defconfigs
+        run: make lint
+      - name: Defconfigs em sincronia
+        run: tools/gen-defconfigs.sh --check
+      - name: Preflight dos aparelhos (sem compilar)
+        run: tools/build-image.sh --check --all --fallback-dts
+      - name: Assets de bootsplash
+        run: |
+          python3 -m pip install --quiet pillow
+          make bootlogo
+          python3 -m unittest tests.test_bootlogo -v
+
+  build-and-test:
+    name: build + testes (host)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependencias
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libssl-dev libpng-dev libarchive-dev \
+            libsdl2-dev libasound2-dev libmpg123-dev libflac-dev python3 \
+            python3-pil
+
+      - name: Build
+        run: make -j"$(nproc)"
+
+      - name: Testes
+        run: make test
+
+      - name: Guardar binarios
+        uses: actions/upload-artifact@v4
+        with:
+          name: giochi-host-bin
+          path: build/host/bin/
+          retention-days: 7
+
+  python:
+    name: giochi-forge (python)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Testes
+        run: PYTHONPATH=src/forge python3 -m unittest discover -s tests/forge -v
+
+  package-roundtrip:
+    name: pack -> sign -> verify -> extract
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependencias
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libssl-dev
+      - name: Build dos utilitarios
+        run: make -j"$(nproc)" build/host/bin/giochi-verify build/host/bin/giochi-extract
+      - name: Fluxo completo
+        run: |
+          set -eu
+          work=$(mktemp -d)
+          mkdir -p "$work/proj/bin"
+          printf '%s\n' '{"title":"CI","developer":"ci","version":"1.0.0",' \
+            '"arch":"aarch64","runtime":"godot","graphics_api":"gles3",' \
+            '"entrypoint":"bin/ci"}' > "$work/proj/metadata.json"
+          printf '\211PNGfake' > "$work/proj/capa.png"
+          printf '#!/bin/sh\nexit 0\n' > "$work/proj/bin/ci"
+          chmod +x "$work/proj/bin/ci"
+
+          sh tools/giochi-pack.sh "$work/proj" "$work/ci.giochi"
+          sh tools/giochi-keys.sh "$work/keys" >/dev/null
+          sh tools/giochi-sign.sh "$work/ci.giochi" \
+             "$work/keys/giochi_ed25519.pem" 1.0.0
+
+          build/host/bin/giochi-verify --image "$work/ci.giochi" \
+            --sig "$work/ci.giochi.sig" \
+            --pubkey "$work/keys/pubkey.ed25519" \
+            --manifest "$work/ci.giochi.manifest.json"
+
+          build/host/bin/giochi-extract --package "$work/ci.giochi" \
+            --out-dir "$work/out"
+          test -x "$work/out/bin/ci"
+          test -f "$work/out/metadata.json"
+
+          cp "$work/ci.giochi" "$work/bad.giochi"
+          printf 'x' >> "$work/bad.giochi"
+          if build/host/bin/giochi-verify --image "$work/bad.giochi" \
+               --sig "$work/ci.giochi.sig" \
+               --pubkey "$work/keys/pubkey.ed25519" \
+               --manifest "$work/ci.giochi.manifest.json"; then
+            echo "ERRO: imagem adulterada foi aceita" >&2
+            exit 1
+          fi
+          echo "pack/sign/verify/extract OK"

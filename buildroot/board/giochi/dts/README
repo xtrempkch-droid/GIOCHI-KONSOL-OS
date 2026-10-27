@@ -1,0 +1,25 @@
+Giochi Konsol OS v1.2 — device trees fora do mainline
+=====================================================
+
+O que o mainline 6.12 JÁ traz (nada a copiar):
+  rockchip/rk3566-powkiddy-x55.dts   -> Powkiddy X55 (desde a v6.8)
+  driver panel-himax-hx8394.c        -> painel da X55
+  driver rtw88_8821cs, btusb/hci_h5  -> radio integrado da X55
+
+O que PRECISA ser carregado aqui (não existe upstream) — docs/hardware-e-drivers.md §9:
+  rk3566-powkiddy-x35s.dts   (X35S e X35H usam este mesmo DTB)
+  panel-generic-dsi.c        (painel da X35S/X35H: rocknix,generic-dsi)
+  rocknix-joypad.c/.h        (gamepad das tres placas; CONFIG_JOYSTICK_ROCKNIX)
+  input-polldev.h (shim)     (a API foi removida no 6.12)
+
+Como instalar:
+  1. copie o .dts para arch/arm64/boot/dts/rockchip/ no tree do kernel;
+  2. adicione ao drivers/gpu/drm/panel/Makefile + Kconfig (panel-generic-dsi);
+  3. adicione ao drivers/input/joystick/Makefile + Kconfig (rocknix-joypad);
+  4. em BR2_LINUX_KERNEL_INTREE_DTS_NAME, use a lista separada por espaco:
+     "rockchip/rk3566-powkiddy-x55 rockchip/rk3566-powkiddy-x35s";
+  5. o pacote giochi-init já passa -DGIOCHI_DEVICE (x55|x35s|x35h) para o
+     device_profile.json.
+
+Sem o DTB correto o resultado é tela preta com backlight aceso (F1); sem
+JOYSTICK_ROCKNIX não há controle nenhum (F7).

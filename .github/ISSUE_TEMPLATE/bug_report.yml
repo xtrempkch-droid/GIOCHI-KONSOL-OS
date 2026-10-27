@@ -1,0 +1,86 @@
+name: Bug
+description: Algo não funciona no aparelho ou no build
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Antes de abrir: rode `make lint && make test` e confira
+        [docs/QA-CHECKLIST.md](../blob/main/docs/QA-CHECKLIST.md).
+        Para tela preta/controles errados, veja `F1`/`F8` em
+        [docs/hardware-e-drivers.md](../blob/main/docs/hardware-e-drivers.md).
+
+  - type: dropdown
+    id: device
+    attributes:
+      label: Aparelho
+      options:
+        - Powkiddy X55
+        - Powkiddy X35S
+        - Powkiddy X35H
+        - RK3566 genérico
+        - RK3326 genérico
+        - Host (build/testes)
+  - type: input
+    id: commit
+    attributes:
+      label: Commit/versão
+      placeholder: v1.2.0 ou hash
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Camada
+      options:
+        - Kernel / DTB / driver
+        - U-Boot / boot A/B
+        - Init (S* scripts)
+        - giochi-init / supervisor
+        - Launcher / layout / tema
+        - Música (giochi-musicd)
+        - Configurações
+        - Ports / Loja
+        - USB gadget (MTP/Mass Storage)
+        - Dongle Wi-Fi/BT
+        - Update (assinatura/A/B)
+        - giochi-forge / empacotamento
+        - Build (Buildroot)
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: O que aconteceu
+      description: Inclua a mensagem de erro exata.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: O que era esperado
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Como reproduzir
+      placeholder: |
+        1. tools/build-image.sh x55
+        2. gravar no cartão
+        3. ligar e abrir a aba Música
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        `dmesg`, saída do `giochi-init`, `journal` não existe (não há systemd).
+        Use `logger`/stderr ou `dmesg | grep -i giochi`.
+      render: text

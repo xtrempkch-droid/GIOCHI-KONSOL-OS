@@ -1,0 +1,14 @@
+# Giochi Konsol OS v1.2 — kernel: variante ZSTD (RK3566).
+# Aplicar DEPOIS de linux.fragment:
+#   scripts/kconfig/merge_config.sh -m .config \
+#       board/giochi/linux.fragment board/giochi/linux-zstd.fragment
+CONFIG_ZRAM_DEF_COMP_ZSTD=y
+CONFIG_CRYPTO_ZSTD=y
+CONFIG_SQUASHFS_ZSTD=y
+CONFIG_SQUASHFS_LZ4=n
+
+# RK3566 tem controlador PCIe usado pelo SoC (secao 1.2: exceto SoC).
+CONFIG_PCI=y
+CONFIG_PCI_MSI=y
+CONFIG_PCIE_ROCKCHIP_HOST=y
+CONFIG_PCIE_ROCKCHIP_DW_HOST=y

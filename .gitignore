@@ -1,0 +1,35 @@
+# build
+build/
+output/
+dist/
+.cache/
+*.o
+*.d
+*.a
+*.so
+
+# artefatos de pacote/assinatura
+*.giochi
+*.giochi.sig
+*.manifest.json
+*.img
+*.vfat
+*.squashfs
+
+# chaves — NUNCA versionar a privada
+keys/
+*.pem
+pubkey.ed25519
+
+# python
+__pycache__/
+*.pyc
+
+# editores
+*.swp
+.DS_Store
+
+# bootsplash: gerado por `make bootlogo` a partir de docs/logo.jpg.
+# Os .rgba/.json ficam versionados (o build precisa deles), os BMP por
+# aparelho nao — são derivados do painel de cada devices/*.conf.
+assets/bootlogo/*/splash.bmp

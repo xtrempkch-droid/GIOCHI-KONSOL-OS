@@ -1,0 +1,13 @@
+# Giochi Konsol OS v1.2 — device table minima (mdev cuida do resto).
+/dev	d	755	0	0	-	-	-	-	-
+/dev/input	d	755	0	0	-	-	-	-	-
+/dev/giochi	d	755	0	0	-	-	-	-	-
+/run	g	755	0	0	-	-	-	-	-
+/user	d	755	1000	1000	-	-	-	-	-
+/user/games	d	755	1000	1000	-	-	-	-	-
+/user/music	d	755	1000	1000	-	-	-	-	-
+/user/ports	d	755	1000	1000	-	-	-	-	-
+/user/.giochi	d	755	1000	1000	-	-	-	-	-
+/user/.cache	d	755	1000	1000	-	-	-	-	-
+/user/.cache/thumbs	d	755	1000	1000	-	-	-	-	-
+/user/.cache/meta	d	755	1000	1000	-	-	-	-	-

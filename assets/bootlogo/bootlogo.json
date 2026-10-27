@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0",
+  "format": "rgba8888",
+  "order": "top-down",
+  "width": 640,
+  "height": 349,
+  "stride": 2560,
+  "source": "docs/logo.jpg",
+  "note": "Gerado por tools/make-bootlogo.py. Nao editar a mao."
+}

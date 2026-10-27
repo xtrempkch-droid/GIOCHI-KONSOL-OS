@@ -1,0 +1,22 @@
+# Normaliza EOL: o alvo e Linux (musl/BusyBox), scripts devem chegar com LF.
+* text=auto eol=lf
+
+# Binarios
+*.png binary
+*.jpg binary
+*.img binary
+*.jpg binary
+*.rgba binary
+
+# Scripts e configs: sempre LF
+*.sh text eol=lf
+*.conf text eol=lf
+*.fragment text eol=lf
+*.cmd text eol=lf
+S[0-9][0-9]* text eol=lf
+Makefile text eol=lf
+
+# Evita ruido em diffs de documentacao gerada
+docs/architecture-v1.1.md linguist-documentation
+docs/architecture-v1.2.md linguist-documentation
+docs/hardware-e-drivers.md linguist-documentation

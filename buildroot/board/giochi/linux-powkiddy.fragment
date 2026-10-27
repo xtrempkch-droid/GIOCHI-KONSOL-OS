@@ -1,0 +1,79 @@
+# Giochi Konsol OS v1.2 — Powkiddy X55 / X35S / X35H (RK3566).
+# Base: docs/hardware-e-drivers.md §6 (configuracao obrigatoria, CONFIRMADA).
+#
+# Aplicar DEPOIS de linux.fragment e linux-zstd.fragment:
+#   scripts/kconfig/merge_config.sh -m .config \
+#       board/giochi/linux.fragment \
+#       board/giochi/linux-zstd.fragment \
+#       board/giochi/linux-powkiddy.fragment
+#
+# ATENCAO (olddefconfig): habilitar o pai CONFIG_SND_SOC_ROCKCHIP e os filhos
+# na MESMA passada; o olddefconfig descarta filhos de pais unset sem avisar.
+# O alvo `assert-kernel-config` do Makefile verifica isso.
+
+# --- display (§3.1 / F2) ----------------------------------------------
+CONFIG_DRM_ROCKCHIP=y
+CONFIG_DRM_DW_MIPI_DSI=y
+CONFIG_DRM_PANEL_HIMAX_HX8394=y
+CONFIG_DRM_PANEL_GENERIC_DSI=y
+CONFIG_BACKLIGHT_CLASS_DEVICE=y
+CONFIG_BACKLIGHT_PWM=y
+CONFIG_PWM=y
+CONFIG_PWM_ROCKCHIP=y
+CONFIG_DRM_LOAD_EDID_FIRMWARE=n
+
+# --- controles (§3.2 / F7) -------------------------------------------
+CONFIG_INPUT_JOYSTICK=y
+CONFIG_JOYSTICK_ROCKNIX=y
+CONFIG_ROCKCHIP_SARADC=y
+CONFIG_INPUT_EVDEV=y
+
+# --- audio: RK817 + I2S TDM (§3.3 / F6) ------------------------------
+CONFIG_SND_SOC_ROCKCHIP=y
+CONFIG_SND_SOC_ROCKCHIP_I2S=y
+CONFIG_SND_SOC_ROCKCHIP_I2S_TDM=y
+CONFIG_SND_SOC_RK817=y
+CONFIG_SND_SIMPLE_CARD=y
+
+# --- Wi-Fi integrado RTL8821CS via SDIO (§3.4 / F3) ------------------
+CONFIG_RTW88=m
+CONFIG_RTW88_SDIO=m
+CONFIG_RTW88_8821CS=m
+CONFIG_MMC_SDHCI=y
+CONFIG_MMC_SDHCI_OF_DWCMSHC=y
+CONFIG_CFG80211=m
+CONFIG_MAC80211=m
+
+# --- Bluetooth integrado via UART/H5 (§3.5 / F4 / F5) ----------------
+CONFIG_BT=m
+CONFIG_BT_HCIUART=m
+CONFIG_BT_HCIUART_RTL=y
+CONFIG_BT_HCIUART_3WIRE=y
+CONFIG_SERIAL_8250=y
+CONFIG_SERIAL_8250_DW=y
+
+# --- USB gadget: MTP/Mass Storage (§4.6) + rede g_ether (F10) --------
+CONFIG_USB_GADGET=y
+CONFIG_USB_LIBCOMPOSITE=y
+CONFIG_USB_CONFIGFS=y
+CONFIG_USB_CONFIGFS_F_MTP=y
+CONFIG_USB_CONFIGFS_F_MASS_STORAGE=y
+CONFIG_USB_CONFIGFS_ECM=y
+CONFIG_USB_F_MTP=y
+CONFIG_USB_F_MASS_STORAGE=y
+CONFIG_USB_ETH=m
+CONFIG_USB_DWC3=y
+CONFIG_USB_DWC3_DUAL_ROLE=y
+
+# --- video/aceleradores opcionais (§9) --------------------------------
+CONFIG_VIDEO_HANTRO=m
+CONFIG_VIDEO_ROCKCHIP_RGA=m
+
+# --- energia/bateria (§3.7) ------------------------------------------
+CONFIG_CHARGER_RK817=y
+CONFIG_BATTERY_RK817=y
+CONFIG_POWER_SUPPLY=y
+
+# --- sem HDMI fisico (F2) --------------------------------------------
+CONFIG_DRM_DW_HDMI=n
+CONFIG_SND_SOC_HDMI_CODEC=n

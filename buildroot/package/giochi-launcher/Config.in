@@ -1,0 +1,9 @@
+config BR2_PACKAGE_GIOCHI_LAUNCHER
+	bool "giochi-launcher"
+	depends on BR2_USE_MMU
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	depends on BR2_INSTALL_LIBSTDCPP
+	select BR2_PACKAGE_SDL2
+	help
+	  Launcher C++17 + SDL2 (ADR-09): motor de layout schema 1.6,
+	  5 abas, grid 4x3 e overlay de Configuracoes.

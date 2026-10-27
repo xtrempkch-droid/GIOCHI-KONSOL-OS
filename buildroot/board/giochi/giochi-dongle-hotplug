@@ -1,0 +1,47 @@
+#!/bin/sh
+# Giochi Konsol OS v1.2 — hotplug de dongle USB (S11, secao 1.4).
+# Uso (mdev): giochi-dongle-hotplug <ACTION> <DEVPATH>
+set -u
+
+ACTION=${1:-}
+DEVPATH=${2:-}
+TAG=giochi-dongle
+DETECT_TIMEOUT_MS=3000
+
+log() { logger -t "$TAG" -- "$*" 2>/dev/null || echo "$TAG: $*" >&2; }
+
+[ "$ACTION" = "add" ] || exit 0
+[ -n "$DEVPATH" ] || exit 0
+
+vid=$(cat "/sys$DEVPATH/idVendor" 2>/dev/null) || exit 0
+pid=$(cat "/sys$DEVPATH/idProduct" 2>/dev/null) || exit 0
+[ -n "$vid" ] && [ -n "$pid" ] || exit 0
+vidpid=$(echo "$vid:$pid" | tr 'A-Z' 'a-z')
+
+case "$vidpid" in
+    0bda:8179) mod=8188eu ;;
+    0bda:8176) mod=rtl8192cu ;;
+    0bda:8812|0bda:881a) mod=8812au ;;
+    0b50:7601) mod=mt7601u ;;
+    0cf3:9271) mod=ath9k_htc ;;
+    0a12:0001|0bda:8771|0a5c:21e8) mod=btusb ;;
+    *)
+        log "dongle $vidpid nao reconhecido (ignorado)"
+        exit 0
+        ;;
+esac
+
+# Espera o modprobe concluir por ate 3 s (orcamento da secao 1.4).
+modprobe "$mod" 2>/dev/null || { log "falha ao carregar $mod"; exit 0; }
+
+waited=0
+while [ "$waited" -lt "$DETECT_TIMEOUT_MS" ]; do
+    if [ -e /sys/class/net/wlan0 ] || [ -e /sys/class/bluetooth/hci0 ]; then
+        break
+    fi
+    usleep 100000 2>/dev/null || sleep 1
+    waited=$((waited + 100))
+done
+
+log "dongle $vidpid -> $mod (${waited} ms)"
+exit 0

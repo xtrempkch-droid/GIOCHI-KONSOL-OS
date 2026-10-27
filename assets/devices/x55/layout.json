@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.6",
+  "theme_id": "dark_default",
+  "screen": { "width": 1280, "height": 720, "orientation": "landscape" },
+  "tabs": {
+    "order": ["music", "library", "home", "store", "ports"],
+    "default": "home",
+    "visual_center": "home",
+    "bar": { "position": "topbar_left", "font_size": 20, "active_style": "accent_underline" },
+    "controls": { "prev": "BTN_TL", "next": "BTN_TR" },
+    "switch_transition": "fade_150ms",
+    "layouts": {
+      "music":   "music.json",
+      "library": "library.json",
+      "home":    "home.json",
+      "store":   "APP:giochi-store",
+      "ports":   "APP:portmaster"
+    }
+  },
+  "persistent_regions": ["topbar", "hint_bar"],
+  "buttons": {
+    "back": "BTN_B",
+    "home": "BTN_MODE",
+    "home_short_press_ms": 500,
+    "settings": "BTN_SELECT",
+    "exit_game_combo": ["BTN_MODE", "BTN_START"],
+    "exit_game_combo_hold_ms": 500
+  }
+}

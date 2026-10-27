@@ -1,0 +1,23 @@
+menu "Giochi Konsol OS"
+
+source "$BR2_EXTERNAL_GIOCHI_PATH/package/giochi-init/Config.in"
+source "$BR2_EXTERNAL_GIOCHI_PATH/package/giochi-musicd/Config.in"
+source "$BR2_EXTERNAL_GIOCHI_PATH/package/giochi-launcher/Config.in"
+source "$BR2_EXTERNAL_GIOCHI_PATH/package/giochi-assets/Config.in"
+source "$BR2_EXTERNAL_GIOCHI_PATH/package/giochi-tools/Config.in"
+
+config BR2_PACKAGE_GIOCHI_PROTON
+	bool "habilitar stub Proton (GIOCHI_ENABLE_PROTON)"
+	default n
+	help
+	  Secao 4.10 / ADR: Proton NAO e implementado na v1.2. A flag existe
+	  apenas para destravar a compilacao futura; com 'n' o custo e zero.
+
+config BR2_PACKAGE_GIOCHI_DONGLES
+	bool "incluir modulos .ko e firmware de dongles USB"
+	default y
+	help
+	  ADR-14: Wi-Fi/Bluetooth opcionais via dongle USB. Os modulos sao
+	  instalados em /lib/modules e NAO sao carregados no boot.
+
+endmenu

@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.6",
+  "tab": "home",
+  "regions": {
+    "top_bar": { "height": 56, "widgets": ["battery_indicator", "network_indicator", "clock"] },
+    "continue": {
+      "type": "hero_tile",
+      "size": { "width": 224, "height": 126 },
+      "source": "/user/.cache/continue.json",
+      "fallback_text": "Nada em andamento"
+    },
+    "news": {
+      "type": "news_list",
+      "source": "/user/.cache/news.json",
+      "fallback": "builtin_tips"
+    },
+    "recent": {
+      "type": "horizontal_list",
+      "item_size": { "width": 160, "height": 90 },
+      "max_items": 5,
+      "source": "/user/.cache/recent.json"
+    },
+    "hint_bar": { "height": 40 }
+  },
+  "vram_budget_kb": 800
+}

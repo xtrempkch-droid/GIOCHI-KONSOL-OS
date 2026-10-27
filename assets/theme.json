@@ -1,0 +1,16 @@
+{
+  "theme_id": "dark_default",
+  "name": "Netflix Dark",
+  "colors": {
+    "background": "#0F0F0F",
+    "surface": "#1E1E1E",
+    "surface_elevated": "#2A2A2A",
+    "text_primary": "#E5E5E5",
+    "text_secondary": "#A0A0A0",
+    "hint_bar_bg": "#181818",
+    "divider": "#333333",
+    "accent": "#E50914"
+  },
+  "typography": { "font_family": "builtin_sans", "topbar_size": 14, "tile_title_size": 12 },
+  "metrics": { "topbar_height": 40, "hint_bar_height": 30, "tile_corner_radius": 4 }
+}

@@ -1,0 +1,47 @@
+# Giochi Konsol OS v1.2 — U-Boot: A/B + rollback por bootcount (ADR-01/12).
+CONFIG_BOOTCOUNT_LIMIT=y
+CONFIG_BOOTCOUNT_ENV=y
+CONFIG_CMD_SAVEENV=y
+CONFIG_CMD_FAT=y
+CONFIG_CMD_EXT4=y
+CONFIG_CMD_PART=y
+CONFIG_CMD_BOOTCOUNT=y
+CONFIG_CMD_SETEXPR=y
+CONFIG_CMD_FS_GENERIC=y
+CONFIG_ENV_IS_IN_FAT=y
+CONFIG_ENV_FAT_INTERFACE="mmc"
+CONFIG_ENV_FAT_DEVICE_AND_PART="0:1"
+CONFIG_ENV_FAT_FILE="uboot.env"
+CONFIG_SYS_REDUNDAND_ENVIRONMENT=y
+CONFIG_BOOTDELAY=0
+CONFIG_USE_BOOTCOMMAND=y
+CONFIG_BOOTCOMMAND="load mmc 0:1 ${scriptaddr} boot.scr; source ${scriptaddr}"
+
+# ---------------------------------------------------------------------------
+# Bootsplash (PRE-PRONTO — desativado)
+#
+# O asset ja existe: assets/bootlogo/<aparelho>/splash.bmp (24-bit BMP no
+# tamanho do painel) e assets/bootlogo/bootlogo.rgba (Launcher). O post-image
+# copia splash.bmp para a particao A e o boot.cmd importa quando ativado.
+#
+# Para LIGAR (quando a inicializacao de video do U-Boot no SoC estiver
+# validada — ver docs/BOOTSPLASH.md):
+#   1. descomente o bloco abaixo;
+#   2. descomente o bloco equivalente em board/giochi/boot.cmd;
+#   3. rode `make bootlogo` antes do build (tools/make-bootlogo.py).
+#
+# CONFIG_VIDEO=y
+# CONFIG_VIDEO_ROCKCHIP=y
+# CONFIG_DM_VIDEO=y
+# CONFIG_VIDEO_BMP_LOGO=y
+# CONFIG_SPLASH_SCREEN=y
+# CONFIG_SPLASH_SCREEN_ALIGN=y
+# CONFIG_SPLASH_SOURCE=y
+# CONFIG_CMD_BMP=y
+#
+# Observacoes (docs/hardware-e-drivers.md):
+#   - o painel da X55 e 720x1280 com rotation=270; o splash.bmp ja e gerado
+#     em 1280x720 (orientacao logica);
+#   - X35S/X35H dependem do DTS externo para o painel ligar no U-Boot;
+#   - sem CONFIG_VIDEO o U-Boot simplesmente ignora 'splashimage'.
+# ---------------------------------------------------------------------------

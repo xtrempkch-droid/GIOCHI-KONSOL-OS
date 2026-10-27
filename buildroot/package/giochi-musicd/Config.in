@@ -1,0 +1,14 @@
+config BR2_PACKAGE_GIOCHI_MUSIC
+	bool "giochi-musicd (aba Musica)"
+	depends on BR2_USE_MMU
+	select BR2_PACKAGE_GIOCHI_MUSICD
+	help
+	  Alias historico da secao 4.8: habilita o daemon de musica.
+
+config BR2_PACKAGE_GIOCHI_MUSICD
+	bool "giochi-musicd (implementacao)"
+	depends on BR2_USE_MMU
+	select BR2_PACKAGE_ALSA_LIB
+	help
+	  Daemon de musica: ALSA direto (ADR-08) + socket texto em
+	  /run/giochi/music.sock. Nao e morto ao lancar jogos.

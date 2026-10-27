@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.6",
+  "tab": "library",
+  "regions": {
+    "top_bar": { "height": 40 },
+    "grid": {
+      "type": "grid",
+      "columns": 4,
+      "rows": 3,
+      "tile_size": { "width": 152, "height": 85 },
+      "title_height": 20,
+      "scroll": "vertical",
+      "overscan_rows": 1,
+      "source": "/user/games",
+      "thumbnail": "thumb.rgba",
+      "thumbnail_size": { "width": 152, "height": 85 },
+      "empty_text": "Copie um pacote .giochi via USB"
+    },
+    "scrollbar": { "width": 4 },
+    "hint_bar": { "height": 30, "title_preview_delay_ms": 300 }
+  },
+  "vram_budget_kb": 4096,
+  "max_textures_per_tab": 24
+}
