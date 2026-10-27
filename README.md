@@ -34,17 +34,20 @@ material de divulgação.
 
 | Home | Biblioteca |
 |---|---|
-| ![Aba Home](docs/screenshots/home.png) | ![Biblioteca em grid](docs/screenshots/library.png) |
-| **Música** | **Configurações → Sistema** |
-| ![Aba Música](docs/screenshots/music.png) | ![Modo Desenvolvedor](docs/screenshots/settings-system.png) |
+| ![Aba Home](docs/screenshots/home.png) | ![Biblioteca em grid 4x3](docs/screenshots/library.png) |
 
-X55 (painel 720×1280, rotação 270 → área lógica 1280×720) e o splash de boot,
-este último **real**: o arquivo em `assets/bootlogo/bootlogo.rgba` é desenhado
-pelo Launcher nos primeiros frames.
-
-| Powkiddy X55 | Bootsplash |
+| Música | Configurações |
 |---|---|
-| ![Home na X55](docs/screenshots/x55-home.png) | ![Splash](docs/screenshots/bootlogo.png) |
+| ![Aba Música](docs/screenshots/music.png) | ![Overlay de Configurações](docs/screenshots/settings.png) |
+
+| Configurações → Sistema (Modo Desenvolvedor) | Powkiddy X55 (1280×720) |
+|---|---|
+| ![Modo Desenvolvedor](docs/screenshots/settings-system.png) | ![Home na X55](docs/screenshots/x55-home.png) |
+
+E o splash de boot — este é **real**: o arquivo em
+`assets/bootlogo/bootlogo.rgba` é desenhado pelo Launcher nos primeiros frames.
+
+![Bootsplash](docs/screenshots/bootlogo.png)
 
 Regenerar: `make screenshots` (precisa de `pillow`).
 
