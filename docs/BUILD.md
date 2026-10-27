@@ -143,6 +143,16 @@ dongle como `=m` (não carregam no boot).
 
 ## 5. Empacotamento e assinatura (S9/S12)
 
+> **Estas ferramentas rodam no PC, não no console.** `giochi-pack.sh`,
+> `giochi-sign.sh`, `giochi-keys.sh` e `giochi-forge` (`src/forge`) pertencem ao
+> lado do autor/publicador: o aparelho apenas **valida** (`giochi-verify`),
+> **extrai** (`giochi-extract`) e **gera thumbnails** (`giochi-thumbgen`).
+>
+> Isso não é preferência: `giochi-pack.sh` usa `GNU tar --format=ustar`,
+> `--owner/--group`, `-r` e `jq` — nada disso existe no rootfs (BusyBox tar,
+> sem `jq`). Instalar esse script na imagem produzia um comando que falhava
+> sempre. `tools/check-image-contents.sh` (em `make lint`) barra a regressão.
+
 ```sh
 sh tools/giochi-pack.sh projeto/ jogo.giochi
 sh tools/giochi-keys.sh keys/                       # uma vez

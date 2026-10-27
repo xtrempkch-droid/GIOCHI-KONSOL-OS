@@ -340,6 +340,8 @@ lint:
 	@tools/check-buildroot-symbols.py
 	@echo "== u-boot/rkbin =="
 	@tools/check-uboot.py
+	@echo "== conteudo da imagem =="
+	@sh tools/check-image-contents.sh
 	@echo "== ferramentas python =="
 	@python3 -m py_compile tools/make-screenshots.py \
 	           tools/check-buildroot-symbols.py tools/check-uboot.py \

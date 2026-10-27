@@ -2,6 +2,18 @@
 #
 # giochi-tools — verify/extract/thumbgen (S9, S12)
 #
+# SO o que roda NO CONSOLE entra aqui:
+#   giochi-verify   -> valida assinatura Ed25519+SHA256 do update (§4.3)
+#   giochi-extract  -> desempacota .giochi ao instalar (§4.2)
+#   giochi-thumbgen -> pre-gera thumbnails 152x85 no install (§4.2)
+#
+# Ferramentas de PC NAO entram na imagem: giochi-pack.sh, giochi-sign.sh,
+# giochi-keys.sh e giochi-forge (src/forge) sao do lado do autor/publicador.
+# Alem de nao terem uso no aparelho, o giochi-pack.sh depende de GNU tar
+# (--format=ustar, --owner/--group, -r) e de jq, que o rootfs nao tem — na
+# imagem ele falharia em toda invocacao. tools/check-image-contents.sh barra
+# regressao desse tipo.
+#
 ################################################################################
 
 GIOCHI_TOOLS_VERSION = 1.2
@@ -35,8 +47,6 @@ define GIOCHI_TOOLS_INSTALL_TARGET_CMDS
 		$(TARGET_DIR)/usr/bin/giochi-extract
 	$(INSTALL) -D -m 0755 $(@D)/build/target/bin/giochi-thumbgen \
 		$(TARGET_DIR)/usr/bin/giochi-thumbgen
-	$(INSTALL) -D -m 0755 $(@D)/tools/giochi-pack.sh \
-		$(TARGET_DIR)/usr/bin/giochi-pack.sh
 endef
 
 $(eval $(generic-package))

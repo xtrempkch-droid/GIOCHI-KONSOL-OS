@@ -198,7 +198,25 @@ por `tools/make-screenshots.py`. O desenho dos widgets no SDL2 ainda é esboço.
 Se você escrever material de divulgação, não as apresente como screenshot de
 aparelho. `tests/test_screenshots.py` amarra as imagens ao tema e ao splash.
 
-### 3.12 Ambiente local ≠ runner do CI
+### 3.12 Ferramenta de PC não vai para o rootfs
+
+`buildroot/package/giochi-tools/giochi-tools.mk` instalava `giochi-pack.sh` em
+`/usr/bin` da imagem. Ele é ferramenta de **autor/publicador**, e depende de
+`GNU tar --format=ustar`, `--owner/--group` (opção inexistente no BusyBox),
+`-r` (append, também ausente) e `jq` (não empacotado). Ou seja: um comando que
+falhava **sempre**, ocupando espaço no SquashFS.
+
+- **No console** (elegível ao rootfs): `giochi-verify` (§4.3),
+  `giochi-extract` e `giochi-thumbgen` (§4.2).
+- **No PC**: `giochi-pack.sh`, `giochi-sign.sh`, `giochi-keys.sh`,
+  `giochi-forge` (`src/forge`), todos os `tools/*.py`, `build-image.sh` e os
+  scripts de stress/bench.
+- Guarda: `tools/check-image-contents.sh` (em `make lint`) falha nos dois
+  sentidos — ferramenta de PC instalada no alvo **e** binário obrigatório do
+  console faltando.
+- `giochi-pack.sh` agora recusa rodar com tar não-GNU, com mensagem explícita.
+
+### 3.13 Ambiente local ≠ runner do CI
 
 Nesta máquina (GCC 15, CMake 4.2) o build do Buildroot quebra em pacotes de
 host (`host-m4 1.4.19`, `host-lzo`). **Não é bug de configuração**: o runner usa
@@ -371,6 +389,19 @@ uma suíte, registre-a lá **e** no respectivo alvo do `Makefile`.
   (bring-up dos mesmos aparelhos) — confirmou defconfig, blobs e offsets.
 - Bug encontrado ao simular o CI em clone: `make test` não compilava `all`.
 - Verificação: `make test` 15/15 e `make lint` com as três árvores externas.
+
+### 2026-10-27 (7) — Copilot (ferramenta de PC na imagem)
+
+- Bug apontado pelo mantenedor: `giochi-tools.mk` instalava `giochi-pack.sh` no
+  rootfs. É ferramenta de PC e, na imagem, falharia sempre (BusyBox tar não tem
+  `--format`, `--owner/--group` nem `-r`; `jq` não existe no rootfs).
+- Removido do `INSTALL_TARGET_CMDS`; o cabeçalho do `.mk` agora lista o que é
+  do console e o que é do PC.
+- `tools/check-image-contents.sh` (em `make lint`) guarda os dois sentidos:
+  ferramenta de PC no alvo e binário obrigatório faltando.
+- `giochi-pack.sh` recusa rodar com tar não-GNU (exit 3), com o motivo.
+- Verificação: guarda testada ao contrário (reintroduzi o bug → rc=1);
+  `make lint`, `make test` 15/15 e pack real gerando tar válido.
 
 ### 2026-10-27 (6) — Copilot (AGENTS.md + roadmap)
 

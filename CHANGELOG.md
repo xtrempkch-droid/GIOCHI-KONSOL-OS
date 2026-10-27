@@ -32,6 +32,14 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 - `tools/check-links.py` agora valida também as tags de imagem HTML.
 
 ### Corrigido
+- **Ferramenta de PC instalada na imagem**: `giochi-tools` copiava
+  `giochi-pack.sh` para `/usr/bin` do rootfs. É script de autor/publicador e,
+  no console, falhava em toda invocação — o `tar` do BusyBox não aceita
+  `--format=ustar`, `--owner/--group` nem `-r`, e não há `jq` na imagem. A
+  imagem agora leva só o que roda no aparelho (`giochi-verify`,
+  `giochi-extract`, `giochi-thumbgen`); `tools/check-image-contents.sh` (novo,
+  em `make lint`) barra a regressão nos dois sentidos, e `giochi-pack.sh`
+  recusa rodar com tar não-GNU com mensagem explícita.
 - **Build das imagens abortava** em `Makefile.legacy` com "You have legacy
   configuration in your .config!" sem dizer qual símbolo era o culpado:
   `BR2_PACKAGE_RFKILL` foi **removido** do Buildroot (o `rfkill` agora vem do

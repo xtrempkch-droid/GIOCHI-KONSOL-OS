@@ -16,6 +16,15 @@ usage() {
 }
 
 [ -n "$PROJ" ] && [ -n "$OUT" ] || usage
+
+# Ferramenta de PC. O tar do BusyBox (rootfs do console) nao aceita
+# --format=ustar, --owner/--group nem -r (append): falharia no meio do
+# empacotamento. Melhor recusar de cara, com o motivo.
+if ! tar --version 2>/dev/null | grep -qi "gnu tar"; then
+    echo "giochi-pack: precisa de GNU tar (o tar do BusyBox nao serve)" >&2
+    echo "             este script roda no PC, nao no console" >&2
+    exit 3
+fi
 [ -d "$PROJ" ] || { echo "giochi-pack: projeto '$PROJ' inexistente" >&2; exit 1; }
 [ -f "$PROJ/metadata.json" ] || { echo "giochi-pack: metadata.json ausente" >&2; exit 1; }
 [ -f "$PROJ/capa.png" ] || { echo "giochi-pack: capa.png 320x320 obrigatoria" >&2; exit 1; }
