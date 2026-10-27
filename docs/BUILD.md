@@ -95,9 +95,36 @@ Detalhes de DTS externo, fallback de teste e como adicionar placa:
 (ext4), o `extlinux.conf` com o DTB do aparelho e empacota o cartão com
 `genimage`.
 
+### Ferramentas de host que a imagem exige
+
+O `post-image.sh` chama `mkbootimg.sh`, que monta a partição A com
+`mkfs.vfat` + `mcopy`/`mmd` e **exige** `boot.scr`. Tudo isso é declarado no
+defconfig, e não deixado para o que estiver instalado na máquina:
+
+| Símbolo | Fornece | Sem ele |
+|---|---|---|
+| `BR2_PACKAGE_HOST_DOSFSTOOLS` | `mkfs.vfat` | post-image falha (antes: só se o `apt` da máquina tivesse `dosfstools`) |
+| `BR2_PACKAGE_HOST_MTOOLS` | `mcopy`, `mmd` | idem |
+| `BR2_PACKAGE_HOST_UBOOT_TOOLS` + `..._BOOT_SCRIPT` | `boot.scr` de `board/giochi/boot.cmd` | `mkbootimg: boot.scr ausente`, e o genimage morria com "cannot find image boot.vfat" |
+
+O Buildroot põe `$(HOST_DIR)/bin` no `PATH` dos scripts de post-image
+(`BR_PATH`), então essas ferramentas funcionam sem instalação no sistema.
+
 ## 4. Kernel (S1)
 
-Base: **Linux 6.12 mainline** (fixado nos dois defconfigs). A referência de
+Base: **Linux 6.12 mainline** (fixado nos dois defconfigs).
+
+> ⚠️ **Não troque `BR2_LINUX_KERNEL_USE_ARCH_DEFAULT_CONFIG` por
+> `BR2_LINUX_KERNEL_USE_DEFCONFIG`.** O arm64/ARM tem **um único** defconfig no
+> kernel (`arch/arm64/configs/defconfig`), e o Buildroot acrescenta o sufixo ao
+> valor (`linux.mk`: `LINUX_KCONFIG_DEFCONFIG = <valor>_defconfig`). Com
+> `BR2_LINUX_KERNEL_DEFCONFIG="defconfig"` o comando vira `make
+> defconfig_defconfig` e o build morre com *"Can't find default configuration
+> arch/arm64/configs/defconfig_defconfig"* — depois de baixar o kernel e
+> compilar todo o host. A opção correta é a de configuração padrão da
+> arquitetura (o help do Buildroot diz: *"useful on architectures that have a
+> single defconfig file, such as ARM64"*). `tools/check-buildroot-symbols.py`
+> barra essa regressão. A referência de
 hardware dos aparelhos RK3566 está em
 [hardware-e-drivers.md](./hardware-e-drivers.md) §6 — os símbolos abaixo vêm de
 lá e são CONFIRMADOS no aparelho.

@@ -39,6 +39,25 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 - `tools/check-links.py` agora valida também as tags de imagem HTML.
 
 ### Corrigido
+- **Build de imagens morria no kernel**: `BR2_LINUX_KERNEL_USE_DEFCONFIG=y` com
+  `BR2_LINUX_KERNEL_DEFCONFIG="defconfig"` fazia o Buildroot rodar
+  `make defconfig_defconfig` (ele acrescenta o sufixo ao valor), e o kernel
+  respondia *"Can't find default configuration
+  arch/arm64/configs/defconfig_defconfig"*. Trocado por
+  `BR2_LINUX_KERNEL_USE_ARCH_DEFAULT_CONFIG=y`, que é a opção documentada para
+  arquiteturas com um único defconfig (ARM64).
+- **Nada gerava o `boot.scr`** que o `mkbootimg.sh` exige para montar a partição
+  A — o build morreria no `post-image` depois de compilar tudo. Adicionados
+  `BR2_PACKAGE_HOST_UBOOT_TOOLS_BOOT_SCRIPT` (com `boot.cmd` como fonte),
+  `BR2_PACKAGE_HOST_MTOOLS` e `BR2_PACKAGE_HOST_DOSFSTOOLS`; os dois últimos
+  também removem a dependência silenciosa de `apt install dosfstools mtools` na
+  máquina de build (o Buildroot põe `$(HOST_DIR)/bin` no `PATH`).
+- `post-image.sh`: ausência de `boot.vfat` passou de aviso a **erro fatal**, com
+  as dicas do que configurar — antes o `genimage` falhava depois com
+  "cannot find image boot.vfat", sem apontar a causa.
+- `tools/check-buildroot-symbols.py` valida também **valores**, não só a
+  existência do símbolo (escolha de config do kernel, sufixo `_defconfig`
+  duplicado), e roda em `make lint` mesmo sem `BUILDROOT_DIR`.
 - **Ferramenta de PC instalada na imagem**: `giochi-tools` copiava
   `giochi-pack.sh` para `/usr/bin` do rootfs. É script de autor/publicador e,
   no console, falhava em toda invocação — o `tar` do BusyBox não aceita

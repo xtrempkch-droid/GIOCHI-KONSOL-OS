@@ -28,6 +28,18 @@ BR2_ROOTFS_POST_BUILD_SCRIPT="$(BR2_EXTERNAL_GIOCHI_PATH)/board/giochi/post-buil
 BR2_ROOTFS_POST_IMAGE_SCRIPT="$(BR2_EXTERNAL_GIOCHI_PATH)/board/giochi/post-image.sh"
 BR2_PACKAGE_HOST_GENIMAGE=y
 BR2_PACKAGE_HOST_E2FSPROGS=y
+# Ferramentas de HOST usadas por board/giochi/mkbootimg.sh. Sem declarar aqui,
+# o build dependia do que estivesse instalado na maquina (o workflow de imagens
+# faz 'apt install dosfstools mtools'): em outra maquina o post-image falhava
+# no fim, depois de compilar tudo. O Buildroot poe $(HOST_DIR)/bin no PATH
+# (BR_PATH) destes scripts.
+BR2_PACKAGE_HOST_DOSFSTOOLS=y
+BR2_PACKAGE_HOST_MTOOLS=y
+# boot.scr a partir de board/giochi/boot.cmd: o mkbootimg.sh EXIGE boot.scr
+# para montar a particao A. Sem estas linhas ninguem o gerava.
+BR2_PACKAGE_HOST_UBOOT_TOOLS=y
+BR2_PACKAGE_HOST_UBOOT_TOOLS_BOOT_SCRIPT=y
+BR2_PACKAGE_HOST_UBOOT_TOOLS_BOOT_SCRIPT_SOURCE="$(BR2_EXTERNAL_GIOCHI_PATH)/board/giochi/boot.cmd"
 
 # --- init: BusyBox (ADR-02), sem systemd -------------------------------
 BR2_PACKAGE_BUSYBOX=y
@@ -44,8 +56,14 @@ BR2_TARGET_ROOTFS_SQUASHFS4_ZSTD=y
 BR2_LINUX_KERNEL=y
 BR2_LINUX_KERNEL_CUSTOM_VERSION=y
 BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE="6.12"
-BR2_LINUX_KERNEL_USE_DEFCONFIG=y
-BR2_LINUX_KERNEL_DEFCONFIG="defconfig"
+# arm64/ARM tem UM unico defconfig no kernel: arch/arm64/configs/defconfig.
+# NAO use BR2_LINUX_KERNEL_USE_DEFCONFIG aqui: o Buildroot acrescenta
+# "_defconfig" ao valor (linux.mk: LINUX_KCONFIG_DEFCONFIG = <valor>_defconfig),
+# entao "defconfig" virava "defconfig_defconfig" e o build morria com
+# "Can't find default configuration arch/arm64/configs/defconfig_defconfig".
+# A opcao certa e a de configuracao padrao da arquitetura (help do Buildroot:
+# "useful on architectures that have a single defconfig file, such as ARM64").
+BR2_LINUX_KERNEL_USE_ARCH_DEFAULT_CONFIG=y
 BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="$(BR2_EXTERNAL_GIOCHI_PATH)/board/giochi/linux.fragment $(BR2_EXTERNAL_GIOCHI_PATH)/board/giochi/linux-zstd.fragment $(BR2_EXTERNAL_GIOCHI_PATH)/board/giochi/linux-powkiddy.fragment"
 BR2_LINUX_KERNEL_DTS_SUPPORT=y
 @DTS_LINES@

@@ -225,6 +225,37 @@ GCC 13 / CMake 3.28. Não "conserte" isso mexendo no defconfig; valide símbolos
 com `check-buildroot-symbols.py` e deixe o build completo para o CI.
 
 ---
+### 3.14 `BR2_LINUX_KERNEL_DEFCONFIG="defconfig"` não existe
+
+Arm64/ARM têm **um único** defconfig no kernel (`arch/arm64/configs/defconfig`)
+e o Buildroot **acrescenta** `_defconfig` ao valor
+(`linux.mk`: `LINUX_KCONFIG_DEFCONFIG = <valor>_defconfig`). Resultado:
+`make defconfig_defconfig` e o build morre com *"Can't find default
+configuration arch/arm64/configs/defconfig_defconfig"* — **depois** de baixar o
+kernel e compilar todo o host (≈40 min no CI).
+
+- Correto: `BR2_LINUX_KERNEL_USE_ARCH_DEFAULT_CONFIG=y` (o help do Buildroot
+  diz "such as ARM64") e **nenhum** `BR2_LINUX_KERNEL_DEFCONFIG`.
+- `BR2_LINUX_KERNEL_DEFCONFIG` espera o nome **sem** o sufixo (ex.:
+  `bcm2711`), e só vale com `USE_DEFCONFIG=y`.
+- Guarda: `tools/check-buildroot-symbols.py` valida o **valor** (não só a
+  existência do símbolo) e roda em `make lint` mesmo sem `BUILDROOT_DIR`.
+
+### 3.15 Nada gerava o `boot.scr` que o post-image exige
+
+`mkbootimg.sh` monta a partição A e **exige** `boot.scr` (`exit 1` se faltar),
+mas nenhum símbolo do defconfig o gerava. O `post-image.sh` só avisava
+("boot.vfat nao gerado") e o `genimage` morria depois com *"cannot find image
+boot.vfat"* — escondendo a causa real.
+
+- `boot.scr` vem de `BR2_PACKAGE_HOST_UBOOT_TOOLS_BOOT_SCRIPT=y` +
+  `..._BOOT_SCRIPT_SOURCE="$(BR2_EXTERNAL_GIOCHI_PATH)/board/giochi/boot.cmd"`.
+- `mcopy`/`mmd`/`mkfs.vfat` vêm de `BR2_PACKAGE_HOST_MTOOLS` e
+  `BR2_PACKAGE_HOST_DOSFSTOOLS`. O Buildroot põe `$(HOST_DIR)/bin` no `PATH`
+  dos scripts (`BR_PATH`), então **não** dependa de `apt` na máquina.
+- `post-image.sh` agora trata boot.vfat ausente como **fatal**, com as dicas do
+  que configurar.
+
 
 ## 4. O que NÃO foi verificado
 
@@ -417,6 +448,27 @@ uma suíte, registre-a lá **e** no respectivo alvo do `Makefile`.
 - Divergências da lista × spec registradas: `layout.json` está em
   `/usr/share/giochi` (não `/etc/giochi/layouts/default/`) e o **§4.5.4 não
   existe** na v1.2 do repositório (a lista cita transferência por `scp`).
+
+### 2026-10-27 (9) — Copilot (build de imagens: kernel e boot.scr)
+
+- Erro no runner: `Can't find default configuration
+  "arch/arm64/configs/defconfig_defconfig"`. Causa: `USE_DEFCONFIG=y` +
+  `BR2_LINUX_KERNEL_DEFCONFIG="defconfig"`, e o Buildroot acrescenta
+  `_defconfig` ao valor. Trocado por `USE_ARCH_DEFAULT_CONFIG=y` nos dois
+  templates (o help do Buildroot cita ARM64 como o caso de uso).
+- Segundo bug achado na varredura do que roda **depois** do kernel: nada gerava
+  `boot.scr`, que o `mkbootimg.sh` exige. Adicionados
+  `HOST_UBOOT_TOOLS_BOOT_SCRIPT` (+ `_SOURCE` apontando para `boot.cmd`),
+  `HOST_MTOOLS` e `HOST_DOSFSTOOLS` (estes dois também removem a dependência do
+  `apt` da máquina). `post-image.sh` passou a tratar boot.vfat ausente como
+  fatal, em vez de avisar e deixar o genimage falhar sem contexto.
+- Verificado com Buildroot 2024.02.13 real: os 5 defconfigs geram `.config`
+  sem `BR2_LEGACY` e sem `override`; `LINUX_KCONFIG_DEFCONFIG=defconfig` (o
+  comando correto) nos cinco; `BOOT_SCRIPT=y` nos cinco. DTS de X55, RG353V e
+  RG351V confirmados em Linux v6.12; layout do `u-boot-rockchip.bin` a 32 KiB
+  conferido contra o rock5b do Buildroot (mesmo padrão).
+- Guarda nova no `check-buildroot-symbols.py`: validação de **valor** (escolha
+  de config do kernel, sufixo duplicado), que roda sem `BUILDROOT_DIR`.
 
 ### 2026-10-27 (6) — Copilot (AGENTS.md + roadmap)
 

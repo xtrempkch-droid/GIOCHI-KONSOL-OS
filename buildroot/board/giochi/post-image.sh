@@ -101,10 +101,17 @@ else
 fi
 
 # Particao A (FAT): Image + dtb + boot.scr.
+# Falha aqui e FATAL: sem boot.vfat o genimage segue e morre com "cannot find
+# image boot.vfat", escondendo a causa real (Image ou boot.scr ausente).
+# O boot.scr vem de BR2_PACKAGE_HOST_UBOOT_TOOLS_BOOT_SCRIPT (ver defconfig).
 if [ -x "$BOARD_DIR/mkbootimg.sh" ]; then
-    "$BOARD_DIR/mkbootimg.sh" "$BINARIES_DIR" "$BINARIES_DIR/boot.vfat" || {
-        echo "post-image: aviso: boot.vfat nao gerado" >&2
-    }
+    if ! "$BOARD_DIR/mkbootimg.sh" "$BINARIES_DIR" \
+            "$BINARIES_DIR/boot.vfat"; then
+        echo "post-image: ERRO: boot.vfat nao foi gerado (ver mensagem acima)" >&2
+        echo "post-image: boot.scr exige BR2_PACKAGE_HOST_UBOOT_TOOLS_BOOT_SCRIPT=y" >&2
+        echo "post-image: mcopy/mmd/mkfs.vfat exigem HOST_MTOOLS/HOST_DOSFSTOOLS" >&2
+        exit 1
+    fi
 fi
 
 if ! command -v genimage >/dev/null 2>&1; then
