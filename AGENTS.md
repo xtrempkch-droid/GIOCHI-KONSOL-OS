@@ -853,6 +853,24 @@ entrega features: fecha o que estava pela metade e **registra a dívida**.
    fechava o jogo com um som tocando; o `AudioStreamPlaybackWAV` ficava vivo.
    Corrigido desligando o áudio no quadro 1 do probe (`_sfx.set_enabled(false)`)
    — o probe mede RAM/VRAM, não som. Verificado: o aviso sumiu nos três.
+5. **Correção de fato (GPL), a pedido do mantenedor.** O mantenedor levantou que
+   "GPL-3 permite uso, mantendo os créditos". A primeira metade está certa
+   (§2: permissão ilimitada para *executar*), mas crédito **não** é o que
+   autoriza a distribuição. E eu tinha escrito, neste mesmo dia, que "a GPL
+   obrigaria a abrir tudo que se liga ao jogo" — **falso**: §5, último
+   parágrafo, diz que incluir um trabalho coberto num *agregado* não estende a
+   licença às outras partes. Corrigido em três lugares (nota do jogo,
+   `docs/GAMES.md`, `reason` do manifesto), com o texto citado.
+   O impedimento real, esse sim, é outro: §6 (*Installation Information*) exige
+   "métodos, procedimentos, chaves de autorização…" para instalar versão
+   modificada em "User Product", e a dispensa só vale para ROM. Rootfs SquashFS
+   **assinado** com a chave no projeto = dispensa não vale. O caminho honesto,
+   registrado na nota, é instalar o jogo em `/user` (fora da imagem assinada).
+   Separado disso: Shattered Pixel Dungeon é Java/libGDX, sem port, sem bench —
+   não pode entrar em `games` nem se a licença fosse permissiva.
+   **Decisão do mantenedor (2026-10-28): manter fora**, revisando depois "como
+   proceder definitivamente". Registrado na nota do jogo, no `reason` do
+   manifesto e em [docs/GAMES.md](docs/GAMES.md).
 
 **Verificação (tudo rodado):**
 

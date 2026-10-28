@@ -51,7 +51,7 @@
     {
       "id": "shattered-pixel-dungeon",
       "title": "Shattered Pixel Dungeon",
-      "reason": "licenca GPL-3.0: nao e dominio publico. Retirado da lista de jogos padrao por decisao do mantenedor (2026-10-27); volta quando houver decisao sobre como proceder.",
+      "reason": "licenca GPL-3.0 (copyleft): exige entregar a Corresponding Source e, por ser User Product com rootfs assinado, as Installation Information do art. 6; nao e dominio publico nem permissiva. Fora da lista de jogos padrao por decisao do mantenedor (2026-10-27), reafirmada em 2026-10-28 apos revisar as obrigacoes da GPL-3.0. Nao ha port (Java/libGDX, nao Godot), entao tambem nao teria bench.",
       "license": { "kind": "copyleft", "id": "GPL-3.0" },
       "upstream": "https://github.com/00-evan/shattered-pixel-dungeon",
       "notes": "Jogos/Shattered Pixel Dungeon/Shattered Pixel Dungeon.md"

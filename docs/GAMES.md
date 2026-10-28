@@ -25,12 +25,32 @@ sintetizado: nenhum arquivo de imagem ou áudio entra no rootfs.
 
 | Jogo | Licença | Motivo |
 |---|---|---|
-| Shattered Pixel Dungeon | **GPL-3.0** | não é domínio público. Retirado da lista de jogos padrão em 2026-10-27 por decisão do mantenedor; volta quando houver decisão sobre como proceder |
+| Shattered Pixel Dungeon | **GPL-3.0** | fora por decisão do mantenedor (2026-10-27) **e** por não ter port: o copyleft colide com a raiz assinada (§6, anti-tivoization) e o jogo é Java/libGDX, sem projeto Godot nem bench. Ver a nota da pasta |
 
-O GPL é *copyleft*: distribuir um derivado obriga a abrir o código e manter a
-mesma licença. Isso não é incompatível com o projeto em si, mas é uma decisão
-de licenciamento do sistema inteiro, não de um jogo — por isso está fora e
-registrado em `excluded`, com o motivo.
+**O que a GPL-3.0 exige** (texto conferido no `LICENSE.txt` do projeto): §2
+confirma permissão ilimitada para *executar* o programa; §4 e §5a obrigam a
+manter os avisos de copyright e a datar as modificações; §5c faz o trabalho
+inteiro passar a GPL-3.0 para quem receber uma cópia; §6 obriga a entregar a
+*Corresponding Source*. Ou seja: **crédito é necessário, mas não é o que
+permite o uso** — o preço do copyleft é a fonte e a licença, não a atribuição.
+
+**O que a GPL NÃO faz:** contaminar o resto da imagem. §5, último parágrafo,
+diz que incluir um trabalho coberto num **agregado** não estende a licença às
+outras partes. O Launcher, o `giochi-init` e o kernel não viram GPL por
+conviverem com um jogo GPL na mesma mídia.
+
+**O impedimento real é a raiz assinada.** §6 (*Installation Information*)
+exige, para um "User Product", os "métodos, procedimentos, chaves de
+autorização ou outras informações necessárias para instalar e executar versões
+modificadas" — e a dispensa só vale quando ninguém consegue instalar código
+modificado (ROM). O GIOCHI usa SquashFS assinado Ed25519 em A/B, com a chave no
+projeto: a dispensa não vale, e entregar a chave destruiria a raiz imutável.
+
+Além disso, ele **não tem port**: é Java/libGDX, não Godot, e não tem projeto,
+cena de bench nem `tests/run_tests.sh` — o que a seção `games` exige. O debate
+de licença não muda esse fato. Detalhes e o caminho que funcionaria (instalar
+em `/user`, fora da imagem assinada) estão em
+[Jogos/Shattered Pixel Dungeon/Shattered Pixel Dungeon.md](<../Jogos/Shattered Pixel Dungeon/Shattered Pixel Dungeon.md>).
 
 ## Como a regra é aplicada
 
