@@ -34,6 +34,7 @@ is_allowed() {
         assets/bootlogo/*/splash.bmp) return 0 ;;
         keys/*|*.pem|pubkey.ed25519) return 0 ;;
         *.giochi|*.giochi.sig|*.manifest.json|*.img|*.vfat|*.squashfs) return 0 ;;
+        *.img.xz|*.img.zst|*.img.gz) return 0 ;;
         *.o|*.d|*.a|*.so) return 0 ;;
     esac
     return 1

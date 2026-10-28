@@ -156,6 +156,7 @@ defconfig, e não deixado para o que estiver instalado na máquina:
 |---|---|---|
 | `BR2_PACKAGE_HOST_DOSFSTOOLS` | `mkfs.vfat` | post-image falha (antes: só se o `apt` da máquina tivesse `dosfstools`) |
 | `BR2_PACKAGE_HOST_MTOOLS` | `mcopy`, `mmd` | idem |
+| `BR2_PACKAGE_HOST_ZSTD` | `zstd` para o `.img.zst` de reserva | compressão cai para `xz`/`gzip` (ou nenhuma) |
 | `BR2_PACKAGE_HOST_UBOOT_TOOLS` + `..._BOOT_SCRIPT` | `boot.scr` de `board/giochi/boot.cmd` | `mkbootimg: boot.scr ausente`, e o genimage morria com "cannot find image boot.vfat" |
 | `BR2_TARGET_UBOOT_NEEDS_UTIL_LINUX` | `-luuid` para o `mkeficapsule` do U-Boot | `uuid/uuid.h: No such file or directory` |
 | `BR2_TARGET_UBOOT_NEEDS_GNUTLS` | `gnutls` para o mesmo binário | `gnutls/gnutls.h: No such file or directory` |
@@ -166,6 +167,48 @@ defconfig, e não deixado para o que estiver instalado na máquina:
 
 O Buildroot põe `$(HOST_DIR)/bin` no `PATH` dos scripts de post-image
 (`BR_PATH`), então essas ferramentas funcionam sem instalação no sistema.
+
+### Tamanho da imagem (o `.img` cru é ~90% zero)
+
+Medido no build real da X55 (`du -sh dist/x55/build/target` = 146 MB):
+
+| Artefato | Antes | Agora | Como |
+|---|---|---|---|
+| `rootfs.squashfs` (cada slot) | 34,9 MB | **28,0 MB** | zstd `-Xcompression-level 22` + bloco de 256K, e sem `usr/share/locale` |
+| `boot.vfat` | 64 MB (em 128 MB de partição) | 64 MB (em **80 MB**) | partição dimensionada pelo conteúdo |
+| `u-boot` (região raw) | 8 MiB | **16 MiB** | 8 MiB não cabiam 8,97 MiB — o `genimage` abortava |
+| `sdcard.img` | 968 MB | **936 MB** | offsets/size recalculados |
+| artefato publicado | `.img` de 968 MB | **`.img.xz` de 27,8 MB** | `xz -9` com janela de 192 MiB no `post-image.sh` |
+| idem, com a janela padrão do `xz -9` (64 MiB) | — | 55,1 MB | a segunda cópia do SquashFS não é referenciada |
+
+Três armadilhas que isso fechou:
+
+1. O `genimage.cfg` declarava **8 MiB** para o `u-boot-rockchip.bin`, mas o
+   arquivo medido tem **8,97 MiB** (o `u-boot.itb` embutido começa em 6 MiB).
+   O `genimage` aborta com *"image too big for partition"* no último passo,
+   depois de 1–3 h de compilação. Agora `post-image.sh` confere o tamanho de
+   cada artefato contra o cfg **antes** de chamar o `genimage`, dizendo quantos
+   MB cada um ocupa e quanto a partição tem.
+2. O tamanho da partição C vinha de `USER_SIZE_MB` enquanto as outras vinham do
+   `genimage.cfg`: mudar um sem o outro gerava `user.ext4` maior que a partição.
+   Agora **o cfg é a fonte única** (`part_size()`/`to_mb()` no `post-image.sh`).
+3. Publicar o `.img` cru. Quase todo o arquivo é zero (dois SquashFS de 28 MB,
+   uma partição C vazia de 512 MB), então a compressão é ~10×. O
+   `post-image.sh` gera `.img.xz` (cai para `zstd`/`gzip` conforme o que
+   existir) e o `images.yml` publica **só o comprimido** + `.sha256`.
+   `GIOCHI_NO_COMPRESS=1` desliga.
+
+O que **não** foi mexido, de propósito:
+
+- `usr/include`, `usr/share/{doc,man,info}`, `pkgconfig`, `*.a/*.la/*.prl` e o
+  `strip` de binários/.ko já são removidos pelo `target-finalize` do Buildroot
+  2024.02 (conferido no `Makefile` dele: `LINUX_MAKE_FLAGS += INSTALL_MOD_STRIP=1`
+  com `BR2_STRIP_strip=y`). Repetir isso no `post-build.sh` só gastaria tempo.
+- O `Image` do kernel tem 47 MB e aparece **uma** vez na imagem (na partição A,
+  dentro do `boot.vfat`); no `.xz` ele cai para ~24 MB. Encolher o kernel é
+  trabalho de configuração (`linux.fragment`), não de empacotamento.
+- A partição A/B duplica a SquashFS por definição (§1.3), e SquashFS comprimido
+  não comprime de novo: são ~28 MB incompressíveis por slot no `.xz`.
 
 ## 4. Kernel (S1)
 

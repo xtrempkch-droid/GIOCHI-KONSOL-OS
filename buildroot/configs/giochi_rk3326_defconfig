@@ -35,6 +35,10 @@ BR2_PACKAGE_HOST_E2FSPROGS=y
 # (BR_PATH) destes scripts.
 BR2_PACKAGE_HOST_DOSFSTOOLS=y
 BR2_PACKAGE_HOST_MTOOLS=y
+# zstd de host: o post-image comprime o sdcard.img (900 MB -> ~40 MB) para o
+# artefato de release. Sem declarar aqui, a compressao dependeria do que
+# estivesse instalado na maquina — o mesmo erro que mcopy/mkfs.vfat tinham.
+BR2_PACKAGE_HOST_ZSTD=y
 # boot.scr a partir de board/giochi/boot.cmd: o mkbootimg.sh EXIGE boot.scr
 # para montar a particao A. Sem estas linhas ninguem o gerava.
 BR2_PACKAGE_HOST_UBOOT_TOOLS=y
@@ -48,6 +52,9 @@ BR2_PACKAGE_BUSYBOX_CONFIG_FRAGMENT_FILES="$(BR2_EXTERNAL_GIOCHI_PATH)/board/gio
 # --- rootfs A/B: SquashFS ro, LZ4 (obrigatorio no RK3326) -------------
 BR2_TARGET_ROOTFS_SQUASHFS=y
 BR2_TARGET_ROOTFS_SQUASHFS4_LZ4=y
+# Bloco de 256K: comprime melhor que o padrao (128K) com o mesmo conteudo.
+# No LZ4 o '-Xhc' (extreme) ja vem ligado por padrao no Buildroot.
+BR2_TARGET_ROOTFS_SQUASHFS_BS_256K=y
 # Sem xattr: o Buildroot 2024.02 nao expoe essa opcao (xattrs sao
 # sempre gravados). Antes havia BR2_TARGET_ROOTFS_SQUASHFS4_NO_XATTR,
 # um simbolo INEXISTENTE que era descartado em silencio.

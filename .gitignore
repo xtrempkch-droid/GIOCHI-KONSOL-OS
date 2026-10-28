@@ -17,6 +17,9 @@ dist/
 *.giochi.sig
 *.manifest.json
 *.img
+*.img.xz
+*.img.zst
+*.img.gz
 *.vfat
 *.squashfs
 

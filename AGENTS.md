@@ -21,6 +21,7 @@ em que ordem em [docs/roadmap.md](docs/roadmap.md); inventário de cada app
 |---|---|
 | Núcleo em C/C++ (supervisor, sockets, SHA-256, Ed25519, JSON, hotkey) | **pronto e testado** |
 | Buildroot `BR2_EXTERNAL`, 5 aparelhos, genimage A/B | **config validado** contra Buildroot 2024.02.13 real |
+| Imagem de cartão: `.img` 936 MB → **`.img.xz` 27,8 MB** | **medido** no layout real (§3.21); nunca bootada |
 | U-Boot mainline na X55 (`powkiddy-x55-rk3566` + BL31/TPL do rkbin) | **config validado** |
 | USB: gadget composto (MTP + rede/SSH + Mass Storage) | **pronto**, testado contra configfs falso |
 | Modo Desenvolvedor (§4.6.1): SSH via USB desligado por padrão | **pronto**, testado |
@@ -338,6 +339,80 @@ completo precisa de ~16–18 GB.
 - Se o log terminar no meio de uma linha, **é disco** — não perca tempo lendo a
   compilação.
 
+### 3.19 `genimage.cfg` declarava 8 MiB para um arquivo de 8,97 MiB
+
+O `u-boot-rockchip.bin` medido no build real tem **9 401 856 B (8,97 MiB)** — o
+`idbloader` vai em 32 KiB e o `u-boot.itb` entra a partir de 6 MiB. A partição
+raw dizia `size = 8M`. O `genimage` aborta com *"image too big for partition"*
+no **último** passo, depois de 1–3 h compilando U-Boot, kernel e rootfs.
+
+- Região raw agora tem **16 MiB** e a partição de boot (80 MB) começa em
+  **24 MiB**; sem isso o próximo arquivo grande volta a bater.
+- `post-image.sh` tem `fits()`: compara cada artefato com o `size` do cfg e
+  falha **antes** do genimage, dizendo "ocupa N MB, a partição tem M MB".
+- `tests/test_image_layout.py` (em `make test` e `make lint`) refaz a conta em
+  segundos, sem Buildroot/genimage. Testado ao contrário: voltar para 8M faz o
+  teste falhar.
+- **Regra geral**: toda partição do `genimage.cfg` é dimensionada pelo
+  **artefato medido**, não pelo que parecia suficiente. Anote a medição no
+  comentário, como as outras.
+
+### 3.20 Tamanho de partição não pode viver em dois arquivos
+
+O tamanho da partição C vinha de `USER_SIZE_MB=512` (dentro do
+`post-image.sh`) e os outros do `genimage.cfg`. Mudar um sem o outro produzia
+`user.ext4` maior que a partição (o genimage aborta) ou espaço morto em todo
+cartão. Hoje o **cfg é a fonte única**: `part_size()`/`to_mb()` leem o `size`
+escolhido, o `user.ext4` sai com exatamente esse tamanho e
+`tests/test_image_layout.py` falha se o script ganhar um default próprio.
+
+Vale para qualquer dado: se você precisar do mesmo número em dois lugares,
+**gere o segundo** (foi a armadilha do `devices/*.conf` de novo).
+
+### 3.21 O `.img` cru é ~90% zero; publique o comprimido
+
+Com o layout atual o `sdcard.img` tem **936 MB** e não serve para distribuir
+(GitHub, download, bom senso). O `post-image.sh` gera o artefato comprimido e o
+`images.yml` publica **só** ele + `.sha256`.
+
+Medições desta sessão (imagem com o layout real, kernel de 47 MB e SquashFS de
+29 MB em cada slot):
+
+| Compressão | Tamanho |
+|---|---|
+| `xz -9` (janela padrão de 64 MiB) | 55,1 MB |
+| **`xz -9 --lzma2=dict=192MiB`** | **27,8 MB** |
+| `zstd -19 --long=31` | equivalente em conceito (janela de 2 GB) |
+
+O ganho **não** é do nível de compressão: é da **janela**. As partições A/B
+guardam o mesmo SquashFS, a 160 MB de distância; com janela de 64 MiB o xz não
+enxerga a segunda cópia e a recomprime (SquashFS já é comprimido, então ela
+custa os 28 MB inteiros). A janela é derivada do `size` de `system-a` no cfg
+(+32 MiB, teto de 512 MiB).
+
+- Decomprimir custa ~192 MB de RAM **no PC** — nada disso toca o console.
+- `xz -t` + `xz -dc | cmp` no `.img`: conferido, byte a byte igual.
+- Fallback: se o `xz` da máquina recusar a janela, o script avisa e cai para
+  `xz -9` (artefato ~2× maior) em vez de falhar o build.
+- `GIOCHI_NO_COMPRESS=1` desliga (build local iterativo).
+- **Não invente economia**: `usr/include`, `usr/share/{doc,man,info}`,
+  `pkgconfig`, `*.a/*.la` e o `strip` de binários/.ko **já** saem no
+  `target-finalize` do Buildroot 2024.02 (conferido no `Makefile` dele:
+  `LINUX_MAKE_FLAGS += INSTALL_MOD_STRIP=1` quando `BR2_STRIP_strip=y`).
+  Repetir no `post-build.sh` só gasta tempo — `strip` num `.ko` já stripado
+  devolveu 0 byte de diferença.
+
+### 3.22 Gettext: 9,5 MB que nenhuma peça do console usa
+
+`usr/share/locale` era **9,5 MB crus / 2,1 MB no SquashFS**. A UI do Giochi não
+usa gettext (as frases estão nos assets e no `locale.gd` dos jogos); sem os
+`.mo`, `e2fsprogs`/`util-linux`/`alsa` caem no texto em inglês — e essas
+mensagens vão para o `logger`, não para a tela.
+
+O `post-build.sh` remove `usr/share/{locale,i18n,help,gtk-doc}` e loga quantos
+KB saíram. `GIOCHI_KEEP_LOCALE=1` mantém (para investigar tradução de
+ferramenta).
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):
@@ -392,7 +467,7 @@ make bootlogo            # assets/bootlogo/*             (a partir de docs/logo.
 Nunca edite à mão: `buildroot/configs/*_defconfig`, `assets/bootlogo/bootlogo.rgba`,
 `assets/bootlogo/*/splash.bmp`, `docs/screenshots/*.png`.
 
-### Suítes de teste (15)
+### Suítes de teste (ver `tests/run_tests.sh`; o número envelhece)
 
 | Suíte | O que cobre |
 |---|---|
@@ -403,6 +478,8 @@ Nunca edite à mão: `buildroot/configs/*_defconfig`, `assets/bootlogo/bootlogo.
 | `usb-gadget` (integração) | configfs falso: rede sempre, ffs.mtp, mass, `off` |
 | `devmode` (integração) | §4.6.1: gate desligado, IPs, bind só em `10.55.0.2:22`, `DEV_MODE` |
 | `bootlogo`, `screenshots` (Python) | contrato dos assets e das imagens |
+| `jogos-padrao` (Python) | licença, `bench.gd`, doc e benchmark dos jogos padrão |
+| `imagem-layout` (Python) | `genimage.cfg`: u-boot cabe na região raw, partições não se sobrepõem, tamanho vem de uma fonte só |
 | `forge` (Python) | perfil, classificação, empacotamento |
 
 A lista canônica é [tests/run_tests.sh](tests/run_tests.sh); se você adicionar
@@ -889,3 +966,88 @@ conteúdo de 18 salas/100 pontos contra 430 do original, 3D real (hoje é
 perspectiva de ponto de fuga em `Node2D`), sem áudio ambiente, nada rodado em
 aparelho, e nenhum dos três jogos vira `.giochi` sem o export template musl do
 ADR-03.
+
+### 2026-10-28 (15) — Copilot (tamanho da imagem: 968 MB → 27,8 MB)
+
+O mantenedor relatou que **a imagem estava grande demais para o GitHub** (o
+`.img` era publicado cru, com 968 MB). A revisão do caminho de empacotamento
+achou três defeitos, dois deles fatais para o build.
+
+**1. O `genimage` abortava no último passo (bug de correção, não de tamanho).**
+O `genimage.cfg` declarava `size = 8M` para a região raw do
+`u-boot-rockchip.bin`, e o arquivo medido tem **9 401 856 B (8,97 MiB)**: o
+`idbloader` vai em 32 KiB e o `u-boot.itb` começa em 6 MiB. Ou seja, a imagem
+**nunca** poderia ser gerada com U-Boot mainline — e o erro aparecia só depois
+de 1–3 h de compilação. Região agora com 16 MiB; partição de boot 128 → 80 MB
+em offset 24 MiB; `post-image.sh` ganhou `fits()`, que compara cada artefato com
+o `size` do cfg **antes** do genimage. Armadilha §3.19.
+
+**2. Tamanho de partição em dois arquivos.** `USER_SIZE_MB=512` no
+`post-image.sh` e `512M` no cfg. Agora o cfg é a fonte única
+(`part_size()`/`to_mb()`), o `user.ext4` sai com o tamanho exato da partição e
+há teste que falha se o script voltar a ter default próprio. Armadilha §3.20
+(mesma classe do `devices/*.conf`).
+
+**3. O artefato de distribuição.** O `post-image.sh` gera `.img.xz` (fallback
+`zstd --long=31` e `gzip -9`, `BR2_PACKAGE_HOST_ZSTD` declarado) e o
+`images.yml` publica **só o comprimido** + `.sha256`, com passo que falha se
+não houver comprimido. Também ganhou `rm -rf dist/<aparelho>/build` no fim,
+porque a árvore de build (~14 GB) ficava no runner entre jobs da matriz.
+
+**O detalhe que valeu a diferença toda:** `xz -9` com a janela padrão de 64 MiB
+dava **55,1 MB**; com `--lzma2=dict=192MiB` deu **27,8 MB**. Não é o nível de
+compressão, é a **janela**: as partições A/B guardam o mesmo SquashFS a 160 MB
+de distância, e só uma janela maior que essa distância deixa o xz referenciar a
+segunda cópia. A janela é calculada do `size` de `system-a` no cfg (+32 MiB,
+teto 512 MiB). Custo: ~192 MB de RAM **no PC** para descomprimir. Armadilha
+§3.21.
+
+**Rootfs: 34,9 → 28,0 MB** sem perder funcionalidade:
+
+| Mudança | Ganho medido |
+|---|---|
+| `SQUASHFS_BS_256K` + `SQUASHFS_EXTREME_COMP` (zstd 22) nos dois templates | 34,9 → 30,1 MB |
+| `post-build.sh` remove `usr/share/locale` (gettext, 9,5 MB crus) | 30,1 → 28,0 MB |
+
+O que **não** foi mexido, porque o `target-finalize` do Buildroot 2024.02 já
+faz: `usr/include`, `usr/share/{doc,man,info}`, `pkgconfig`, `*.a/*.la/*.prl`,
+e `strip` de binários e de `.ko` (`LINUX_MAKE_FLAGS += INSTALL_MOD_STRIP=1` com
+`BR2_STRIP_strip=y`). Conferido lendo o `Makefile` e o `linux.mk` do 2024.02, e
+medindo: `strip` num `.ko` da árvore já stripada devolveu **0 byte** de
+diferença. A árvore local em `dist/x55/build/target` (146 MB) tem `usr/include`,
+`usr/share/doc` e `*.a` porque o build parou no mesa3d, **antes** do
+`target-finalize` — é por isso que ela parece maior que a SquashFS final.
+
+**Verificação (tudo rodado nesta sessão):**
+
+- `tools/check-buildroot-symbols.py --buildroot /tmp/buildroot` (2024.02.x
+  clonado): `ok (5 defconfigs)`. `make defconfig` real dos dois templates gerou
+  `.config` **sem `BR2_LEGACY`** e com `SQUASHFS_BS="256K"`,
+  `SQUASHFS_COMP_OPTS="-Xcompression-level 22"` (rk3566) / `-Xhc` (rk3326) e
+  `HOST_ZSTD=y`.
+- `post-image.sh` executado de verdade contra um ambiente com os artefatos
+  reais (`Image`, `boot.scr`, `u-boot-rockchip.bin` de 8,97 MiB, dtb, squashfs)
+  e stubs de `mkfs.vfat`/`mcopy`/`mmd`/`genimage` (não há `genimage` nem sudo
+  nesta máquina): layout com u-boot e layout sem u-boot, `user.ext4` criado com
+  exatamente 512 MB, aviso + recriação quando o arquivo estava com 100 MB,
+  `fits()` reprovando um cfg de 4 MB (rc=1) e o artefato final
+  **`sdcard.img.xz` de 28 MB**, validado com `xz -t` e `xz -dc | cmp` → byte a
+  byte igual ao `.img`.
+- `tests/test_image_layout.py` (9 checagens, nova suíte `imagem-layout` em
+  `make test` **e** `make lint`): testada ao contrário — voltar para `size = 8M`
+  faz falhar com "regiao do u-boot menor que o artefato medido".
+- `make test` → **17/17 suites**. `make lint` → ok (com e sem `BUILDROOT_DIR`).
+  `check-tracked.sh` testado ao contrário: `.img.xz` na raiz é aceito
+  (`is_allowed` atualizado; antes o lint reprovaria).
+
+**Correção de fato que circulava:** o `genimage.cfg` (e o comentário de
+`docs/DEVICES.md`) tratavam 8 MiB como suficiente para o `u-boot-rockchip.bin`
+do RK3566. Não é: o layout padrão do Rockchip põe o `u-boot.itb` em 6 MiB e o
+arquivo medido termina em ~9 MiB. O README cita "8 MiB para `u-boot.itb`" como
+offset de gravação — o offset está certo, o **tamanho da região** é que não.
+
+**Aberto:** nada disso foi bootado em hardware (a imagem nunca foi gravada); o
+`genimage` real não rodou aqui (sem sudo/apt nesta máquina), então o `.img`
+final de 936 MB é estimado por soma de partições — os artefatos individuais e a
+compressão são medidos. Encolher o kernel `Image` (47 MB, ~24 MB no `.xz`) é a
+próxima economia real e é trabalho de `linux.fragment`, não de empacotamento.

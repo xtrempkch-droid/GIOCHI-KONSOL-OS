@@ -39,6 +39,32 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 - `tools/check-links.py` agora valida também as tags de imagem HTML.
 
 ### Corrigido
+- **A imagem não cabia no GitHub**: o `sdcard.img` tinha **968 MB** e era
+  publicado cru. Agora o `post-image.sh` gera o artefato comprimido com
+  **`xz -9` e janela de 192 MiB**, e o `images.yml` publica só o `.xz` +
+  `.sha256`. Medido no layout real: **936 MB → 27,8 MB**. A janela grande não é
+  acaso — as partições A/B guardam o **mesmo** SquashFS e, com a janela padrão
+  do `xz -9` (64 MiB), a segunda cópia, 160 MB adiante, é incompressível
+  (55,1 MB contra 27,8 MB). O `.img` cru continua em `dist/`;
+  `GIOCHI_NO_COMPRESS=1` desliga.
+- **O `genimage` abortava no último passo depois de 1–3 h de build**: o
+  `genimage.cfg` declarava **8 MiB** para a região raw do
+  `u-boot-rockchip.bin`, mas o artefato medido tem **8,97 MiB** (o `u-boot.itb`
+  começa em 6 MiB). Região agora com 16 MiB, partição de boot de 128 → **80
+  MB** começando em 24 MiB, e o `post-image.sh` **confere o tamanho de cada
+  artefato contra o cfg antes de chamar o `genimage`**, dizendo quantos MB cada
+  um ocupa. `tests/test_image_layout.py` pega a mesma regressão em segundos.
+- **Tamanho de partição em dois lugares**: a partição C vinha de
+  `USER_SIZE_MB` (script) e as outras do `genimage.cfg`. Mudar um sem o outro
+  criava `user.ext4` maior que a partição. O cfg agora é **fonte única**
+  (`part_size()`/`to_mb()` no `post-image.sh`), com teste que falha se o script
+  voltar a ter um default próprio.
+- **Rootfs 34,9 → 28,0 MB sem tirar funcionalidade**: `SQUASHFS_BS_256K` +
+  `SQUASHFS_EXTREME_COMP` (zstd nível 22) nos dois templates, e o
+  `post-build.sh` remove os catálogos gettext (`usr/share/locale`, 9,5 MB crus)
+  que nenhuma peça do console usa. O que o `target-finalize` do Buildroot já
+  remove (`usr/include`, docs, `man`, `*.a`, `strip` de binários/.ko) **não** é
+  repetido no `post-build.sh` — conferido no `Makefile` do Buildroot 2024.02.
 - **O build de imagens morria no meio, sem mensagem**: o runner `ubuntu-24.04`
   tem ~14 GB livres e o build da X55 usa ~16–18 GB. O log simplesmente terminava
   numa linha de compilação (sem `No space left`, porque o próprio log não podia

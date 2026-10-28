@@ -227,6 +227,25 @@ if [ "$usb_gadget" = "no" ]; then
     echo 1 > "$TARGET_DIR/etc/giochi/usb_gadget_disabled"
 fi
 
+# --- tamanho do rootfs: o que o Buildroot NAO remove -------------------
+# O target-finalize do 2024.02 ja apaga usr/include, usr/share/{doc,man,info},
+# pkgconfig, *.a/*.la/*.prl, e faz o strip dos binarios e dos .ko (via
+# INSTALL_MOD_STRIP) — conferido no Makefile do Buildroot. Nao repita isso
+# aqui. O que ele DEIXA e nao serve para nada neste console sao os catalogos
+# gettext: 9,5 MB crus / 2,1 MB no SquashFS no build real da X55.
+# A UI do Giochi nao usa gettext (as frases vivem nos assets e no locale.gd dos
+# jogos); sem os .mo, e2fsprogs/util-linux/alsa caem no texto em ingles.
+# GIOCHI_KEEP_LOCALE=1 mantem (util ao investigar traducao de ferramenta).
+if [ "${GIOCHI_KEEP_LOCALE:-0}" != "1" ]; then
+    for d in usr/share/locale usr/share/i18n usr/share/help usr/share/gtk-doc; do
+        if [ -d "$TARGET_DIR/$d" ]; then
+            kb=$(du -sk "$TARGET_DIR/$d" 2>/dev/null | cut -f1)
+            rm -rf "$TARGET_DIR/$d"
+            echo "post-build: removido /$d (${kb:-?} KB; nao usado pelo console)"
+        fi
+    done
+fi
+
 # --- chave publica de update (ADR-12) ---------------------------------
 if [ -f "$BOARD_DIR/pubkey.ed25519" ]; then
     install -m 0644 "$BOARD_DIR/pubkey.ed25519" \

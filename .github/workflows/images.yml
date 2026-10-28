@@ -150,21 +150,45 @@ jobs:
       - name: Tamanho e checksum
         run: |
           set -eu
-          img="dist/${{ matrix.device }}/giochi-${{ matrix.device }}-sdcard.img"
-          test -f "$img"
-          ls -lh "$img"
-          ( cd "$(dirname "$img")" && sha256sum "$(basename "$img")" \
-              > "$(basename "$img").sha256" && cat "$(basename "$img").sha256" )
+          base="dist/${{ matrix.device }}/giochi-${{ matrix.device }}-sdcard.img"
+          test -f "$base"
+          # O .img cru tem ~920 MB, quase todo zero. O artefato publicado e o
+          # comprimido (~40-90 MB); balenaEtcher e Raspberry Pi Imager abrem
+          # .xz/.gz direto. Falhar se o comprimido nao sair evita publicar
+          # 900 MB por engano.
+          packed=""
+          for ext in xz zst gz; do
+            [ -f "$base.$ext" ] && { packed="$base.$ext"; break; }
+          done
+          if [ -z "$packed" ]; then
+            echo "ERRO: nenhum artefato comprimido (.xz/.zst/.gz) em dist" >&2
+            ls -lh dist/${{ matrix.device }} >&2
+            exit 1
+          fi
+          echo "cru:";       ls -lh "$base"
+          echo "publicado:"; ls -lh "$packed"
+          ( cd "$(dirname "$base")" && sha256sum "$(basename "$packed")" \
+              > "$(basename "$packed").sha256" && cat "$(basename "$packed").sha256" )
 
       - name: Publicar artefato
         uses: actions/upload-artifact@v4
         with:
           name: giochi-${{ matrix.device }}
+          # So o comprimido + checksums: o .img cru estoura o limite pratico
+          # de armazenamento/transferencia e nao agrega nada ao usuario.
           path: |
-            dist/${{ matrix.device }}/*.img
+            dist/${{ matrix.device }}/*.img.xz
+            dist/${{ matrix.device }}/*.img.zst
+            dist/${{ matrix.device }}/*.img.gz
             dist/${{ matrix.device }}/*.sha256
           if-no-files-found: error
           retention-days: 14
+
+      # O build deixa ~14 GB em dist/<aparelho>/build (fontes + objetos). Numa
+      # matriz com varios aparelhos isso enche o runner no meio do job seguinte.
+      - name: Limpar arvore de build
+        if: always()
+        run: rm -rf dist/${{ matrix.device }}/build
 
   release:
     name: anexar ao release
@@ -179,7 +203,11 @@ jobs:
           path: artifacts
       - uses: softprops/action-gh-release@v2
         with:
+          # Anexa o comprimido; `fail_on_unmatched_files: false` porque o
+          # formato varia com o que existir na maquina (xz, zstd ou gzip).
           files: |
-            artifacts/**/*.img
+            artifacts/**/*.img.xz
+            artifacts/**/*.img.zst
+            artifacts/**/*.img.gz
             artifacts/**/*.sha256
           fail_on_unmatched_files: false

@@ -70,6 +70,19 @@ if command -v python3 >/dev/null 2>&1; then
     fi
 fi
 
+# Layout do cartao (genimage.cfg): o u-boot tem de caber na regiao raw e as
+# particoes nao podem se sobrepor. Sem isso o build morre no genimage depois de
+# 1-3 h compilando (foi o que aconteceu com a regiao de 8 MiB).
+if command -v python3 >/dev/null 2>&1; then
+    total=$((total + 1))
+    if (cd "$ROOT" && python3 -m unittest tests.test_image_layout) >/dev/null 2>&1; then
+        echo "OK     imagem-layout (python)"
+    else
+        echo "FALHA  imagem-layout (python)"
+        fail=$((fail + 1))
+    fi
+fi
+
 # Gadget USB composto (rede + MTP) contra configfs falso.
 if [ -x "$ROOT/tests/integration/usbgadget_test.sh" ]; then
     total=$((total + 1))

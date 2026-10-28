@@ -296,7 +296,19 @@ build_device() {
     if [ -f "$images/sdcard.img" ]; then
         cp "$images/sdcard.img" "$out/giochi-$id-sdcard.img"
         summary="$summary
-  $id: $out/giochi-$id-sdcard.img"
+  $id: $out/giochi-$id-sdcard.img ($(du -h "$out/giochi-$id-sdcard.img" | cut -f1))"
+        # O artefato de distribuicao e o comprimido (~40 MB contra ~900 MB):
+        # o .img cru e quase todo zero e nao deve ser publicado.
+        for ext in xz zst gz; do
+            [ -f "$images/sdcard.img.$ext" ] || continue
+            cp "$images/sdcard.img.$ext" "$out/giochi-$id-sdcard.img.$ext"
+            ( cd "$out" && sha256sum "giochi-$id-sdcard.img.$ext" \
+                  > "giochi-$id-sdcard.img.$ext.sha256" )
+            summary="$summary
+      -> giochi-$id-sdcard.img.$ext ($(du -h \
+            "$out/giochi-$id-sdcard.img.$ext" | cut -f1))"
+            break
+        done
     else
         echo "ERRO $id: sdcard.img nao gerado em $images" >&2
         return 1

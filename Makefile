@@ -349,6 +349,8 @@ lint:
 	@tools/check-uboot.py
 	@echo "== conteudo da imagem =="
 	@sh tools/check-image-contents.sh
+	@echo "== layout do cartao =="
+	@python3 -m unittest tests.test_image_layout 2>&1 | tail -3
 	@echo "== ferramentas python =="
 	@python3 -m py_compile tools/make-screenshots.py \
 	           tools/check-buildroot-symbols.py tools/check-uboot.py \

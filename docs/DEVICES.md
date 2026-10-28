@@ -36,8 +36,15 @@ tools/build-image.sh x55
 tools/build-image.sh --all --jobs "$(nproc)"
 ```
 
-Saída: `dist/<aparelho>/giochi-<aparelho>-sdcard.img`, pronta para
-`dd if=... of=/dev/sdX bs=4M conv=fsync` ou Balena Etcher.
+Saída: `dist/<aparelho>/giochi-<aparelho>-sdcard.img.xz` (~28 MB), pronta para
+`balenaEtcher` / `Raspberry Pi Imager` ou
+`xz -dc ...img.xz | dd of=/dev/sdX bs=4M conv=fsync`.
+
+O `.img` cru (~936 MB) também fica em `dist/<aparelho>/`, mas **não é o
+artefato de distribuição**: ~90% dele são zeros (as duas cópias do SquashFS
+ocupam ~28 MB cada; o resto é a partição C vazia de 512 MB). O `post-image.sh`
+gera a versão comprimida e o `build-image.sh` copia o comprimido + `.sha256`
+para `dist/`. `GIOCHI_NO_COMPRESS=1` desliga (útil em build local iterativo).
 
 `make image DEVICE=x55` e `make images BUILD=1` são atalhos.
 
@@ -92,6 +99,13 @@ Para X55 a cadeia completa é montada pelo Buildroot, sem passo manual:
 rkbin (BL31 + DDR/TPL)  →  U-Boot SPL  →  u-boot-rockchip.bin  →  genimage.cfg (offset 32 KiB)
 ```
 
+A região raw do bootloader no `genimage.cfg` tem **16 MiB** (não 8): o
+`u-boot-rockchip.bin` medido no build real tem 8,97 MiB, porque o `u-boot.itb`
+entra a partir de 6 MiB — 8 MiB abortava o `genimage` com *"image too big for
+partition"*. A primeira partição (FAT de boot) começa em **24 MiB**, deixando a
+faixa 32 KiB…24 MiB livre. O `post-image.sh` confere o tamanho de cada artefato
+contra o cfg antes de chamar o `genimage`.
+
 - `BR2_TARGET_UBOOT_CUSTOM_VERSION_VALUE="2024.10"` — 2024.07 é o mínimo; o
   2024.10 é o pinado (LTS seguinte).
 - `BR2_PACKAGE_ROCKCHIP_RKBIN_BL31_FILENAME="bin/rk35/rk3568_bl31_v1.43.elf"`
@@ -114,7 +128,8 @@ GIOCHI_UBOOT_BIN=/caminho/u-boot-rockchip.bin tools/build-image.sh x35s
 # B) Tree do U-Boot do vendor
 GIOCHI_UBOOT_DIR=/caminho/u-boot tools/build-image.sh x35s
 
-# C) Sem bootloader: grave o vendor antes no cartão (offset 32 KiB)
+# C) Sem bootloader: grave o vendor antes no cartão (offset 32 KiB) e depois a
+#    imagem a partir do offset 8 MiB — o layout sem U-Boot mantém p1 em 8M
 tools/build-image.sh x35s
 ```
 
