@@ -9,6 +9,8 @@ build/
 output/
 dist/
 .cache/
+# cache/import do Godot (gerado ao abrir o projeto; os *.import ficam)
+.godot/
 
 # artefatos de pacote/assinatura
 *.giochi

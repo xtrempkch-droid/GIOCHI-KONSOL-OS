@@ -29,6 +29,7 @@ git rev-parse --git-dir >/dev/null 2>&1 || {
 is_allowed() {
     case "$1" in
         build/*|output/*|dist/*|.cache/*) return 0 ;;
+        .godot/*|*/.godot/*) return 0 ;;
         */__pycache__/*|__pycache__/*|*.pyc) return 0 ;;
         assets/bootlogo/*/splash.bmp) return 0 ;;
         keys/*|*.pem|pubkey.ed25519) return 0 ;;

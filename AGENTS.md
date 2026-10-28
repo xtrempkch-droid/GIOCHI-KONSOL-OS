@@ -574,3 +574,107 @@ falta de memória da máquina durante o mesa3d. Falta confirmar `sdcard.img`.
   bola fora da tela, sem bola dentro da rede, sem jogador atravessando a rede).
 - Aberto: nada disso foi jogado em aparelho; sem audio, sem pausa e sem partida
   de dois jogadores; o jogo nao aparece no Launcher (nenhum catalogo le a pasta).
+
+### 2026-10-27 (11) — Copilot (jogo em Godot 4.3, orçamento 700 MB/128 MB)
+
+O mantenedor definiu que o runtime do projeto é Godot (ADR-07) e pediu o jogo
+"mais moderno possível" dentro de **700 MB de RAM e 128 MB de VRAM** — que são
+exatamente os números do RK3566 em `src/init/device_profile.c` (2048 MB / 128 MB;
+o RK3326 é 1024 MB / 64 MB).
+
+- Novo projeto em `Jogos/Arcade Volleyball/godot/`: Godot 4.3 com
+  `gl_compatibility` e `godot_max = 4.3` do `device_profile.json`. Estrutura:
+  `scripts/sim/` (regras puras: `match.gd`, `fixed_step.gd`), `scripts/`
+  (views, hud, audio, art, quality), `shaders/court.gdshader`, `scenes/`,
+  `tests/`.
+- **Nenhum asset binário**: personagens e rede são `_draw`/`StyleBoxFlat`, a
+  quadra é um fragment shader (1 draw call, 0 textura), o brilho/poeira usam um
+  único `GradientTexture2D` 128x128 e o som é sintetizado em `AudioStreamWAV`
+  no boot. Motivo: num aparelho com 128 MB de VRAM o gargalo seria textura, e
+  asset de áudio ainda teria o custo do import.
+- Separar o modelo da cena não foi preciosismo: com `match.gd` puro o fuzz de
+  20 000 passos roda headless em segundos e vale igual para o port C++.
+- Medido no host com GPU real (Mesa/radeonsi): **RAM 190–192 MB, VRAM 23–27 MB,
+  41–51 draw calls**. Texturas: 16,9 MB, dos quais a arte do jogo é < 1 MB (o
+  resto é o tema/fonte padrão do motor). Com llvmpipe a mesma cena dá 248 MB de
+  RSS — o número do aparelho só o aparelho decide, e para isso existe o painel
+  `F3` no jogo.
+- `godot/forge.json` + `giochi-forge check`: **Compatível** em `rk3566-2gb` e
+  `rk3326-1gb` (inclusive inferindo de `project.godot` sem `forge.json`).
+
+**Armadilhas novas (silenciosas):**
+
+1. `--script` só acha `class_name` depois de uma passada de importação
+   (`--headless --editor --quit`); sem ela: *"Could not find type
+   VolleyMatch"*. O runner do jogo roda essa etapa sempre.
+2. `Tween` roda com delta **escalado** por `Engine.time_scale`, e
+   `Tween.set_ignore_time_scale()` **não existe** no 4.3 (conferido com
+   `has_method`). Banner animado por tween levava ~1,6 s para aparecer durante
+   o hit-stop. HUD agora anima por tempo real (`Time.get_ticks_msec()`).
+3. `AudioStreamWAV` tocando no `quit()` deixa o engine avisar *"ObjectDB
+   instances leaked at exit"*; `_exit_tree()` no `SfxKit` para os players e
+   limpa os streams.
+4. Testar "de olho" não pega erro de posicionamento: `PlayerView` nunca
+   atribuía `position` (os dois jogadores desenhavam na origem) e a sombra do
+   piso usava `Vector2(y, 0)`. Só apareceu conferindo coordenadas de pixel no
+   PNG capturado.
+5. `GPUParticles2D` foi evitado de propósito: `CPUParticles2D` funciona nos três
+   renderizadores e a quantidade já é limitada por preset.
+
+**Integração:** `godot/.godot/` entrou no `.gitignore` e na lista de exceções de
+`tools/check-tracked.sh` (testado ao contrário: sem a exceção o lint reprova
+com 9 arquivos). O runner entrou em `sh -n` do `make lint` e há alvo próprio
+`make godot-test` — **fora** de `make test`, porque o motor não é dependência do
+repositório (mesmo critério de SDL2/ALSA/Pillow). O port C++ recebeu os mesmos
+dois empurrões laterais da bola (fuzz depois: 219 pontos, maior espera 1,9 s).
+
+**Aberto:** nada rodado em aparelho (Mali-G52/Panfrost ≠ Mesa); sem export
+template musl (ADR-03) e sem export pelo `giochi-forge`, então ainda não existe
+`.giochi`; RK3326 continua oficialmente em Godot 3.5 LTS (ADR-07), e um projeto
+4.3 não abre no 3.5.
+
+### 2026-10-27 (12) — Copilot (Spacewar em Godot 4.3)
+
+O arquivo que existia em `Jogos/Spacewar/` era **só o listing assembly do
+PDP-1** (7.522 linhas), sem documentação e sem nada executável no console.
+Preservado como `Jogos/Spacewar/Spacewar-1962-listing.pdp1` e o jogo foi
+escrito a partir dele, no mesmo padrão do Arcade Volleyball (Godot 4.3 +
+`gl_compatibility`, arte vetorial, som sintetizado, modelo separado da cena).
+
+**Sobre o listing (vale registrar, para ninguém tratar como original):** o
+cabeçalho diz `fio-dec system, june 1963` e a 1ª página `/spacewar 3.1 24 sep
+62`. É a versão 3.1 (set/1962) montada sob o FIO-DEC em jun/1963, **transcrita
+com anotações**: linhas com `-` são comentários do transcritor e os símbolos
+`ZZnnnn` são gerados pela ferramenta. Não é o paper tape de 1962.
+
+Regras tiradas do listing (linhas do arquivo preservado): controle de 5 bits
+(119-120), `hyperspatial uncertancy` (30), `/ display a star` (688), `torpedo
+calc routine` (1690), `hyperspace routines` (1731-1790), `check if torpedos
+exhausted` (2075), `spaceships into star` / `now go bang` (2163-2164).
+
+**Quatro bugs encontrados MEDINDO (nenhum aparece em 10 s de jogo olhando):**
+
+1. O tubo de torpedos **não recarregava**: a carga só voltava ao renascer e,
+   depois do quarto tiro, o navio (e a IA) ficava sem torpedo para sempre. Soak
+   de 12 000 quadros: `partidas=321 abates=2`. Corrigido com paiol (1 torpedo a
+   cada 2,4 s).
+2. **Respawn fora da arena**: era radial e num canto caía em `y = -39`. Quem
+   pegou foi o invariante do fuzz (`navio 1 fora da arena`), não o olho.
+3. **IA invencível**: desviava de 100% dos torpedos e a partida não terminava
+   (2 abates em 333 s). Corrigido com tempo de reação de 0,30 s e scan em
+   intervalos: 4-7 abates por minuto.
+4. **IA suicida**: perseguia o adversário direto para dentro do star (2 abates
+   em 60 s, os dois por suicídio). Corrigido simulando 0,9 s de empuxo antes de
+   ligar o motor, e usando intercepção de segunda ordem na mira (o alvo orbita;
+   mira ingênua erra dezenas de px).
+
+- Medido no host com GPU real (Mesa/radeonsi): **RAM 186-187 MB, VRAM 22,2 MB,
+  36-41 draw calls** — 27% e 17% do teto de 700 MB/128 MB.
+- `godot/forge.json` (`godot_version: 4.3`, gles3 com fallback gles2).
+- `make godot-test` passou a rodar **os dois jogos** (`GODOT_GAMES` no
+  Makefile) e o `sh -n` do lint cobre os dois runners.
+- `Spacewar.md` documenta controles, regras, orçamento medido, testes, o que
+  falta e o histórico — incluindo a explicação de o que é o `.pdp1`.
+
+**Aberto:** nada rodado em aparelho; sem export template musl (ADR-03) não há
+`.giochi`; RK3326 continua em Godot 3.5 LTS pelo ADR-07.

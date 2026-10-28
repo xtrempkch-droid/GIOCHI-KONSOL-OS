@@ -316,6 +316,8 @@ lint:
 	          tests/integration/lifecycle_test.sh \
 	          tests/integration/usbgadget_test.sh \
 	          tests/integration/devmode_test.sh \
+	          "Jogos/Arcade Volleyball/godot/tests/run_tests.sh" \
+	          "Jogos/Spacewar/godot/tests/run_tests.sh" \
 	          buildroot/package/giochi-mtpd/giochi-mtpd \
 	          buildroot/package/giochi-mtpd/S60mtpd; do \
 		[ -f "$$f" ] || continue; \
@@ -351,6 +353,18 @@ lint:
 # clone limpo 'make test' sozinho nao o teria compilado.
 test: all $(TEST_BINS)
 	@sh tests/run_tests.sh "$(BIN)"
+
+# Os jogos em Godot nao entram em `make test`: o motor nao e dependencia do
+# repositorio (como SDL2/ALSA, ele e opcional no host). Cada runner sai com 0 e
+# avisa quando nao encontra o Godot; use GODOT=/caminho/do/binario.
+# Os caminhos tem ESPACO ("Arcade Volleyball"): um `for` sobre $(GODOT_GAMES)
+# parte o nome no meio e o runner recebe "Jogos/Arcade". Por isso os dois sao
+# chamados explicitamente, com aspas.
+godot-test:
+	@echo "== Arcade Volleyball =="
+	@GODOT=$(GODOT) sh "Jogos/Arcade Volleyball/godot/tests/run_tests.sh"
+	@echo "== Spacewar =="
+	@GODOT=$(GODOT) sh "Jogos/Spacewar/godot/tests/run_tests.sh"
 
 install: all
 	install -d $(DESTDIR)$(BINDIR)
