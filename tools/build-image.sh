@@ -211,6 +211,20 @@ build_device() {
     mkdir -p "$out"
     echo "== compilando $id -> $out =="
 
+    # Um build completo (toolchain + kernel + U-Boot + openssl + mesa3d) passa
+    # de 15 GB. Sem espaco o make morre NO MEIO, sem mensagem: o log termina numa
+    # linha de compilacao qualquer. Melhor falhar agora, dizendo quanto falta.
+    need_gb=${GIOCHI_MIN_FREE_GB:-15}
+    free_gb=$(df -Pk "$out" 2>/dev/null | awk 'NR==2 {printf "%d", $4/1024/1024}')
+    if [ -n "$free_gb" ] && [ "$free_gb" -lt "$need_gb" ]; then
+        echo "ERRO $id: espaco insuficiente em $out" >&2
+        echo "     livre: ${free_gb} GB | necessario: ~${need_gb} GB" >&2
+        echo "     libere espaco ou rode com GIOCHI_MIN_FREE_GB=<n> para ignorar" >&2
+        df -h "$out" >&2 || true
+        return 1
+    fi
+    echo "  espaco livre: ${free_gb:-?} GB (minimo ${need_gb} GB)"
+
     # Kconfig descarta simbolos inexistentes em silencio e aborta em
     # BR2_LEGACY sem apontar o culpado. Falhar aqui evita descobrir isso
     # depois de horas de build (ver tools/check-buildroot-symbols.py).

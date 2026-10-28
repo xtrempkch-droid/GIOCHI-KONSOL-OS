@@ -39,6 +39,13 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 - `tools/check-links.py` agora valida também as tags de imagem HTML.
 
 ### Corrigido
+- **O build de imagens morria no meio, sem mensagem**: o runner `ubuntu-24.04`
+  tem ~14 GB livres e o build da X55 usa ~16–18 GB. O log simplesmente terminava
+  numa linha de compilação (sem `No space left`, porque o próprio log não podia
+  mais ser gravado) e os passos de limpeza nem rodavam. O `images.yml` agora
+  libera ~20–25 GB removendo SDKs pré-instalados antes de compilar, deixou de
+  usar ccache (que copia cada objeto) e o `build-image.sh` recusa começar com
+  menos de `GIOCHI_MIN_FREE_GB` (padrão 15) livres, informando o espaço medido.
 - **U-Boot não compilava em máquina limpa**: `make tools` compila
   `mkeficapsule`, que inclui `uuid/uuid.h` e `gnutls/gnutls.h`. Passava no CI só
   porque a imagem do runner tem `uuid-dev`/`gnutls-dev`; numa imagem limpa

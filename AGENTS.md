@@ -308,6 +308,36 @@ o script comparava o texto cru e acusava link **correto** de quebrado.
 - Testado ao contrário: um `_tmp_link.md` com `./nao-existe.md` fez o lint sair
   com 1; removido, volta a 0.
 
+### 3.18 Disco: o runner do CI morre no meio do build, sem mensagem
+
+Sintoma na run 40617882645: 69 minutos compilando, e o log **termina no meio de
+uma linha** (uma continuação `\` de compilação do openssl). Nenhum
+`No space left`, nenhum `Killed`, e os passos de limpeza (`Post Cache`,
+`Post checkout`) **nunca rodaram**. Isso não é erro de build: é o runner
+morrendo.
+
+Medido neste repositório (`du -sh` de um build parcial, **antes** do mesa3d):
+
+| Diretório | Tamanho |
+|---|---|
+| `dist/x55/build/build/` | **13 GB** (linux-6.12 4,1 GB; linux-headers 1,7 GB; gcc-final 2,2 GB; binutils 0,4 GB) |
+| `dist/x55/build/host/` | 676 MB |
+| `dist/x55/build/target/` | 146 MB |
+
+O runner `ubuntu-24.04` tem ~**14 GB** livres em `/home/runner`. Um build
+completo precisa de ~16–18 GB.
+
+- **Libere disco antes de compilar**: remover `/usr/share/dotnet`,
+  `/usr/local/lib/android`, `/opt/ghc`, `/opt/hostedtoolcache`, `/usr/share/swift`,
+  `/usr/lib/jvm` etc. recupera ~20–25 GB (passo "Liberar espaco em disco" no
+  `images.yml`).
+- **Sem ccache** no CI: ele guarda uma cópia de cada objeto e custa GBs, para
+  ganho pequeno (a chave já é invalidada por `hashFiles('buildroot/**')`).
+- `build-image.sh` tem guarda: falha antes de compilar se houver menos de
+  `GIOCHI_MIN_FREE_GB` (padrão 15) livres, com o número medido.
+- Se o log terminar no meio de uma linha, **é disco** — não perca tempo lendo a
+  compilação.
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):
@@ -542,6 +572,21 @@ Resolvido com `BR2_TARGET_UBOOT_NEEDS_UTIL_LINUX` e `..._NEEDS_GNUTLS`.
 
 **O que não terminou:** o build completo (rootfs + pacotes + genimage) parou por
 falta de memória da máquina durante o mesa3d. Falta confirmar `sdcard.img`.
+
+### 2026-10-28 (11) — Copilot (runner do CI morria por disco cheio)
+
+- Run 40617882645 (`ee5296c`): U-Boot e kernel compilaram no runner — as
+  armadilhas 3.14/3.15/3.16 estão fechadas — e o job morreu 69 min depois, no
+  meio do openssl, **sem mensagem** e sem rodar os passos de limpeza.
+- Causa medida: `dist/x55/build/build/` = **13 GB** antes do mesa3d; o runner
+  tem ~14 GB livres. O log termina numa linha truncada porque o runner não
+  conseguiu mais escrever.
+- Correções: passo "Liberar espaco em disco" (remove SDKs pré-instalados,
+  ~20–25 GB), ccache removido do CI (copia cada objeto), guarda de espaço em
+  `build-image.sh` (`GIOCHI_MIN_FREE_GB`, padrão 15) com o número medido na
+  mensagem.
+- Comparação útil: a run anterior (`48f43c7`) tinha morrido em
+  `gnutls/gnutls.h` — o fix do `ee5296c` funcionou, o build passou do U-Boot.
 
 ### 2026-10-27 (6) — Copilot (AGENTS.md + roadmap)
 

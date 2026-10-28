@@ -120,6 +120,32 @@ não `root`.
 >
 > Use `JOBS=n` para limitar o paralelismo — Mesa3D e o kernel comem memória.
 
+### Espaço em disco (causa de build que "morre sem erro")
+
+Um build completo da X55 usa **~16–18 GB**. Medição real de um build parcial
+(`du -sh dist/x55/build/*`), **antes** do mesa3d:
+
+| Diretório | Tamanho |
+|---|---|
+| `build/build/` (fontes + objetos) | **13 GB** |
+| `build/host/` (ferramentas de host) | 676 MB |
+| `build/target/` (rootfs em construção) | 146 MB |
+
+Dentro de `build/build/`: `linux-6.12` 4,1 GB, `linux-headers-6.12` 1,7 GB,
+`host-gcc-final` 1,3 GB, `host-gcc-initial` 1,2 GB, `gcc-final` 1,0 GB.
+
+> ⚠️ **Se o log terminar no meio de uma linha** (uma continuação `\` qualquer),
+> não é erro de compilação: é o runner ficando sem disco e parando de escrever
+> o log. Aconteceu na run que ficou 69 min compilando e morreu no openssl, sem
+> nenhum `No space left` — porque o próprio log não pôde mais ser gravado.
+
+- CI: o `images.yml` tem o passo **Liberar espaco em disco** (remove
+  `/usr/share/dotnet`, `/usr/local/lib/android`, `/opt/ghc`,
+  `/opt/hostedtoolcache` etc., ~20–25 GB) e **não usa ccache** (copia cada
+  objeto, custa GBs).
+- Local: `build-image.sh` recusa começar se houver menos de
+  `GIOCHI_MIN_FREE_GB` (padrão **15**) livres, mostrando o número medido.
+
 ### Ferramentas de host que a imagem exige
 
 O `post-image.sh` chama `mkbootimg.sh`, que monta a partição A com

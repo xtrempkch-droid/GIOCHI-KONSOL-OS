@@ -62,6 +62,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # O runner ubuntu-24.04 vem com ~14 GB livres no /home/runner, e um build
+      # completo do Buildroot passa disso (toolchain + kernel + U-Boot +
+      # openssl + mesa3d). Sem liberar espaco o job MORRE NO MEIO, sem mensagem:
+      # o log simplesmente termina numa linha de compilacao e os passos de
+      # limpeza nem rodam. Foi exatamente o que aconteceu na run 40617882645
+      # (69 min compilando, morreu durante o openssl).
+      - name: Liberar espaco em disco
+        run: |
+          set -eu
+          echo "antes:"; df -h / /home/runner 2>/dev/null | sed 's/^/  /'
+          # SDKs pre-instalados que este build nao usa. Recupera ~20-25 GB.
+          sudo rm -rf             /usr/share/dotnet             /usr/local/lib/android             /opt/ghc             /opt/hostedtoolcache             /usr/local/share/boost             /usr/share/swift             /usr/lib/jvm             /usr/local/.ghcup             /opt/az             /usr/local/julia*             2>/dev/null || true
+          sudo apt-get clean
+          echo "depois:"; df -h / /home/runner 2>/dev/null | sed 's/^/  /'
+
       - name: Dependencias de build
         run: |
           sudo apt-get update
@@ -71,12 +86,14 @@ jobs:
             dosfstools mtools e2fsprogs device-tree-compiler bison flex \
             libssl-dev libelf-dev python3-pil
 
-      - name: Cache do Buildroot (dl + ccache)
+      # So o cache de DOWNLOADS. O ccache foi removido: ele guarda uma copia de
+      # cada objeto (GBs) e a chave ja e invalidada por hashFiles('buildroot/**'),
+      # entao o ganho entre builds e pequeno para o custo de disco.
+      - name: Cache dos downloads do Buildroot
         uses: actions/cache@v4
         with:
           path: |
             ${{ github.workspace }}/.cache/buildroot-dl
-            ${{ github.workspace }}/.cache/ccache
           key: br-${{ matrix.device }}-${{ github.event.inputs.buildroot_ref || 'release' }}-${{ hashFiles('buildroot/**') }}
           restore-keys: |
             br-${{ matrix.device }}-
@@ -89,7 +106,7 @@ jobs:
           git clone --depth 1 --branch "$ref" \
             https://github.com/buildroot/buildroot.git "$RUNNER_TEMP/buildroot"
           echo "BUILDROOT_DIR=$RUNNER_TEMP/buildroot" >> "$GITHUB_ENV"
-          mkdir -p .cache/buildroot-dl .cache/ccache
+          mkdir -p .cache/buildroot-dl
           echo "BR2_DL_DIR=$GITHUB_WORKSPACE/.cache/buildroot-dl" >> "$GITHUB_ENV"
 
       - name: Validar simbolos dos defconfigs
@@ -98,11 +115,6 @@ jobs:
           # BR2_LEGACY sem dizer qual simbolo e o culpado. Falhar aqui da o
           # nome do simbolo antes de gastar 1-3 h de build.
           tools/check-buildroot-symbols.py --buildroot "$BUILDROOT_DIR"
-
-      - name: Configurar ccache
-        run: |
-          echo "BR2_CCACHE=y" >> "$GITHUB_ENV"
-          echo "BR2_CCACHE_DIR=$GITHUB_WORKSPACE/.cache/ccache" >> "$GITHUB_ENV"
 
       - name: DTS externo (quando o aparelho exigir)
         run: |
