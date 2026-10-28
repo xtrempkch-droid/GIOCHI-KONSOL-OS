@@ -257,6 +257,40 @@ boot.vfat"* — escondendo a causa real.
   que configurar.
 
 
+### 3.16 U-Boot: `mkeficapsule` precisa de uuid e gnutls do host
+
+`make tools` do U-Boot compila `mkeficapsule`, que inclui `uuid/uuid.h` e
+`gnutls/gnutls.h`. Em CI isso passa **de graça** porque a imagem do runner tem
+`uuid-dev`/`gnutls-dev` instalados; numa imagem limpa o build morre em sequência:
+
+```
+tools/mkeficapsule.c:19:10: fatal error: uuid/uuid.h: No such file or directory
+tools/mkeficapsule.c:21:10: fatal error: gnutls/gnutls.h: No such file or directory
+```
+
+- A correção é declarar as dependências de host no defconfig:
+  `BR2_TARGET_UBOOT_NEEDS_UTIL_LINUX=y` e `BR2_TARGET_UBOOT_NEEDS_GNUTLS=y`
+  (o `uboot.mk` adiciona `host-util-linux`/`host-gnutls` e os headers entram em
+  `HOST_CFLAGS`).
+- Emitidos por `gen-defconfigs.sh` em todo aparelho com U-Boot mainline.
+- Regra geral: se o build só funciona numa máquina "gorda", falta um símbolo
+  `BR2_..._NEEDS_*` no defconfig. Descubra construindo num container limpo
+  (`tools/docker-build.sh`).
+
+### 3.17 `git ls-files` cita caminhos não-ASCII (o lint reprovava depois do build)
+
+`tools/check-tracked.sh` comparava cada arquivo ignorado contra uma lista de
+prefixos permitidos (`dist/*`, `build/*`, …). O git **cita** caminhos com
+caractere não-ASCII — `"dist/.../Prøve.flac"` chega com aspas —, então o
+`case` via um caminho começando em `"` e reprovava o lint. Só apareceu depois
+do **primeiro build real** (que cria arquivos de teste do gcc/flac com nomes
+latinos e hebraicos dentro de `dist/`).
+
+- `git -c core.quotePath=false ls-files …` resolve a citação.
+- Enumere com exclusão de pathspec (`':(exclude)dist'`) em vez de filtrar
+  depois: o build real deixa ~800 mil arquivos em `dist/`, e varrer isso levava
+  minutos a cada `make lint`. Agora roda em ~1 s.
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):
@@ -470,8 +504,73 @@ uma suíte, registre-a lá **e** no respectivo alvo do `Makefile`.
 - Guarda nova no `check-buildroot-symbols.py`: validação de **valor** (escolha
   de config do kernel, sufixo duplicado), que roda sem `BUILDROOT_DIR`.
 
+### 2026-10-27 (10) — Copilot (build REAL em container: U-Boot + kernel)
+
+Primeira vez que este repositório compilou de verdade. Container Ubuntu 24.04
+(GCC 13, igual ao runner) via `tools/docker-build.sh`, Buildroot 2024.02.13.
+
+**Provado:**
+- `u-boot-rockchip.bin` 9,4 MB gerado com `powkiddy-x55-rk3566` + BL31
+  (`rk3568_bl31_v1.43.elf`) + DDR (`rk3566_ddr_1056MHz_v1.18.bin`) do rkbin.
+- `Image` 47 MB e `rk3566-powkiddy-x55.dtb` 59 KB (DTS mainline do Linux 6.12).
+- `boot.scr` 2,2 KB — a correção da armadilha 3.15 funciona.
+- `host-lzo` **configurou e compilou** no container: era mesmo o CMake 4.2 do
+  host, não problema de configuração.
+- `.config`: `USE_ARCH_DEFAULT_CONFIG=y`, `BOOT_SCRIPT=y`, `MTOOLS`,
+  `DOSFSTOOLS` — a armadilha 3.14 está fechada.
+
+**Bug novo (armadilha 3.16):** `mkeficapsule` exigia `uuid-dev` e `gnutls-dev`
+do host. Passava no CI só porque a imagem do runner os traz instalados.
+Resolvido com `BR2_TARGET_UBOOT_NEEDS_UTIL_LINUX` e `..._NEEDS_GNUTLS`.
+
+**O que não terminou:** o build completo (rootfs + pacotes + genimage) parou por
+falta de memória da máquina durante o mesa3d. Falta confirmar `sdcard.img`.
+
 ### 2026-10-27 (6) — Copilot (AGENTS.md + roadmap)
 
 - Criou este arquivo e [docs/roadmap.md](docs/roadmap.md), consolidando as
   armadilhas e a ordem de trabalho por risco.
 - Abertos registrados no roadmap; nada disso foi testado em hardware.
+
+### 2026-10-27 (10) — Copilot (pasta `Jogos/`)
+
+- `Jogos/Arcade Volleyball/arcade_volleyball.cpp` **nao compilava**: as novas de
+  linha tinham sido colapsadas e o `//` de cada cabecalho de secao engolia o
+  codigo da linha (`const int WINDOW_WIDTH`, os 4 `SDL_Color`, `struct Player`,
+  `class ArcadeVolleyball` e `int main`). O arquivo tambem comecava com um
+  titulo markdown (`# Arcade Volleyball ...`), que o `g++` le como diretiva de
+  pre-processador invalida. Reescrito mantendo a mesma jogabilidade.
+- Bugs de fisica encontrados ao rodar a simulacao (nao estavam visiveis na
+  leitura): a bola quicava para sempre na mesma vertical ao bater na cabeca de
+  um jogador (`vx` ia a zero) e a partida travava sem ninguem pontuar; e uma
+  colisao podia empurrar a bola para fora da tela por um quadro (jogador
+  encostado na parede). Corrigidos em `collide_player` e em `update_ball`.
+- Ganhos de correcao que faltavam: `#include <algorithm>` (para
+  `std::max`/`std::min`), `SDL_CONTROLLERDEVICEADDED`/`REMOVED` com
+  `SDL_GameControllerOpen`/`Close` (sem isso `SDL_INIT_GAMECONTROLLER` nao
+  entrega botao nenhum), pulo de borda (segurar o botao repicava no chao) e
+  `SDL_RenderSetLogicalSize` (a janela era 1280x720 fixos, sem escala para o
+  painel 640x480 da X35S/X35H). Placar, que existia so no estado e ia para o
+  `stdout`, agora e desenhado em segmentos.
+- `Jogos/Arcade Volleyball/Makefile`: build isolado com `pkg-config sdl2`,
+  saida em `build/host/bin` (ignorado pelo git; um binario na pasta do jogo
+  nao esta na lista de `is_allowed` de `tools/check-tracked.sh`). O jogo **nao**
+  entrou no `Makefile` da raiz: SDL2 e opcional no host e isso quebraria o
+  `make` de quem nao tem `libsdl2-dev`.
+- Documentacao: `Arcade Volleyball.md` e `Lista de jogos.md` reescritos (eram
+  saida de chat: "Use o código com cuidado.", bloco de codigo colapsado,
+  `makefile` no meio da frase).
+- **Correcao de fato** na doc antiga: ela mandava empacotar com `giochi-forge`
+  definindo o entrypoint. O `runtime` de `schemas/metadata.schema.json` aceita
+  so `godot|retroarch|proton` e `src/launcher/metadata.cpp:98` recusa o resto,
+  entao um jogo nativo SDL2 **nao** pode virar `.giochi` hoje; faltaria um
+  `runtime: "native"` na spec, no schema e no launcher.
+- Verificacao: `g++ -std=c++17 -Wall -Wextra -Wshadow -Wformat=2 -Wundef
+  -Werror` limpo (headers do `libsdl2-dev` 2.32.10, runtime 2.32.10 do host);
+  `SDL_VIDEODRIVER=dummy ./arcade-volleyball` roda e pontua; `make -C` gera em
+  `build/host/bin` e falha com mensagem clara sem SDL2; harness descartavel em
+  `/tmp` incluiu o `.cpp` com os membros expostos e rodou 20000 quadros com
+  entrada aleatoria (205 pontos, maior intervalo sem ponto 4,6 s, sem NaN, sem
+  bola fora da tela, sem bola dentro da rede, sem jogador atravessando a rede).
+- Aberto: nada disso foi jogado em aparelho; sem audio, sem pausa e sem partida
+  de dois jogadores; o jogo nao aparece no Launcher (nenhum catalogo le a pasta).

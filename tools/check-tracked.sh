@@ -38,6 +38,12 @@ is_allowed() {
     return 1
 }
 
+# -c core.quotePath=false: sem isso o git CITA caminhos com caractere nao-ASCII
+#   (".../PrÃ¸ve.flac"), e o `case` abaixo nao reconhece o prefixo. Foi o
+#   que fez o lint reprovar depois do primeiro build real, apontando arquivos
+#   de dentro de dist/ como se fossem do projeto.
+# Os `:(exclude)` evitam enumerar centenas de milhares de arquivos de saida a
+#   cada lint (o build real cria ~800 mil em dist/).
 bad=0
 while IFS= read -r f; do
     [ -n "$f" ] || continue
@@ -46,7 +52,8 @@ while IFS= read -r f; do
         bad=$((bad + 1))
     fi
 done <<EOF
-$(git ls-files -o -i --exclude-standard)
+$(git -c core.quotePath=false ls-files -o -i --exclude-standard -- . \
+    ':(exclude)build' ':(exclude)dist' ':(exclude)output')
 EOF
 
 if [ "$bad" -ne 0 ]; then

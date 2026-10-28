@@ -73,7 +73,14 @@ BR2_TARGET_UBOOT_CONFIG_FRAGMENT_FILES=\"\$(BR2_EXTERNAL_GIOCHI_PATH)/board/gioc
 BR2_TARGET_UBOOT_NEEDS_PYTHON3=y
 BR2_TARGET_UBOOT_NEEDS_PYLIBFDT=y
 BR2_TARGET_UBOOT_NEEDS_OPENSSL=y
-BR2_TARGET_UBOOT_NEEDS_PYELFTOOLS=y"
+BR2_TARGET_UBOOT_NEEDS_PYELFTOOLS=y
+# mkeficapsule (compilado em make tools) usa libuuid e gnutls. Sem estas duas
+# linhas o build so passa porque a maquina tem uuid-dev/gnutls-dev instalados;
+# o runner de CI tem, uma imagem limpa nao. Falhas reais, em sequencia:
+#   uuid/uuid.h: No such file or directory
+#   gnutls/gnutls.h: No such file or directory
+BR2_TARGET_UBOOT_NEEDS_UTIL_LINUX=y
+BR2_TARGET_UBOOT_NEEDS_GNUTLS=y"
         # 'set -e' aborta com "$(... && ...)" quando o teste falha, entao a
         # concatenacao e feita em um if explicito.
         if [ -n "$rkbin_lines" ]; then

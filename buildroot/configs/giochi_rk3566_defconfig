@@ -82,6 +82,13 @@ BR2_TARGET_UBOOT_NEEDS_PYTHON3=y
 BR2_TARGET_UBOOT_NEEDS_PYLIBFDT=y
 BR2_TARGET_UBOOT_NEEDS_OPENSSL=y
 BR2_TARGET_UBOOT_NEEDS_PYELFTOOLS=y
+# mkeficapsule (compilado em make tools) usa libuuid e gnutls. Sem estas duas
+# linhas o build so passa porque a maquina tem uuid-dev/gnutls-dev instalados;
+# o runner de CI tem, uma imagem limpa nao. Falhas reais, em sequencia:
+#   uuid/uuid.h: No such file or directory
+#   gnutls/gnutls.h: No such file or directory
+BR2_TARGET_UBOOT_NEEDS_UTIL_LINUX=y
+BR2_TARGET_UBOOT_NEEDS_GNUTLS=y
 BR2_TARGET_UBOOT_NEEDS_ROCKCHIP_RKBIN=y
 BR2_PACKAGE_ROCKCHIP_RKBIN=y
 BR2_PACKAGE_ROCKCHIP_RKBIN_TPL_FILENAME="bin/rk35/rk3566_ddr_1056MHz_v1.18.bin"

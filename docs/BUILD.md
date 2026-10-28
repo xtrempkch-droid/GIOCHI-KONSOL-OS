@@ -95,6 +95,31 @@ Detalhes de DTS externo, fallback de teste e como adicionar placa:
 (ext4), o `extlinux.conf` com o DTB do aparelho e empacota o cartão com
 `genimage`.
 
+### Build em container (recomendado)
+
+O Buildroot 2024.02 **não compila** em hosts com toolchain muito nova: GCC 15
+quebra `host-m4` 1.4.19 e CMake 4.x rejeita o `CMakeLists.txt` do `host-lzo`
+(suporte a `< 3.5` foi removido). Não é problema de configuração — é ambiente.
+
+`tools/docker-build.sh` reproduz o runner do CI (Ubuntu 24.04 → GCC 13) e
+compila o Buildroot completo dentro do container:
+
+```sh
+tools/docker-build.sh x55                    # imagem completa
+tools/docker-build.sh x55 --target uboot     # só toolchain + U-Boot
+tools/docker-build.sh x55 --target "uboot linux"
+tools/docker-build.sh --rebuild-image        # refaz o container
+```
+
+O cache de downloads fica em `.cache/buildroot-dl` (fora do container, então
+sobrevive a `--rebuild-image`). Os arquivos em `dist/` saem com o UID do host,
+não `root`.
+
+> ⚠️ Se o Docker for o **snap**, o contexto de build precisa estar sob `$HOME`:
+> o snap não enxerga `/tmp`. O script avisa se o repositório estiver em `/tmp`.
+>
+> Use `JOBS=n` para limitar o paralelismo — Mesa3D e o kernel comem memória.
+
 ### Ferramentas de host que a imagem exige
 
 O `post-image.sh` chama `mkbootimg.sh`, que monta a partição A com
@@ -106,6 +131,12 @@ defconfig, e não deixado para o que estiver instalado na máquina:
 | `BR2_PACKAGE_HOST_DOSFSTOOLS` | `mkfs.vfat` | post-image falha (antes: só se o `apt` da máquina tivesse `dosfstools`) |
 | `BR2_PACKAGE_HOST_MTOOLS` | `mcopy`, `mmd` | idem |
 | `BR2_PACKAGE_HOST_UBOOT_TOOLS` + `..._BOOT_SCRIPT` | `boot.scr` de `board/giochi/boot.cmd` | `mkbootimg: boot.scr ausente`, e o genimage morria com "cannot find image boot.vfat" |
+| `BR2_TARGET_UBOOT_NEEDS_UTIL_LINUX` | `-luuid` para o `mkeficapsule` do U-Boot | `uuid/uuid.h: No such file or directory` |
+| `BR2_TARGET_UBOOT_NEEDS_GNUTLS` | `gnutls` para o mesmo binário | `gnutls/gnutls.h: No such file or directory` |
+
+> As duas últimas só aparecem em máquina **limpa**: o runner do CI já traz
+> `uuid-dev` e `gnutls-dev` na imagem, o que escondia a dependência. Foi assim
+> que o build em container as encontrou.
 
 O Buildroot põe `$(HOST_DIR)/bin` no `PATH` dos scripts de post-image
 (`BR_PATH`), então essas ferramentas funcionam sem instalação no sistema.

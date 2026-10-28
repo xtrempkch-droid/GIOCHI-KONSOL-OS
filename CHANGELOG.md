@@ -39,6 +39,16 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 - `tools/check-links.py` agora valida também as tags de imagem HTML.
 
 ### Corrigido
+- **U-Boot não compilava em máquina limpa**: `make tools` compila
+  `mkeficapsule`, que inclui `uuid/uuid.h` e `gnutls/gnutls.h`. Passava no CI só
+  porque a imagem do runner tem `uuid-dev`/`gnutls-dev`; numa imagem limpa
+  falhava. Declarados `BR2_TARGET_UBOOT_NEEDS_UTIL_LINUX` e
+  `BR2_TARGET_UBOOT_NEEDS_GNUTLS` (o Buildroot então constrói `host-util-linux`
+  e `host-gnutls` e passa os headers em `HOST_CFLAGS`).
+- `tools/check-tracked.sh` reprovava depois do primeiro build real: o git
+  **cita** caminhos não-ASCII (`"…/Prøve.flac"`), e o `case` não reconhecia o
+  prefixo `dist/*`. Corrigido com `core.quotePath=false` e exclusão por
+  pathspec — de ~800 mil arquivos varridos (minutos) para ~1 s.
 - **Build de imagens morria no kernel**: `BR2_LINUX_KERNEL_USE_DEFCONFIG=y` com
   `BR2_LINUX_KERNEL_DEFCONFIG="defconfig"` fazia o Buildroot rodar
   `make defconfig_defconfig` (ele acrescenta o sufixo ao valor), e o kernel
