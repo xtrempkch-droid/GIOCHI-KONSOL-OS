@@ -14,6 +14,7 @@ import glob
 import os
 import re
 import sys
+from urllib.parse import unquote
 
 # A especificacao normativa vive em docs/architecture-*.md, nao no README.
 # Por isso os arquivos sao DESCOBERTOS, e nao listados a mao: a lista antiga
@@ -22,6 +23,10 @@ import sys
 FILES = sorted(
     glob.glob("*.md")
     + glob.glob("docs/*.md")
+    # Os jogos tem .md proprio, com links relativos para os assets e para a
+    # spec. Ficaram de fora desta varredura uma vez e os quatro documentos
+    # entraram sem nenhuma verificacao de link.
+    + glob.glob("Jogos/*/*.md")
     + ["buildroot/board/giochi/dts/README"]
 )
 
@@ -66,7 +71,10 @@ def main() -> int:
                           file=sys.stderr)
                     broken += 1
                 continue
-            path = link.split("#", 1)[0]
+            # GitHub decodifica %20 e afins antes de resolver o caminho; sem
+            # isso um link correto para "Arcade%20Volleyball/..." acusava
+            # quebrado (os nomes de pasta dos jogos tem espaco).
+            path = unquote(link.split("#", 1)[0])
             if not path:
                 continue
             # Placeholder de exemplo em documentacao ("...", "${VAR}").
@@ -77,7 +85,7 @@ def main() -> int:
                 print(f"link quebrado: {rel} -> {link}", file=sys.stderr)
                 broken += 1
                 continue
-            anchor = link.split("#", 1)[1] if "#" in link else ""
+            anchor = unquote(link.split("#", 1)[1]) if "#" in link else ""
             if anchor and os.path.isfile(full):
                 if anchor not in anchors(full):
                     print(f"ancora inexistente: {rel} -> {link}", file=sys.stderr)

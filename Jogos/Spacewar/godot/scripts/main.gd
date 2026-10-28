@@ -42,14 +42,18 @@ var _restart_at := 0
 var _paused := false
 var _p2_human := false
 var _ship_alive := [true, true]
+var _bench: Bench
 
 func _ready() -> void:
-	model = SIM.new()
+	_bench = Bench.from_cmdline("spacewar")
+	model = SIM.new(_bench.seed_value if _bench.enabled else 0)
 	_ai = AiScript.new()
 	_clock = FixedStepScript.new()
 	_p1 = SIM.Controls.new()
 	_p2 = SIM.Controls.new()
 	_tier = Quality.load_tier()
+	if _bench.enabled and _bench.quality_tier >= 0:
+		_tier = clampi(_bench.quality_tier, 0, Quality.NAMES.size() - 1)
 
 	_setup_space()
 	_setup_audio()
@@ -63,6 +67,14 @@ func _ready() -> void:
 	hud.set_pause_visible(false)
 	hud.set_quality_text(Quality.label(_tier))
 	_sync(0.0)
+
+	if _bench.enabled:
+		# Benchmark: sem vsync (mede o custo do jogo, nao a espera do monitor),
+		# sem IA reagindo ao acaso, e o P1 jogado pela propria IA.
+		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+		Engine.max_fps = 0
+		_p2_human = false
+		# O HUD fica visivel: benchmark de tela vazia nao mede o jogo.
 
 func _exit_tree() -> void:
 	Engine.time_scale = 1.0
@@ -116,6 +128,9 @@ func _physics_process(delta: float) -> void:
 		_sync(delta)
 
 func _process(delta: float) -> void:
+	if _bench.enabled and _bench.frame():
+		_bench_out()
+
 	_update_time_scale()
 	_update_camera(delta)
 	_maybe_restart()
@@ -126,6 +141,12 @@ func _process(delta: float) -> void:
 # --- entrada -------------------------------------------------------------
 
 func _read_controls() -> void:
+	if _bench.enabled:
+		# Autoplay deterministico: o P1 e jogado pela IA, o P2 tambem.
+		_p1 = _ai.decide(model, 0)
+		_p2 = _ai.decide(model, 1)
+		return
+
 	var pads := Input.get_connected_joypads()
 
 	# P1: teclado (A/D/W/S/Q) ou o primeiro controle.
@@ -194,6 +215,14 @@ func _input(event: InputEvent) -> void:
 	elif event is InputEventJoypadButton and event.pressed:
 		if event.button_index == JOY_BUTTON_START:
 			_toggle_pause()
+
+func _bench_out() -> void:
+	var code := _bench.finish({
+		"preset": Quality.label(_tier),
+		"torpedoes": model.torpedoes.size(),
+		"kills": model.ships[0].kills + model.ships[1].kills,
+	}, SIM.ARENA, Quality.label(_tier))
+	get_tree().quit(code)
 
 func _toggle_pause() -> void:
 	_paused = not _paused

@@ -1,15 +1,22 @@
 # Lista de jogos
 
 Alvos de porte (ou de emulação) para o Giochi Konsol OS — uma lista de desejos,
-**não** o catálogo do console. Com exceção do Arcade Volleyball, nada aqui tem
-código nem pacote `.giochi` no repositório.
+**não** o catálogo do console. Os três primeiros já são **jogos padrão do
+sistema** ([docs/GAMES.md](../docs/GAMES.md)); o resto é candidato, sem código
+no repositório.
+
+Entrar na lista de jogos padrão exige licença compatível: domínio público,
+permissão dos autores ou código/arte próprios. GPL e software proprietário
+ficam de fora — ver [docs/GAMES.md](../docs/GAMES.md).
 
 | Jogo | Ano | Estado |
 |---|---|---|
-| [Arcade Volleyball](./Arcade%20Volleyball/Arcade%20Volleyball.md) | 1988 | projeto Godot 4.3 (Compatibility/GLES3) jogável no host + port C++/SDL2 de referência |
-| [Spacewar](./Spacewar/Spacewar.md) | 1962 | projeto Godot 4.3 jogável no host, regras tiradas do listing original do PDP-1 |
+| [Colossal Cave](./Colossal%20Cave%20Adventure/Colossal%20Cave%20Adventure.md) | 1976 | **jogo padrão do sistema** — projeto Godot 4.3 em 2,5D, com português, inglês e espanhol |
+| [Arcade Volleyball](./Arcade%20Volleyball/Arcade%20Volleyball.md) | 1988 | **jogo padrão do sistema** — projeto Godot 4.3 + port C++/SDL2 de referência |
+| [Spacewar](./Spacewar/Spacewar.md) | 1962 | **jogo padrão do sistema** — projeto Godot 4.3, regras tiradas do listing original do PDP-1 |
 | Spatial Hyperdrive | 1993 | candidato |
 | The Great Giana Sisters | 1987 | candidato |
+| Shattered Pixel Dungeon | 2014 | **fora da lista padrão**: GPL-3.0, não é domínio público (ver [docs/GAMES.md](../docs/GAMES.md)) |
 | Eye of the Beholder C64 | 2022 | candidato |
 | Gloom | 1995 | candidato |
 | Crazy Sue | 1990 | candidato |

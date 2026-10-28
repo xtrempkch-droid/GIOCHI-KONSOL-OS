@@ -32,6 +32,7 @@ Ordem de trabalho: [roadmap.md](./roadmap.md).
 | 8 | Scripts de init | shell (BusyBox) | [scripts/init.d](../scripts/init.d) | ✅ `S05update`, `S10storage`, `S20graphics`, `S30swap`, `S40dongle`, `S50usb`, `S55usbnet`, `S62sshd`, `S99launcher` |
 | 9 | RetroArch | app externo | — | 🔒 fase 2 (§4.2 `runtime`); o schema e o `metadata.cpp` já aceitam/rejeitam |
 | 10 | Proton | stub `#ifdef` | [src/launcher/metadata.cpp](../src/launcher/metadata.cpp) | ✅ desativado por padrão (`GIOCHI_ENABLE_PROTON=0`); recusa `runtime=proton` |
+| 12 | Jogos padrão | Godot 4.3 | [Jogos/](../Jogos) | ✅ Spacewar, Colossal Cave e Arcade Volleyball; lista, licenças e bench em [GAMES.md](./GAMES.md) e `assets/default-games.json` |
 
 Também no console, embora não estejam na lista de "apps":
 

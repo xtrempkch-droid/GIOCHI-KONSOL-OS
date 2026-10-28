@@ -1,0 +1,60 @@
+{
+  "schema_version": "1.0",
+  "games": [
+    {
+      "id": "spacewar",
+      "title": "Spacewar",
+      "year": 1962,
+      "project": "Jogos/Spacewar/godot",
+      "doc": "Jogos/Spacewar/Spacewar.md",
+      "runtime": "godot",
+      "bench_scene": "res://scenes/Main.tscn",
+      "bench_args": ["--bench", "--bench-frames", "1800"],
+      "license": {
+        "kind": "public_domain",
+        "id": "public-domain",
+        "evidence": "Criado no MIT em 1962, nunca registrado; distribucao livre desde o inicio."
+      }
+    },
+    {
+      "id": "colossal-cave",
+      "title": "Colossal Cave",
+      "year": 1976,
+      "project": "Jogos/Colossal Cave Adventure/godot",
+      "doc": "Jogos/Colossal Cave Adventure/Colossal Cave Adventure.md",
+      "runtime": "godot",
+      "bench_scene": "res://scenes/Main.tscn",
+      "bench_args": ["--bench", "--bench-frames", "1800"],
+      "license": {
+        "kind": "freeware_permission",
+        "id": "crowther-woods-permission",
+        "evidence": "Crowther & Woods liberaram o codigo e autorizam a redistribuicao; open-adventure (BSD-2-Clause, ESR) e distribuido com a permissao dos autores originais."
+      }
+    },
+    {
+      "id": "arcade-volleyball",
+      "title": "Arcade Volleyball",
+      "year": 1988,
+      "project": "Jogos/Arcade Volleyball/godot",
+      "doc": "Jogos/Arcade Volleyball/Arcade Volleyball.md",
+      "runtime": "godot",
+      "bench_scene": "res://scenes/Main.tscn",
+      "bench_args": ["--bench", "--bench-frames", "1800"],
+      "license": {
+        "kind": "clean_room",
+        "id": "original-code",
+        "evidence": "Codigo e arte escritos neste repositorio do zero (ver Historico no .md); nenhum binario, grafico ou som do original e usado."
+      }
+    }
+  ],
+  "excluded": [
+    {
+      "id": "shattered-pixel-dungeon",
+      "title": "Shattered Pixel Dungeon",
+      "reason": "licenca GPL-3.0: nao e dominio publico. Retirado da lista de jogos padrao por decisao do mantenedor (2026-10-27); volta quando houver decisao sobre como proceder.",
+      "license": { "kind": "copyleft", "id": "GPL-3.0" },
+      "upstream": "https://github.com/00-evan/shattered-pixel-dungeon",
+      "notes": "Jogos/Shattered Pixel Dungeon/Shattered Pixel Dungeon.md"
+    }
+  ]
+}

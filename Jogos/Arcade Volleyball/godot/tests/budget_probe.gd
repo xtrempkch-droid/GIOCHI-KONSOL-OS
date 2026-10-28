@@ -33,6 +33,9 @@ func _process(_delta: float) -> bool:
 	_frame += 1
 	if _frame == 1:
 		_apply_tier(0)
+		# Sem audio: o probe nao mede som e um playback vivo no `quit()` deixa
+		# AudioStreamPlaybackWAV para tras ("ObjectDB instances leaked at exit").
+		_scene._sfx.set_enabled(false)
 		return false
 	if _frame % WARMUP_FRAMES != 0:
 		return false

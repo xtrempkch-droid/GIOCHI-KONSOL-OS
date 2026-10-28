@@ -318,11 +318,16 @@ lint:
 	          tests/integration/devmode_test.sh \
 	          "Jogos/Arcade Volleyball/godot/tests/run_tests.sh" \
 	          "Jogos/Spacewar/godot/tests/run_tests.sh" \
+	          "Jogos/Colossal Cave Adventure/godot/tests/run_tests.sh" \
+	          tools/bench-games.sh \
+	          buildroot/package/giochi-games/install-games.sh \
 	          buildroot/package/giochi-mtpd/giochi-mtpd \
 	          buildroot/package/giochi-mtpd/S60mtpd; do \
 		[ -f "$$f" ] || continue; \
 		sh -n "$$f" || { echo "ERRO de sintaxe: $$f"; exit 1; }; \
 	done; echo "ok"
+	@echo "== jogos padrao =="
+	@python3 tools/check-default-games.py
 	@echo "== json =="
 	@python3 -c 'import glob,json,sys; [json.load(open(p)) for p in glob.glob("assets/*.json")+glob.glob("assets/devices/*/*.json")+glob.glob("schemas/*.json")]; print("ok")'
 	@echo "== defconfigs =="
@@ -357,6 +362,10 @@ test: all $(TEST_BINS)
 # Os jogos em Godot nao entram em `make test`: o motor nao e dependencia do
 # repositorio (como SDL2/ALSA, ele e opcional no host). Cada runner sai com 0 e
 # avisa quando nao encontra o Godot; use GODOT=/caminho/do/binario.
+# Bench: quadros medidos por jogo e preset fixo (vazio = preset salvo).
+FRAMES ?=
+QUALITY ?=
+
 # Os caminhos tem ESPACO ("Arcade Volleyball"): um `for` sobre $(GODOT_GAMES)
 # parte o nome no meio e o runner recebe "Jogos/Arcade". Por isso os dois sao
 # chamados explicitamente, com aspas.
@@ -365,6 +374,17 @@ godot-test:
 	@GODOT=$(GODOT) sh "Jogos/Arcade Volleyball/godot/tests/run_tests.sh"
 	@echo "== Spacewar =="
 	@GODOT=$(GODOT) sh "Jogos/Spacewar/godot/tests/run_tests.sh"
+	@echo "== Colossal Cave =="
+	@GODOT=$(GODOT) sh "Jogos/Colossal Cave Adventure/godot/tests/run_tests.sh"
+
+# Bench dos jogos padrao (assets/default-games.json): roda cada jogo no modo
+# --bench e escreve um laudo JSON por jogo em build/bench/. E o mesmo comando
+# no PC e no aparelho -- ver docs/GAMES.md.
+#   make bench                 # 1800 quadros (~30 s) por jogo
+#   make bench FRAMES=3600 QUALITY=2
+bench:
+	@GODOT=$(GODOT) OUT=$(BUILD_DIR)/bench FRAMES=$(FRAMES) QUALITY=$(QUALITY) \
+		sh tools/bench-games.sh
 
 install: all
 	install -d $(DESTDIR)$(BINDIR)

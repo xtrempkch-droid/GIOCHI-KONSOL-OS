@@ -1,0 +1,18 @@
+config BR2_PACKAGE_GIOCHI_GAMES
+	bool "giochi-games"
+	depends on BR2_PACKAGE_GIOCHI_LAUNCHER
+	help
+	  Jogos padrao do Giochi Konsol OS (assets/default-games.json):
+	  Spacewar, Colossal Cave e Arcade Volleyball.
+
+	  Todos sao de dominio publico, de livre distribuicao com permissao dos
+	  autores, ou codigo/arte escritos neste repositorio (ver o campo
+	  "license" de cada entrada no manifesto e tools/check-default-games.py).
+
+	  Instala os projetos Godot em /usr/share/giochi/games/<id> e o
+	  manifesto em /usr/share/giochi/default-games.json. Serve de teste e
+	  de benchmark do aparelho via `giochi-bench` (scripts/giochi-bench).
+
+	  O template de export do Godot (aarch64/musl, ADR-03) ainda NAO esta
+	  no Buildroot: sem ele, o pacote instala os projetos, nao binarios
+	  prontos. Ver docs/GAMES.md.

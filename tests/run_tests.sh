@@ -59,6 +59,17 @@ if command -v python3 >/dev/null 2>&1; then
     fi
 fi
 
+# Jogos padrao: licenca, projeto, bench e documentacao (assets/default-games.json).
+if command -v python3 >/dev/null 2>&1; then
+    total=$((total + 1))
+    if (cd "$ROOT" && python3 -m unittest tests.test_default_games) >/dev/null 2>&1; then
+        echo "OK     jogos-padrao (python)"
+    else
+        echo "FALHA  jogos-padrao (python)"
+        fail=$((fail + 1))
+    fi
+fi
+
 # Gadget USB composto (rede + MTP) contra configfs falso.
 if [ -x "$ROOT/tests/integration/usbgadget_test.sh" ]; then
     total=$((total + 1))

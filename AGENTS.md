@@ -291,6 +291,23 @@ latinos e hebraicos dentro de `dist/`).
   depois: o build real deixa ~800 mil arquivos em `dist/`, e varrer isso levava
   minutos a cada `make lint`. Agora roda em ~1 s.
 
+### 3.18 O lint de links não olhava `Jogos/` (e não decodificava `%20`)
+
+`tools/check-links.py` descobria `*.md` da raiz e de `docs/`. Os quatro
+documentos de jogo em `Jogos/*/*.md` — com links relativos para
+`../Arcade%20Volleyball/…`, para os assets e para a spec — **nunca** foram
+verificados, embora o §6.5 deste arquivo dissesse que todo link relativo é. O
+lint passava com link quebrado dentro deles.
+
+Ao ligar a varredura apareceram dois problemas de uma vez: (a) a descoberta
+faltando e (b) o `%20` não decodificado — o GitHub decodifica antes de resolver,
+o script comparava o texto cru e acusava link **correto** de quebrado.
+
+- Varredura agora inclui `Jogos/*/*.md` (25 arquivos, era 21).
+- `urllib.parse.unquote` no caminho e na âncora.
+- Testado ao contrário: um `_tmp_link.md` com `./nao-existe.md` fez o lint sair
+  com 1; removido, volta a 0.
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):
@@ -678,3 +695,134 @@ exhausted` (2075), `spaceships into star` / `now go bang` (2163-2164).
 
 **Aberto:** nada rodado em aparelho; sem export template musl (ADR-03) não há
 `.giochi`; RK3326 continua em Godot 3.5 LTS pelo ADR-07.
+
+### 2026-10-28 (13) — Copilot (jogos padrão do sistema + benchmark + i18n)
+
+O mantenedor definiu que os jogos da pasta `Jogos/` são **jogos padrão do
+sistema**, usados como teste e benchmark dos aparelhos, e que **jogo que não
+for domínio público sai da lista**. Duas decisões daí:
+
+1. **Shattered Pixel Dungeon ficou FORA.** Conferido na fonte:
+   `00-evan/shattered-pixel-dungeon` é **GPL-3.0** (API do GitHub), não domínio
+   público — e GPL é copyleft: distribuir derivado obriga a abrir e manter a
+   licença. Não é problema do jogo, é decisão de licenciamento do sistema
+   inteiro. Registrado em `assets/default-games.json` → `excluded`, com motivo
+   e URL do upstream. **Colossal Cave entrou**: `open-adventure` (ESR) é
+   BSD-2-Clause e o autor declara distribuição "com permissão e incentivo" de
+   Crowther & Woods; a página também chama a versão de 430 pontos de
+   *Adventure 2.5* — origem do nome "2,5D" que o mantenedor usou.
+   Spacewar: criado no MIT em 1962, nunca registrado. Arcade Volleyball: arte e
+   código escritos aqui (`clean_room`), nenhum binário do original.
+
+2. **A regra virou código, não comentário**: `assets/default-games.json`
+   (fonte única) + `schemas/default-games.schema.json` +
+   `tools/check-default-games.py` (no `make lint`) + `tests/test_default_games.py`
+   (suíte `jogos-padrao`). O checker recusa `copyleft`/`proprietary`, projeto
+   sem `scripts/bench.gd`, projeto sem `tests/run_tests.sh`, lista vazia e jogo
+   em `games` **e** em `excluded`. O teste também exige **evidência** de licença
+   por jogo (para o próximo agente poder conferir sem refazer a pesquisa).
+
+**Benchmark (`--bench`) igual nos três jogos** — `scripts/bench.gd` (cópia em
+cada projeto, como `fixed_step.gd`, porque cada jogo é um projeto Godot
+isolado): p50/p95/p99, fps médio, tempo de processo/física, RAM (RSS de
+`/proc/self/status`), VRAM, draw calls e objetos, contra o teto de 700 MB/128 MB.
+Entrada sempre sintética (autoplay), senão a medição não é reprodutível.
+`make bench` + `tools/bench-games.sh` lê o manifesto (sem repetir nomes de jogo)
+e falha se `budget.passed = false`.
+
+**Colossal Cave em 2,5D, com três idiomas** (pedido do mantenedor):
+`scripts/sim/cave.gd` **não tem nenhuma frase** — só `message_key` +
+`message_args`; o texto vive em `scripts/i18n/locale.gd` (pt-BR/en/es). Troca de
+idioma a quente no menu de pausa (↑↓ escolhe a linha, ←→ ajusta), sem reiniciar
+a partida. O teste de idiomas cobra: chave presente nos três, conjuntos de
+chaves idênticos (tradução sobrando ou faltando é erro), e que a rota de
+referência vence com a mesma pontuação nos três idiomas (trocar idioma não pode
+mudar regra).
+
+**Bugs encontrados medindo, não lendo:**
+
+1. **`--bench-out` relativo gravava nada, calado**: `FileAccess` só aceita
+   `res://`, `user://` ou caminho absoluto. O resumo era impresso e o laudo
+   nunca existia. Agora `bench.gd` converte e avisa; `bench-games.sh` resolve
+   `OUT` para absoluto.
+2. **`for` sobre lista de projetos parte os caminhos nos espaços**
+   ("Colossal Cave Adventure"): a saída agora é `id<TAB>caminho` lida com
+   `while IFS=tab read`.
+3. **`set --` dentro do laço sobrescrevia `$1`** (o filtro de jogo falhava a
+   partir da 2ª iteração). Filtro guardado antes.
+4. **O Godot herdava o stdin do laço** e comia o resto da lista: `</dev/null`.
+5. **`_get()` no `Locale` colide com `Object._get` nativo** → renomeado
+   `_lookup`; e `var table: Dictionary` não aceita `String` no fim do caminho
+   (`_walk` com `Variant`).
+6. **Duas passagens de mão única no mapa da caverna**: `queda` saía para
+   `salao` e `grade`, e nenhuma das duas voltava. Achado pelo teste de simetria
+   de saídas, não pelo olho.
+7. **`MAX_CARRY = 5` tornava a caverna incompletável** (lâmpada ocupava uma
+   mão e são 5 tesouros). Achado pelo teste da rota de referência.
+
+**Pastas com ESPAÇO NO FIM do nome** (`Colossal Cave Adventure `,
+`Shattered Pixel Dungeon `) quebraram shell, Makefile e link de markdown três
+vezes. Renomeadas sem o espaço final, junto com os `.md` de dentro.
+
+- Medido no host (Mesa/AMD): Spacewar 187 MB/18,2 MB, Colossal Cave 187 MB/24,2 MB,
+  Arcade Volleyball 188 MB/19,7 MB — todos < 25% do teto de VRAM.
+- `BR2_PACKAGE_GIOCHI_GAMES=y` nos cinco defconfigs (gerados); pacote instala
+  `/usr/share/giochi/games/<id>` a partir do manifesto (~420 KB, sem `.godot/`).
+
+**Aberto:** export template do Godot para aarch64/musl (ADR-03) — sem ele o
+pacote instala os projetos, não binários prontos, e ainda não existe `.giochi`;
+nada rodado em aparelho.
+
+### 2026-10-28 (14) — Copilot (Colossal Cave: leitura da caverna e documentação)
+
+O mantenedor pediu para **não investir mais no Colossal Cave agora** ("precisa
+de melhorias, focaremos nele em outra oportunidade"). Então esta entrada não
+entrega features: fecha o que estava pela metade e **registra a dívida**.
+
+**Feito:**
+
+1. **Correção da caverna escura.** O shader da caverna
+   (`godot/shaders/cavern.gdshader`) foi reescrito: a primeira medição dava
+   **luminância média 12,6/255** — o jogador via uma mancha preta. A causa era
+   o shader ter uma única faixa de cor (`rock_dark`) para todas as superfícies.
+   Agora há quatro faixas (piso, parede de fundo, laterais, teto) mais halo do
+   lampião. Medido depois: **38,3/255 de média**, p90 60,3, com piso em
+   (128,106,83), parede de fundo (50,43,36) e laterais (30–34). Continua escuro
+   de propósito, e continua **abaixo** do que o resto do jogo entrega — está na
+   lista de pendências do `.md`.
+   A primeira amostragem que fiz lia **y ≥ 486**, que é o painel do HUD, não a
+   caverna: média 34,8 vinha misturada com o HUD escuro. Vale como armadilha —
+   **ao medir luminância, medir só a área do jogo** (0–480 neste projeto).
+2. **`Colossal Cave Adventure.md` deixa de ser nota.** Era o recado de 3 linhas
+   do mantenedor (as duas fontes e a intenção de "experiência 3D"); virou o
+   documento do jogo (regras, controles, idiomas, orçamento medido, testes,
+   integração) **com as fontes preservadas** — `wh0am1-dev/adventure` e
+   `esr/open-adventure` — e a intenção de 3D registrada em "Melhorias
+   pendentes", item 2. O `assets/default-games.json` aponta para esse `.md`
+   desde a entrada 13, mas o arquivo ainda era a nota: qualquer leitor caía
+   nela.
+3. **O lint de links não olhava `Jogos/`** — ver armadilha 3.18. Ligar a
+   varredura reprovou 3 links (que eram corretos, só com `%20`) e expôs que o
+   §6.5 deste arquivo afirmava algo falso.
+4. **`ObjectDB instances leaked at exit` nos três `budget_probe.gd`.** O probe
+   fechava o jogo com um som tocando; o `AudioStreamPlaybackWAV` ficava vivo.
+   Corrigido desligando o áudio no quadro 1 do probe (`_sfx.set_enabled(false)`)
+   — o probe mede RAM/VRAM, não som. Verificado: o aviso sumiu nos três.
+
+**Verificação (tudo rodado):**
+
+- `make test` → **16/16 suites**.
+- `make lint` → jogos padrão (3 + 1 fora), markdown (25 arquivos, era 21), arquivos
+  versionados: ok.
+- `GODOT=... make godot-test` → os três jogos, `ORCAMENTO OK` em cada.
+- `tests/invariants.gd` do Colossal Cave: 14 testes, rota de referência
+  **39 turnos, 100 pontos, 5/5 tesouros**.
+- `GODOT=... tools/bench-games.sh`: arcade-volleyball 187,9 MB / 19,7 MB /
+  47 draws / 832 fps; colossal-cave 186,6 MB / 24,2 MB / 49 draws / 1002 fps;
+  spacewar 187,3 MB / 18,2 MB / 38 draws / 1282 fps. Todos `passed=true`.
+
+**Aberto (registrado no `.md` do jogo, item por item):** sem mapa, sem save,
+conteúdo de 18 salas/100 pontos contra 430 do original, 3D real (hoje é
+perspectiva de ponto de fuga em `Node2D`), sem áudio ambiente, nada rodado em
+aparelho, e nenhum dos três jogos vira `.giochi` sem o export template musl do
+ADR-03.

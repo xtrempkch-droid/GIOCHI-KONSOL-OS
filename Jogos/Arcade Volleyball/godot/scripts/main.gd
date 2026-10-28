@@ -20,6 +20,7 @@ const CourtShader := preload("res://shaders/court.gdshader")
 @onready var hud: GameHud = $HUD
 
 var model: VolleyMatch
+var _bench: Bench
 var _controls
 var _clock: FixedStep
 var _tier := Quality.DEFAULT_TIER
@@ -40,10 +41,16 @@ var _paused := false
 var _prev_grounded := [true, true]
 
 func _ready() -> void:
+	_bench = Bench.from_cmdline("arcade-volleyball")
 	model = Match.new()
+	if _bench.enabled:
+		for i in 2:
+			model.players[i].score = 0
 	_controls = Match.Controls.new()
 	_clock = FixedStepScript.new()
 	_tier = Quality.load_tier()
+	if _bench.enabled and _bench.quality_tier >= 0:
+		_tier = clampi(_bench.quality_tier, 0, Quality.NAMES.size() - 1)
 
 	_setup_court()
 	_setup_trail()
@@ -57,6 +64,10 @@ func _ready() -> void:
 	_sync()
 	hud.set_pause_visible(false)
 	hud.set_quality_text(Quality.label(_tier))
+
+	if _bench.enabled:
+		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+		Engine.max_fps = 0
 
 func _exit_tree() -> void:
 	Engine.time_scale = 1.0
@@ -110,6 +121,10 @@ func _apply_quality() -> void:
 	_court_material.set_shader_parameter("ball_glow", _preset["ball_glow"])
 	hud.set_quality_text(Quality.label(_tier))
 
+	if _bench.enabled:
+		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+		Engine.max_fps = 0
+
 func _change_quality(direction: int) -> void:
 	_tier = clampi(_tier + direction, 0, Quality.NAMES.size() - 1)
 	Quality.save_tier(_tier)
@@ -135,6 +150,9 @@ func _physics_process(delta: float) -> void:
 		_sync()
 
 func _process(delta: float) -> void:
+	if _bench.enabled and _bench.frame():
+		_bench_out()
+
 	_update_time_scale()
 	_update_camera(delta)
 	_update_trail_and_glow()
@@ -143,6 +161,11 @@ func _process(delta: float) -> void:
 # --- entrada -------------------------------------------------------------
 
 func _read_controls() -> void:
+	if _bench.enabled:
+		# Autoplay deterministico: P1 segue a bola (mesma politica dos testes).
+		_read_autoplay()
+		return
+
 	var axis := _joy_axis(JOY_AXIS_LEFT_X)
 	_controls.left = (Input.is_physical_key_pressed(KEY_A)
 		or Input.is_physical_key_pressed(KEY_LEFT)
@@ -188,6 +211,23 @@ func _joy_button(button: int) -> bool:
 	if pads.is_empty():
 		return false
 	return Input.is_joy_button_pressed(pads[0], button)
+
+## Politica de autoplay do benchmark: persegue a bola e pula quando ela esta
+## acima e perto. E a mesma do teste de invariantes, entao o bench mede uma
+## partida de verdade, com pontos acontecendo.
+func _read_autoplay() -> void:
+	var delta: float = model.ball.pos.x - model.players[0].center_x()
+	_controls.left = delta < -8.0
+	_controls.right = delta > 8.0
+	_controls.jump = (model.ball.pos.y < model.players[0].pos.y
+		and absf(delta) < 60.0 and model.players[0].grounded)
+
+func _bench_out() -> void:
+	var code := _bench.finish({
+		"score_p1": model.players[0].score,
+		"score_p2": model.players[1].score,
+	}, Match.ARENA, Quality.label(_tier))
+	get_tree().quit(code)
 
 func _toggle_pause() -> void:
 	_paused = not _paused
