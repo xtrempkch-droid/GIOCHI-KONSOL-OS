@@ -168,6 +168,36 @@ class ImagePiecesTest(unittest.TestCase):
                       "mudanca no boot.cmd nao chega na imagem")
         self.assertIn("boot.scr", post)
 
+    def test_dtb_cai_para_board_dtb_quando_o_load_falha(self):
+        # BUG REAL (medido no X35H): o fallback era gated em "fdtfile vazio".
+        # fdtfile vem do ambiente do U-Boot e quase nunca esta vazio; como o
+        # cartao so tem o DTB do aparelho para o qual a imagem foi gerada,
+        # carregar dtbs/${fdtfile} falhava, o fallback nao acontecia, fdt_addr_r
+        # ficava com lixo e o booti falhava — e o U-Boot bootava o eMMC (o
+        # sistema de fabrica). O usuario ve "nao apareceu nada nosso".
+        boot = sh_code(read(BOARD, "boot.cmd"))
+        self.assertNotIn('if test -z "${fdtfile}"', boot,
+                         "o fallback para board.dtb nao pode depender de "
+                         "fdtfile estar vazio: ele tem de reagir a FALHA do load")
+        self.assertIn("giochi_fdt_ok", boot)
+        self.assertIn("board.dtb", boot)
+
+    def test_saveenv_nao_grava_no_emmc_do_fabricante(self):
+        # Nosso boot.scr tambem roda sob o U-Boot de FABRICA (que varre o cartao
+        # atras de boot.scr). Ali 'saveenv' grava no eMMC do usuario -- efeito
+        # colateral inaceitavel em aparelho de terceiro. O discriminador e
+        # 'giochi_mmc': o NOSSO BOOTCOMMAND o define antes do 'source'.
+        boot = sh_code(read(BOARD, "boot.cmd"))
+        self.assertIn("giochi_env_gravavel", boot)
+        linhas = boot.splitlines()
+        for i, linha in enumerate(linhas):
+            if linha.strip() != "saveenv":
+                continue
+            contexto = "\n".join(linhas[max(0, i - 4):i])
+            self.assertIn("giochi_env_gravavel", contexto,
+                          "saveenv sem guarda de 'giochi_env_gravavel' na "
+                          "linha %d: grava no eMMC do aparelho de fabrica" % (i + 1))
+
     def test_boot_cmd_tem_marcadores_de_serial(self):
         # Sem fbcon (imagem normal) o serial e a unica visao antes do kernel.
         boot = read(BOARD, "boot.cmd")

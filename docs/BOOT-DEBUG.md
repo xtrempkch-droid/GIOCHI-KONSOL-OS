@@ -40,6 +40,35 @@ de um pânico de kernel, nada é gravado. Para esses casos, use as seções 2 e 
 
 ---
 
+## 1.5 Primeiro: quem está rodando? (o firmware de fábrica costuma ganhar)
+
+Antes de qualquer coisa, responda esta pergunta: **o sistema que apareceu é o
+nosso?** Num RK3566 com o firmware de fábrica no eMMC, o bootloader do eMMC
+inicia primeiro — o cartão só é usado se aquele bootloader procurar por ele. O
+sintoma é idêntico ao de um boot quebrado: a nossa tela não aparece.
+
+Com o aparelho ligado e conectado por USB ao PC, não há o que adivinhar:
+
+```sh
+for d in /sys/bus/usb/devices/*/; do
+  [ -f "$d/idVendor" ] || continue
+  printf '%s  vendor=%s product=%s  %s / %s\n' "$d" \
+    "$(cat "$d/idVendor")" "$(cat "$d/idProduct")" \
+    "$(cat "$d/manufacturer" 2>/dev/null)" "$(cat "$d/product" 2>/dev/null)"
+done
+```
+
+- `manufacturer: ROCKNIX` / `product: x35h Handheld Device` → **é o firmware de
+  fábrica**. A nossa imagem não foi usada.
+- `1d6b:0104` é o gadget composto genérico do Linux; praticamente todo firmware
+  desses aparelhos usa esse par, então ele **não** identifica nada — o que
+  identifica são as strings `manufacturer`/`product`.
+
+Se o sistema em execução for o de fábrica, descarte as seções 2 e 3 (o kernel
+deles não é o nosso) e vá para a seção 6.
+
+---
+
 ## 2. Imagem de diagnóstico: mensagens do kernel na tela
 
 A imagem normal tem `CONFIG_FB=n` (decisão registrada em
@@ -107,6 +136,7 @@ log do cartão (seção 1) ou o fbcon (seção 2) mostra onde.
 
 | Sintoma | Onde olhar |
 |---|---|
+| Aparece o sistema de fábrica (ROCKNIX/JELOS), não o nosso | Seção 1.5: confira `manufacturer`/`product` no USB. Normalmente é o bootloader do eMMC ganhando do cartão (seção 6) |
 | Nada no serial, nada na tela | Bootloader: gravar o `u-boot-rockchip.bin` em 32 KiB (`docs/DEVICES.md`). O BootROM procura o idbloader no LBA 64. |
 | Serial mostra U-Boot, mas não o marcador do `boot.scr` | O `boot.scr` não foi lido. Confira `mmc` (o cartão é **1**, não 0) e a partição 1. |
 | `boot.scr` roda, mas "FALHA ao ler Image" | Partição 1 sem `Image`, ou `giochi_mmc` errado. |
@@ -127,3 +157,73 @@ log do cartão (seção 1) ou o fbcon (seção 2) mostra onde.
 O custo do log em operação normal é uma escrita por linha de log na partição
 FAT — irrelevante para diagnóstico e indesejável em produção. A decisão de
 desligar por padrão fica para depois de o boot estar estável.
+
+---
+
+## 6. O firmware de fábrica está ganhando do cartão
+
+Este é o caso mais comum de "gravei a imagem e não apareceu nada".
+
+### Por que
+
+O BootROM do RK3566 procura um bootloader numa ordem fixa (SPI → eMMC → SD).
+Um aparelho de fábrica **tem** bootloader no eMMC. Então:
+
+1. o bootloader do eMMC roda (no X35H é o U-Boot do ROCKNIX);
+2. ele decide se procura o cartão. Muitos builds fazem isso (varrem `mmc1` e
+   depois `mmc0` atrás de `boot.scr`/`extlinux.conf`), mas não todos;
+3. se ele achar o nosso `boot.scr` e o boot falhar, ele **segue para o próximo
+   alvo** e inicia o eMMC — sem avisar. Você vê o sistema de fábrica.
+
+Um boot que falha no meio do `boot.scr` é indistinguível, a olho nu, de um
+cartão ignorado. O que separa os dois é o serial (seção 3) ou o log no cartão
+(seção 1) — e o log só existe se o kernel chegou a montar a raiz.
+
+### O que fazer
+
+| Situação | Caminho |
+|---|---|
+| O bootloader do eMMC varre o cartão | Mantenha o cartão e corrija o `boot.cmd`/DTB (abaixo) |
+| Ele não varre | Grave a **nossa** imagem no eMMC, ou force o modo MaskROM |
+| Aparelho sem DTS upstream (X35S/X35H) | A imagem sai **sem** bootloader (`genimage-no-uboot.cfg`) e depende do bootloader de fábrica — que é justamente o do eMMC |
+
+### A pegadinha que já mordeu: DTB do aparelho errado
+
+O `boot.cmd` escolhe o DTB assim: tenta `dtbs/${fdtfile}` (o nome que o U-Boot
+conhece) e, **se esse arquivo não existir**, usa `board.dtb`. Uma versão
+anterior só caía para `board.dtb` quando `fdtfile` estava **vazio** — e
+`fdtfile` vem do ambiente do U-Boot de fábrica, então quase nunca está vazio.
+Resultado: num aparelho diferente daquele para o qual a imagem foi gerada
+(imagem da X55 no X35H), o `load` falhava, o fallback não acontecia, o `booti`
+recebia um FDT inválido e o U-Boot ia para o eMMC.
+
+Consequência prática: **gere a imagem do aparelho certo.** O cartão só carrega
+o DTB do aparelho indicado no build — não existe imagem "universal" de RK3566.
+
+```sh
+tools/build-image.sh --list
+tools/docker-build.sh x55                 # X55 (DTS mainline, U-Boot mainline)
+tools/docker-build.sh x35h --fallback-dts # X35H (sem DTS/U-Boot upstream)
+```
+
+No X35S/X35H o `--fallback-dts` usa um DTS mainline de painel 640×480: serve
+para ver se o kernel sobe, **não** garante painel nem controles.
+
+### Melhor caminho para o X35H: pegar o DTB real do aparelho
+
+Se o firmware de fábrica está rodando, ele tem o DTB exato da sua placa na
+memória. É o melhor DTS que existe para ela:
+
+```sh
+# no aparelho (ROCKNIX/JELOS, ssh root@<ip>)
+cat /sys/firmware/fdt > /tmp/x35h.dtb
+```
+
+Com o arquivo em mãos, compile a imagem usando o DTB pronto, sem inventar DTS:
+
+```sh
+tools/build-image.sh x35h            # com GIOCHI_DTB_PATH=/caminho/x35h.dtb
+```
+
+`GIOCHI_DTB_PATH` é copiado para `dtbs/` pelo `post-image.sh` e também vira o
+`board.dtb` — o mesmo blob que o fallback do `boot.cmd` usa.

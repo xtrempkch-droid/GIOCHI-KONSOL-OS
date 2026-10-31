@@ -7,10 +7,29 @@
 
 setenv bootargs_base "console=ttyS2,1500000n8 earlycon=uart8250,mmio32,0xfe660000 rootfstype=squashfs ro rootwait"
 
+# QUEM CARREGOU ESTE SCRIPT? O nosso U-Boot publica 'giochi_mmc' no
+# BOOTCOMMAND, ANTES do 'source'. Um U-Boot de fabrica (ROCKNIX/JELOS, que
+# apenas varre o cartao atras de boot.scr) nao define essa variavel.
+#
+# Isso importa porque 'saveenv' grava onde o U-Boot em execucao guarda o
+# ambiente -- e, num aparelho de fabrica, esse lugar e o eMMC do usuario. Um
+# boot.scr nosso escrevendo no eMMC de terceiro e efeito colateral inaceitavel:
+# o A/B por bootcount e uma decisao da NOSSA imagem, nao do aparelho alheio.
+# Sem 'giochi_mmc', rodamos sem estado (nada e gravado).
+if test -z "${giochi_mmc}"; then
+  setenv giochi_env_gravavel 0
+else
+  setenv giochi_env_gravavel 1
+fi
+
 if test -z "${giochi_slot}"; then
   setenv giochi_slot 2
   setenv giochi_prev_slot 3
-  saveenv
+  if test "${giochi_env_gravavel}" = "1"; then
+    saveenv
+  else
+    echo "GIOCHI: bootloader de fabrica; sem saveenv (nao grava no eMMC)"
+  fi
 fi
 
 if test "${bootcount}" -gt 3; then
@@ -19,7 +38,9 @@ if test "${bootcount}" -gt 3; then
   setenv giochi_slot "${giochi_prev_slot}"
   setenv giochi_prev_slot "${tmp}"
   setenv bootcount 0
-  saveenv
+  if test "${giochi_env_gravavel}" = "1"; then
+    saveenv
+  fi
 fi
 
 # Layout (secao 1.3): p1 = boot (FAT), p2 = B1, p3 = B2, p4 = /user.
@@ -50,15 +71,33 @@ fi
 # saber se o boot.scr rodou e com que dispositivo/raiz ele decidiu bootar.
 echo "GIOCHI: boot.scr em execucao (mmc=${giochi_mmc} slot=${giochi_slot} root=${giochi_root})"
 
-# DTB por placa: X55 (mainline) x X35S/X35H (mesmo DTB). Sem fdtfile, usa
-# board.dtb gravado no cartao (post-image).
+# DTB: tenta o nome que o U-Boot conhece (fdtfile), e se ESSE ARQUIVO NAO
+# EXISTIR no cartao cai para board.dtb.
+#
+# A versao anterior testava apenas "fdtfile vazio" para decidir o fallback.
+# Como fdtfile vem do ambiente do U-Boot (do bootloader de fabrica, quando ele
+# e quem boota o cartao), ele quase nunca esta vazio — e o nosso cartao so tem o
+# DTB do aparelho para o qual a imagem foi gerada. Resultado: num aparelho
+# diferente (X35H com imagem de X55) o 'load dtbs/${fdtfile}' falhava, o
+# fallback NAO acontecia porque fdtfile nao estava vazio, fdt_addr_r ficava com
+# lixo e o booti falhava — o U-Boot seguia para o proximo alvo e bootava o eMMC.
+# O sintoma para o usuario e "o sistema nao aparece" (aparece o de fabrica).
+giochi_fdt_ok=0
 if test -n "${fdtfile}"; then
   if load mmc ${giochi_mmc}:1 ${fdt_addr_r} dtbs/${fdtfile}; then
     echo "GIOCHI: dtb dtbs/${fdtfile}"
+    giochi_fdt_ok=1
+  else
+    echo "GIOCHI: dtbs/${fdtfile} ausente no cartao; tentando board.dtb"
   fi
 fi
-if test -z "${fdtfile}"; then
-  load mmc ${giochi_mmc}:1 ${fdt_addr_r} board.dtb
+if test "${giochi_fdt_ok}" = "0"; then
+  if load mmc ${giochi_mmc}:1 ${fdt_addr_r} board.dtb; then
+    echo "GIOCHI: dtb board.dtb (fallback)"
+    giochi_fdt_ok=1
+  else
+    echo "GIOCHI: ERRO: nenhum DTB legivel no cartao"
+  fi
 fi
 
 # ---------------------------------------------------------------------

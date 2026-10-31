@@ -661,6 +661,71 @@ projeto, sem erro nenhum no boot:
 - Ao adicionar um pacote novo, **liste o `Sxx` dele** e decida: convive com os
   nossos ou sai no `post-build.sh`.
 
+### 3.35 Fallback do DTB gated na condição errada = eMMC boota no lugar da gente
+
+`boot.cmd` escolhia o DTB assim:
+
+```sh
+if test -n "${fdtfile}"; then
+  if load mmc ${giochi_mmc}:1 ${fdt_addr_r} dtbs/${fdtfile}; then ... fi
+fi
+if test -z "${fdtfile}"; then            # <-- so cai aqui se fdtfile estiver VAZIO
+  load mmc ${giochi_mmc}:1 ${fdt_addr_r} board.dtb
+fi
+```
+
+`fdtfile` vem do **ambiente do U-Boot de fábrica** (é ele quem boota o cartão
+num aparelho com eMMC). Quase nunca está vazio, e o nosso cartão só tem o DTB
+do aparelho para o qual a imagem foi gerada. Num aparelho diferente (imagem da
+X55 no X35H): o `load dtbs/${fdtfile}` falhava, o fallback **não** acontecia, o
+`fdt_addr_r` ficava com lixo e o `booti` falhava — e o U-Boot seguia para o
+próximo alvo e bootava o eMMC. O usuário vê o sistema de fábrica e conclui "não
+apareceu nada".
+
+- O fallback agora reage ao **resultado do load** (`giochi_fdt_ok`), não a uma
+  condição sobre o nome.
+- Regra: `X && cmd` dentro de `if test -z` é quase sempre o teste errado —
+  teste o resultado da operação, não o estado das entradas.
+- Guarda: `tests/test_boot_log.py` proíbe `if test -z "${fdtfile}"` e exige
+  `giochi_fdt_ok`.
+
+### 3.36 "Não bootou" pode ser "bootou o firmware de fábrica"
+
+Diagnóstico que resolveu o caso do X35H em 30 s, sem abrir o aparelho: com o
+console ligado por USB ao PC, os descritores dizem **quem** está rodando.
+
+```sh
+cat /sys/bus/usb/devices/*/manufacturer   # ROCKNIX  <- é o firmware de fábrica
+cat /sys/bus/usb/devices/*/product        # x35h Handheld Device
+```
+
+- `1d6b:0104` (Linux Foundation Multifunction Composite Gadget) **não**
+  identifica nada: todo firmware desses aparelhos usa esse par. O que identifica
+  são as strings.
+- O BootROM do RK3566 procura bootloader em SPI → eMMC → SD. Um aparelho de
+  fábrica **tem** bootloader no eMMC, e é ele que decide se olha o cartão. Se o
+  nosso `boot.scr` falha, ele cai para o eMMC sem avisar.
+- Consequência: para X35S/X35H (`GIOCHI_UBOOT_UPSTREAM=no`, imagem sem
+  bootloader) o caminho normal **é** depender do bootloader do eMMC — e ele
+  precisa varrer o cartão.
+- Documentado em `docs/BOOT-DEBUG.md` §1.5 e §6.
+
+### 3.37 Imagem de RK3566 não é universal: o cartão só leva um DTB
+
+Cada imagem carrega **o DTB do aparelho do build** (`dtbs/<placa>.dtb` +
+`board.dtb`). Gravar a imagem da X55 no X35H dá kernel com painel errado: no
+melhor caso tela preta com o sistema vivo, no pior o `booti` falha e o eMMC
+ganha (§3.35).
+
+- X55 tem DTS **e** U-Boot mainline; X35S/X35H **não** têm nenhum dos dois
+  (`--fallback-dts` usa um DTS de painel 640×480, só para ver se o kernel sobe).
+- O melhor DTS para o X35S/X35H é o **DTB real do aparelho**, extraído do
+  firmware de fábrica que está rodando: `cat /sys/firmware/fdt > x35h.dtb` e
+  depois `GIOCHI_DTB_PATH=/caminho/x35h.dtb tools/build-image.sh x35h`.
+- `tools/docker-build.sh` passou a repassar `--fallback-dts`, `--debug`,
+  `--vendor-uboot` e `--check` (antes morria em "opcao desconhecida", e a única
+  saída era sair do container).
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):

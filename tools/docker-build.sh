@@ -19,6 +19,9 @@
 #   DL_DIR         cache de downloads (default: .cache/buildroot-dl)
 #   GIOCHI_DEBUG_BOOT=1  imagem de diagnostico com fbcon (docs/BOOT-DEBUG.md)
 #
+# Opcoes do build-image.sh repassadas: --fallback-dts, --debug, --vendor-uboot,
+# --check. Ex.: tools/docker-build.sh x35h --fallback-dts
+#
 # Nota: com o Docker do snap, o contexto de build precisa estar sob $HOME —
 # o snap nao enxerga /tmp. Este script usa a raiz do repositorio, que em uso
 # normal ja esta no home.
@@ -32,13 +35,19 @@ DL_DIR=${DL_DIR:-$ROOT/.cache/buildroot-dl}
 REBUILD=0
 TARGET=image
 DEVICE=
+# Opcoes repassadas ao build-image.sh (--fallback-dts/--debug/--vendor-uboot/
+# --check). Sem isto, 'tools/docker-build.sh x35h --fallback-dts' morria em
+# "opcao desconhecida" e a unica saida era sair do container.
+BUILD_ARGS=
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --rebuild-image) REBUILD=1; shift ;;
         --target) TARGET=${2:-image}; shift 2 ;;
         --list) DEVICE=--list; shift ;;
-        -h|--help) sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --fallback-dts|--debug|--vendor-uboot|--check)
+            BUILD_ARGS="$BUILD_ARGS $1"; shift ;;
+        -h|--help) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -*) echo "docker-build: opcao desconhecida '$1'" >&2; exit 2 ;;
         *) DEVICE=${DEVICE:-$1}; shift ;;
     esac
@@ -86,7 +95,9 @@ set -- docker run --rm --init \
     "$IMAGE"
 
 if [ "$TARGET" = "image" ]; then
-    exec "$@" sh -c 'exec tools/build-image.sh "$0" --jobs "$JOBS"' "$DEVICE"
+    # shellcheck disable=SC2086 # BUILD_ARGS precisa de word splitting
+    exec "$@" sh -c 'exec tools/build-image.sh "$0" --jobs "$JOBS" $1' \
+        "$DEVICE" "$BUILD_ARGS"
 fi
 
 # Alvos parciais: util para validar o build sem esperar rootfs e pacotes.

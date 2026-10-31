@@ -22,7 +22,7 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 - `boot.cmd`: marcadores de progresso no serial (`GIOCHI: boot.scr em
   execucao`, `Image carregada`, `booti`) e `giochi_fbcon` para
   `fbcon=rotate:N` no painel 720×1280/270° da X55.
-- Suíte `log-de-boot` (`tests/test_boot_log.py`, 19 checagens) e seção 6 em
+- Suíte `log-de-boot` (`tests/test_boot_log.py`, 21 checagens) e seção 6 em
   `tools/check-image-contents.sh` (scripts de pacote que não podem voltar).
 - **Primeira imagem completa gerada neste repositório**:
   `dist/x55/giochi-x55-sdcard.img`, 936 MB (147 MB de blocos reais), com U-Boot
@@ -69,6 +69,27 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 - `tools/check-links.py` agora valida também as tags de imagem HTML.
 
 ### Corrigido
+- **"Não apareceu nada": o aparelho estava bootando o firmware de fábrica.**
+  Diagnóstico sem abrir o aparelho, pelos descritores USB do console ligado ao
+  PC: `manufacturer=ROCKNIX, product=x35h Handheld Device` — ou seja, o
+  bootloader do **eMMC** ganhava do cartão. `1d6b:0104` (gadget composto
+  genérico) não identifica nada; as strings `manufacturer`/`product` sim.
+  Documentado em `docs/BOOT-DEBUG.md` §1.5 e §6.
+- **Fallback do DTB estava condicionado a `fdtfile` vazio.** O `boot.cmd` só
+  usava `board.dtb` quando `fdtfile` **não** estava definido — mas `fdtfile`
+  vem do ambiente do U-Boot de fábrica e quase nunca está vazio. Num aparelho
+  diferente daquele do build (imagem da X55 no X35H) o `load dtbs/<placa>.dtb`
+  falhava, o fallback não acontecia, o `fdt_addr_r` ficava com lixo, o `booti`
+  falhava e o U-Boot seguia para o eMMC. Agora o fallback reage ao **resultado
+  do load** (`giochi_fdt_ok`).
+- **`saveenv` podia gravar no eMMC do aparelho de terceiro.** O nosso
+  `boot.scr` também roda sob o U-Boot de fábrica (que varre o cartão atrás de
+  `boot.scr`); ali `saveenv` escreve no eMMC do usuário. Agora o script detecta
+  quem o carregou (`giochi_mmc`, definido pelo nosso `BOOTCOMMAND` antes do
+  `source`) e, sob bootloader de fábrica, roda **sem estado**.
+- `tools/docker-build.sh` passou a repassar `--fallback-dts`, `--debug`,
+  `--vendor-uboot` e `--check` ao `build-image.sh` (antes morria em "opção
+  desconhecida", e a única saída era sair do container).
 - **Log de boot na sdcard e a caçada ao "boot sem nada na tela"**
   (`docs/BOOT-DEBUG.md`). Quatro defeitos apareceram; três impediam o boot ou o
   próprio log:
