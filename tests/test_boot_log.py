@@ -112,6 +112,71 @@ class BootDeviceTest(unittest.TestCase):
         self.assertIn("setenv giochi_mmc 1", boot)
 
 
+class RootIdentityTest(unittest.TestCase):
+    """A raiz tem de ser achada por PARTUUID, nao por nome de dispositivo."""
+
+    def setUp(self):
+        self.gen = read(BOARD, "genimage.cfg")
+
+    def test_disk_signature_e_fixa(self):
+        # Sem disk-signature o genimage SORTEIA a assinatura do MBR a cada
+        # build, e o PARTUUID do root= deixaria de bater.
+        self.assertIn("disk-signature", self.gen,
+                      "genimage.cfg sem disk-signature: o PARTUUID muda a "
+                      "cada build e o root= nao resolve")
+        self.assertIn("0x47494f43", self.gen)
+        # O cfg sem U-Boot tambem (aparelhos X35S/X35H).
+        self.assertIn("disk-signature",
+                      read(BOARD, "genimage-no-uboot.cfg"))
+
+    def test_boot_cmd_usa_o_mesmo_partuuid(self):
+        boot = sh_code(read(BOARD, "boot.cmd"))
+        self.assertIn("PARTUUID=47494f43-02", boot)
+        self.assertIn("PARTUUID=47494f43-03", boot)
+        # /dev/mmcblk<N>p2 so vale para o cartao: a mesma imagem no eMMC vira
+        # mmcblk0p2 e no segundo slot, mmcblk2p2.
+        self.assertNotIn("/dev/mmcblk${giochi_mmc}p2", boot)
+
+    def test_extlinux_usa_o_mesmo_partuuid(self):
+        post = sh_code(read(BOARD, "post-image.sh"))
+        self.assertIn("47494f43", post)
+        self.assertNotIn("%PARTUUID%", post)
+
+    def test_instalador_de_emmc_esta_na_imagem(self):
+        # Roda no console: e o caminho quando o bootloader de fabrica ganha
+        # do cartao.
+        pb = read(BOARD, "post-build.sh")
+        self.assertIn("install-image-to-emmc", pb)
+        self.assertTrue(os.path.isfile(
+            os.path.join(ROOT, "tools", "install-image-to-emmc.sh")))
+
+    def test_instalador_nao_aceita_dispositivo_errado(self):
+        # Um dd no cartao do sistema destroi a instalacao em uso.
+        tool = read(ROOT, "tools", "install-image-to-emmc.sh")
+        self.assertIn("fe310000.mmc", tool,
+                      "o instalador tem de exigir o eMMC (fe310000.mmc)")
+        self.assertIn("APAGAR", tool, "falta confirmacao destrutiva")
+        # A guarda de "nao estou gravando no disco em uso" tem de estar no
+        # codigo, nao so na explicacao do cabecalho.
+        codigo = sh_code(tool)
+        # O padrao do case, nao a mencao na mensagem de erro: um assertIn
+        # simples passava mesmo com o case trocado por '*)" (testado assim).
+        self.assertRegex(codigo, r"\*fe310000\.mmc\*\)",
+                         "o instalador nao comparou o sysfs com fe310000.mmc")
+        self.assertIn("/proc/mounts", codigo,
+                      "o instalador nao confere se a raiz esta no disco alvo")
+
+
+class SerialToolTest(unittest.TestCase):
+    def test_serial_capture_e_ferramenta_de_pc(self):
+        # Le o pino de UART pelo PC; nao vai ao rootfs.
+        caminho = os.path.join(ROOT, "tools", "serial-capture.py")
+        self.assertTrue(os.path.isfile(caminho))
+        guarda = read(ROOT, "tools", "check-image-contents.sh")
+        self.assertIn("serial-capture.py", guarda,
+                      "serial-capture.py nao esta na lista de ferramenta de PC")
+
+
 class BusyboxTest(unittest.TestCase):
     """Sem estes applets/opções o log some em silêncio."""
 
@@ -197,6 +262,35 @@ class ImagePiecesTest(unittest.TestCase):
             self.assertIn("giochi_env_gravavel", contexto,
                           "saveenv sem guarda de 'giochi_env_gravavel' na "
                           "linha %d: grava no eMMC do aparelho de fabrica" % (i + 1))
+
+    def test_extlinux_e_regerado_sempre(self):
+        # Artefato derivado gravado em BINARIES_DIR sobrevive ao build
+        # incremental: com "if [ ! -f ]", mudanca de root= nao chegava na
+        # imagem (medido: extlinux.conf com /dev/mmcblk1p2 depois de o boot.cmd
+        # ja usar PARTUUID). Mesma armadilha do boot.scr.
+        post = sh_code(read(BOARD, "post-image.sh"))
+        self.assertNotIn('if [ ! -f "$BINARIES_DIR/extlinux.conf" ]', post,
+                         "extlinux.conf nao pode ser gerado so se faltar")
+        self.assertIn("> \"$BINARIES_DIR/extlinux.conf\"", post)
+
+    def test_mkbootimg_copia_o_subdiretorio_rockchip(self):
+        # O glob "dtbs/*.dtb" nao entra em subdiretorio: sem mmd/mcopy
+        # explicitos, dtbs/rockchip/ nao existe no FAT (verificado no .img).
+        mk = sh_code(read(BOARD, "mkbootimg.sh"))
+        self.assertIn("::dtbs/rockchip", mk)
+
+    def test_dtb_em_subdiretorio_rockchip(self):
+        # MEDIDO no console serial do X35H: o U-Boot exporta fdtfile como
+        # "rockchip/rk3566-powkiddy-x55.dtb" (organizacao do kernel upstream),
+        # mas o cartao so tinha o nome plano -> "Failed to load
+        # 'dtbs/rockchip/rk...'". O post-image passa a gravar as duas formas.
+        post = read(BOARD, "post-image.sh")
+        self.assertIn("dtbs/rockchip", post,
+                      "post-image.sh nao grava dtbs/rockchip/: o cargo "
+                      "dtbs/${fdtfile} do boot.cmd nao encontra o arquivo")
+        boot = sh_code(read(BOARD, "boot.cmd"))
+        self.assertIn("dtbs/board.dtb", boot,
+                      "falta o fallback por dtbs/board.dtb")
 
     def test_boot_cmd_tem_marcadores_de_serial(self):
         # Sem fbcon (imagem normal) o serial e a unica visao antes do kernel.

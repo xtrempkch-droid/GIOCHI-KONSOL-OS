@@ -19,6 +19,14 @@ mcopy -i "$DEST" "$BOOT_DIR/Image" ::Image
 if [ -d "$BOOT_DIR/dtbs" ]; then
     mmd -i "$DEST" ::dtbs
     mcopy -i "$DEST" "$BOOT_DIR"/dtbs/*.dtb ::dtbs/
+    # dtbs/rockchip/: o U-Boot de fabrica exporta fdtfile com o subdiretorio do
+    # vendor ("rockchip/<placa>.dtb") e o boot.cmd faz 'load dtbs/${fdtfile}'.
+    # Sem esta copia o caminho padrao falha (medido no serial do X35H) e o boot
+    # depende so do fallback. O glob acima NAO entra em subdiretorio.
+    if [ -d "$BOOT_DIR/dtbs/rockchip" ]; then
+        mmd -i "$DEST" ::dtbs/rockchip
+        mcopy -i "$DEST" "$BOOT_DIR"/dtbs/rockchip/*.dtb ::dtbs/rockchip/
+    fi
 fi
 if [ -f "$BOOT_DIR/board.dtb" ]; then
     mcopy -i "$DEST" "$BOOT_DIR/board.dtb" ::board.dtb

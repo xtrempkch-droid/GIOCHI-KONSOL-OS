@@ -23,7 +23,8 @@ fail=0
 
 # --- 1. nada de ferramenta de PC no TARGET --------------------------------
 # Estes arquivos pertencem ao lado do PC (autor/publicador) por definicao.
-PC_ONLY="giochi-pack.sh giochi-sign.sh giochi-keys.sh giochi-forge"
+PC_ONLY="giochi-pack.sh giochi-sign.sh giochi-keys.sh giochi-forge \
+         serial-capture.py serial-capture.sh"
 
 for mk in buildroot/package/*/*.mk; do
     [ -f "$mk" ] || continue
@@ -135,6 +136,23 @@ if [ -f Makefile ]; then
             fail=$((fail + 1))
         fi
     done
+fi
+
+# --- 5b) ferramenta de CONSOLE que precisa existir no rootfs --------------
+# install-image-to-emmc.sh roda no aparelho (grava o eMMC a partir do SD).
+# E a unica saida quando o bootloader de fabrica ganha do cartao
+# (docs/BOOT-DEBUG.md 6), entao nao pode faltar na imagem.
+PB_CHK=buildroot/board/giochi/post-build.sh
+if [ -f "$PB_CHK" ]; then
+    if ! grep -q "install-image-to-emmc" "$PB_CHK"; then
+        echo "  ERRO $PB_CHK nao instala install-image-to-emmc.sh" >&2
+        echo "       ele roda no console (nao e ferramenta de PC)" >&2
+        fail=$((fail + 1))
+    fi
+fi
+if [ ! -f tools/install-image-to-emmc.sh ]; then
+    echo "  ERRO tools/install-image-to-emmc.sh ausente" >&2
+    fail=$((fail + 1))
 fi
 
 # --- 6) scripts de init de PACOTE que anulam uma decisao nossa -----------

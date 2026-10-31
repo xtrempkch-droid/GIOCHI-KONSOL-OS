@@ -389,7 +389,8 @@ lint:
 	@python3 -m py_compile tools/make-screenshots.py \
 	           tools/make-layout-proposal.py \
 	           tools/check-buildroot-symbols.py tools/check-uboot.py \
-	           tools/check-links.py tools/make-bootlogo.py && echo "ok"
+	           tools/check-links.py tools/make-bootlogo.py \
+	           tools/serial-capture.py && echo "ok"
 
 # 'all' antes dos testes: a suite de integracao roda o giochi-init REAL, e num
 # clone limpo 'make test' sozinho nao o teria compilado.

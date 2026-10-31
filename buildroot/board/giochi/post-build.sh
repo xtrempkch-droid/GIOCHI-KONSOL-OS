@@ -97,6 +97,13 @@ install -m 0755 "$HELPERS_DIR/giochi-usb-mode" \
     "$TARGET_DIR/usr/sbin/giochi-usb-mode"
 install -m 0644 "$BOARD_DIR/mdev.conf" "$TARGET_DIR/etc/mdev.conf"
 
+# Instalador do eMMC: roda NO CONSOLE (nao e ferramenta de PC). E o caminho
+# para colocar o sistema no eMMC de um aparelho cujo bootloader de fabrica
+# ganha do cartao (ver docs/BOOT-DEBUG.md 6). Instalado em /usr/sbin porque
+# so root deve conseguir executa-lo.
+install -m 0755 "$BOARD_DIR/../../../tools/install-image-to-emmc.sh" \
+    "$TARGET_DIR/usr/sbin/install-image-to-emmc.sh"
+
 # Mapa canonico de botoes (secao 2.2): /etc/giochi/buttons.map.
 install -d "$TARGET_DIR/etc/giochi"
 install -m 0644 "$ASSETS_DIR/buttons.map" "$TARGET_DIR/etc/giochi/buttons.map"

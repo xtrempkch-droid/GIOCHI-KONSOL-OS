@@ -726,6 +726,88 @@ ganha (§3.35).
   `--vendor-uboot` e `--check` (antes morria em "opcao desconhecida", e a única
   saída era sair do container).
 
+### 3.38 `fdtfile` do U-Boot vem com `rockchip/` — o cartão tinha o nome plano
+
+Medido no **serial do X35H** (primeira evidência de hardware deste projeto):
+
+```
+GIOCHI: boot.scr em execucao (mmc=1 slot=2 root=/dev/mmcblk1p2)
+Failed to load 'dtbs/rockchip/rk...
+47516160 bytes read in 4025 ms          <- Image OK (47.516.160 B = a nossa)
+ERROR: Did not find a cmdline Flattened Device Tree
+```
+
+O U-Boot exporta `fdtfile` na forma **upstream** (`rockchip/<placa>.dtb`), porque
+espelha `arch/arm64/boot/dts/rockchip/`. O nosso `post-image.sh` gravava o DTB
+**plano** em `dtbs/`, então `load dtbs/${fdtfile}` procurava
+`dtbs/rockchip/...` e falhava.
+
+- O DTB agora é gravado nas **duas** formas (`dtbs/<nome>.dtb` e
+  `dtbs/rockchip/<nome>.dtb`); custa ~59 KB no FAT (sobram ~15 MB).
+- `mkbootimg.sh` precisa de `mmd ::dtbs/rockchip` + `mcopy` explícitos: o glob
+  `dtbs/*.dtb` **não** entra em subdiretório. Verificado no `.img` montado.
+- O `boot.cmd` tenta, em ordem: `dtbs/${fdtfile}`, `dtbs/board.dtb`,
+  `board.dtb`.
+- Guarda: `tests/test_boot_log.py` exige `dtbs/rockchip` no `post-image.sh` e
+  `::dtbs/rockchip` no `mkbootimg.sh`.
+
+### 3.39 Outro artefato derivado que não se regenerava: `extlinux.conf`
+
+Mesma classe do §3.33, descoberta porque o `.img` foi conferido em vez de
+confiado. O `post-image.sh` só escrevia o `extlinux.conf` `if [ ! -f ... ]`; o
+arquivo fica em `BINARIES_DIR`, que **sobrevive ao build incremental**. Depois
+de trocar o `root=` para PARTUUID, o `extlinux.conf` da imagem continuava com
+`root=/dev/mmcblk1p2`.
+
+- Agora é regerado **sempre**, como o `boot.scr`.
+- Regra: **todo** arquivo que o `post-image.sh` gera em `BINARIES_DIR` é
+  regerado incondicionalmente. Guarda contra cópia velha: conferir o `.img`
+  final (montar o FAT e ler o arquivo), não o arquivo em `BINARIES_DIR`.
+- Guarda: `tests/test_boot_log.py` proíbe `if [ ! -f ...extlinux.conf ]`.
+
+### 3.40 `SIGPIPE` no supervisor: um cliente que desconecta matava o `giochi-init`
+
+Encontrado porque a suíte `devmode` começou a falhar de forma **intermitente**
+(mas frequente) sob carga — e a investigação mostrou que não era o teste:
+
+```
+EXIT rc=141 (sinal=13)      # 128 + SIGPIPE
+```
+
+`giochi_sock_write_all` usava `write()`. Se o outro lado fechar antes de ler a
+resposta inteira, o `write()` levanta **SIGPIPE** e o processo morre. No
+aparelho, quem fala com o `control.sock` é o **Launcher**: fechar o app no
+momento errado derrubaria o supervisor da sessão inteira. Nada no log aparece —
+o processo simplesmente some.
+
+- `giochi_sock_write_all` agora usa `send(..., MSG_NOSIGNAL)` (devolve `EPIPE`
+  em vez de sinalizar).
+- `giochi-init` também **ignora** `SIGPIPE` (`sigaction(SIGPIPE, SIG_IGN)`):
+  defesa em profundidade, porque há descritores que não passam por
+  `giochi_sock_write_all`.
+- Regressão coberta: cenário 6b da `devmode_test.sh` — um cliente conecta,
+  manda `PING` e **fecha sem ler**; depois outro cliente tem de receber `PONG`.
+  Testado ao contrário: revertendo as duas linhas, os dois checks falham.
+- **Armadilha de método**: o mesmo sintoma (`Connection refused`) aparecia por
+  dois motivos diferentes — (a) o processo morto e (b) a corrida entre `bind()`
+  e `listen()`. O cliente do teste passou a **reconectar** (corrige (b)) e a
+  suíte ganhou o check de vida do processo (expõe (a)). Se o `connect` falhar
+  "às vezes", meça o **exit code** do servidor antes de aumentar timeout.
+
+### 3.41 Teste intermitente: separar corrida de bug antes de "consertar o teste"
+
+A `devmode` falhava em ~1 de cada 5 execuções **e sempre passava isolada**.
+Havia duas causas reais:
+
+1. corrida `bind()`/`listen()` — o arquivo do socket existe antes de o
+   servidor aceitar; um `connect` nesse intervalo recebe `ECONNREFUSED`.
+   Cliente correto tenta de novo.
+2. **SIGPIPE** (§3.40) — bug de verdade, no servidor.
+
+Conclusão prática: um teste intermitente é uma pergunta, não um incômodo.
+Antes de subir timeout, instrumente o **processo** (wrapper que registra
+`$?` — foi assim que `rc=141` apareceu) para saber se o servidor morreu.
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):

@@ -50,9 +50,20 @@ if test -z "${giochi_mmc}"; then
   setenv giochi_mmc 1
 fi
 
-setenv giochi_root "/dev/mmcblk${giochi_mmc}p2"
+# RAIZ POR PARTUUID, NAO POR NOME DE DISPOSITIVO.
+#
+# /dev/mmcblk1p2 vale para o cartao (mmc1) e so para ele: a MESMA imagem
+# gravada no eMMC vira mmcblk0p2, e no segundo slot de cartao, mmcblk2p2.
+# Nessas duas situacoes o kernel nao encontra a raiz ("Waiting for root
+# device") mesmo com tudo certo. O PARTUUID resolve por identidade do disco:
+# a assinatura MBR e FIXA (genimage.cfg: disk-signature = 0x47494f43) e o
+# numero da particao escolhe o slot -- 02 = A, 03 = B.
+#
+# O kernel resolve PARTUUID sozinho (init/do_mounts.c); nao precisa de
+# initramfs. Formato em MBR: <assinatura 8 hex>-<particao 2 hex>.
+setenv giochi_root "PARTUUID=47494f43-02"
 if test "${giochi_slot}" = "3"; then
-  setenv giochi_root "/dev/mmcblk${giochi_mmc}p3"
+  setenv giochi_root "PARTUUID=47494f43-03"
 fi
 
 setenv bootargs "${bootargs_base} root=${giochi_root} giochi.slot=${giochi_slot} giochi.bootcount=${bootcount}"
@@ -82,13 +93,22 @@ echo "GIOCHI: boot.scr em execucao (mmc=${giochi_mmc} slot=${giochi_slot} root=$
 # fallback NAO acontecia porque fdtfile nao estava vazio, fdt_addr_r ficava com
 # lixo e o booti falhava — o U-Boot seguia para o proximo alvo e bootava o eMMC.
 # O sintoma para o usuario e "o sistema nao aparece" (aparece o de fabrica).
+# 1) dtbs/<fdtfile>  (o U-Boot de fabrica usa "rockchip/<placa>.dtb")
+# 2) dtbs/board.dtb   (o mesmo arquivo, com outro nome)
+# 3) board.dtb        (o post-image tambem grava na raiz da particao A)
 giochi_fdt_ok=0
 if test -n "${fdtfile}"; then
   if load mmc ${giochi_mmc}:1 ${fdt_addr_r} dtbs/${fdtfile}; then
     echo "GIOCHI: dtb dtbs/${fdtfile}"
     giochi_fdt_ok=1
   else
-    echo "GIOCHI: dtbs/${fdtfile} ausente no cartao; tentando board.dtb"
+    echo "GIOCHI: dtbs/${fdtfile} ausente no cartao; tentando dtbs/board.dtb"
+  fi
+fi
+if test "${giochi_fdt_ok}" = "0"; then
+  if load mmc ${giochi_mmc}:1 ${fdt_addr_r} dtbs/board.dtb; then
+    echo "GIOCHI: dtb dtbs/board.dtb"
+    giochi_fdt_ok=1
   fi
 fi
 if test "${giochi_fdt_ok}" = "0"; then
@@ -98,6 +118,12 @@ if test "${giochi_fdt_ok}" = "0"; then
   else
     echo "GIOCHI: ERRO: nenhum DTB legivel no cartao"
   fi
+fi
+# Sair agora, sem tentar o booti, e melhor do que deixar o U-Boot seguir para
+# o proximo alvo em silencio: o 'exit' faz o BOOTCOMMAND continuar a varredura
+# de mmc, mas o erro fica registrado no serial (e visivel no fbcon).
+if test "${giochi_fdt_ok}" = "0"; then
+  echo "GIOCHI: abortando sem DTB (Image lida, device tree invalido)"
 fi
 
 # ---------------------------------------------------------------------

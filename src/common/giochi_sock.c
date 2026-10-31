@@ -118,7 +118,14 @@ int giochi_sock_write_all(int fd, const char *data, size_t len)
     size_t done = 0;
 
     while (done < len) {
-        ssize_t n = write(fd, data + done, len - done);
+        /* send(MSG_NOSIGNAL) e nao write(): se o outro lado fechar antes de
+         * ler a resposta inteira, o write() levanta SIGPIPE e o processo MORRE
+         * — matando o giochi-init por causa de um cliente que desconectou. Foi
+         * medido: o init saia com rc=141 (128+13) ao responder DEV_MODE a um
+         * cliente que ja tinha fechado. No aparelho o Launcher e cliente do
+         * control.sock, entao isso derrubaria a sessao inteira.
+         * MSG_NOSIGNAL devolve EPIPE em vez de sinalizar; quem chama decide. */
+        ssize_t n = send(fd, data + done, len - done, MSG_NOSIGNAL);
 
         if (n < 0) {
             if (errno == EINTR) {

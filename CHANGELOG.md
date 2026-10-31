@@ -6,6 +6,16 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 ## [Não publicado]
 
 ### Adicionado
+- **`tools/serial-capture.py`**: lê o console UART2 (`ttyS2`, 1500000 8N1) pelo
+  PC, autodetecta o adaptador, configura via `stty` (o `termios` do Python não
+  tem constante para 1500000) e grava com carimbo de tempo por linha. Foi com
+  ele que o boot deixou de ser "não aparece nada" e virou uma linha do tempo.
+- **`tools/install-image-to-emmc.sh`** (instalado em `/usr/sbin` da imagem):
+  grava a imagem no eMMC a partir do sistema rodando no SD, recusando alvo que
+  não seja o eMMC (`fe310000.mmc`), recusando rodar com a raiz no disco alvo,
+  conferindo se a imagem cabe **antes** de escrever e zerando as duas pontas do
+  disco (o firmware de fábrica usa GPT e a GPT de backup vive no fim). Adaptado
+  do projeto Walkmam ao BusyBox deste rootfs (sem `lsblk`/`wipefs`/`stat`).
 - **[docs/BOOT-DEBUG.md](docs/BOOT-DEBUG.md)**: procedimento para quando a tela
   não acende — log na partição FAT do cartão, imagem de diagnóstico com `fbcon`
   e console serial (`ttyS2`, `1500000 8N1`), com tabela sintoma → causa.
@@ -69,6 +79,38 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 - `tools/check-links.py` agora valida também as tags de imagem HTML.
 
 ### Corrigido
+- **`SIGPIPE` matava o `giochi-init`.** `giochi_sock_write_all` usava `write()`;
+  se um cliente fechasse antes de ler a resposta inteira, o processo morria com
+  `rc=141` (128+SIGPIPE) sem log nenhum. No aparelho quem fala com o
+  `control.sock` é o Launcher — fechar o app no momento errado derrubaria o
+  supervisor da sessão. Agora as escritas usam `send(MSG_NOSIGNAL)` e o init
+  ignora `SIGPIPE`. Regressão: cenário 6b da `devmode_test.sh` (cliente conecta,
+  manda `PING` e fecha sem ler; outro cliente tem de receber `PONG`).
+- **Teste `devmode` intermitente, por duas causas distintas**: a corrida
+  `bind()`/`listen()` do socket (cliente do teste passou a reconectar) e o
+  `SIGPIPE` acima (bug real do servidor). Foi um wrapper que registra o `$?` do
+  processo que revelou o `rc=141`.
+- **A causa exata do "não aparece nada", medida no console serial do X35H.**
+  O serial provou que **o nosso U-Boot e o nosso `boot.scr` rodam**: o `Image`
+  de 47 516 160 B é lido e o `booti` começa. A falha era só o device tree:
+  o U-Boot exporta `fdtfile` na forma upstream (`rockchip/<placa>.dtb`) e o
+  cartão tinha o arquivo **plano** em `dtbs/` →
+  `Failed to load 'dtbs/rockchip/rk...'` → `ERROR: Did not find a cmdline
+  Flattened Device Tree` → o U-Boot seguia para o eMMC e subia o ROCKNIX.
+  Agora o DTB é gravado nas duas formas, o `mkbootimg.sh` cria a pasta no FAT
+  (o glob `dtbs/*.dtb` não entra em subdiretório) e o `boot.cmd` tenta
+  `dtbs/${fdtfile}`, `dtbs/board.dtb` e `board.dtb`.
+- **`extlinux.conf` era gerado só se faltasse** (`if [ ! -f ]`) e vivia em
+  `BINARIES_DIR`, que sobrevive ao build incremental: continuou com
+  `root=/dev/mmcblk1p2` depois de o `boot.cmd` já usar PARTUUID. Agora é
+  regerado sempre, como o `boot.scr`.
+- **Raiz por `root=PARTUUID`, não por `/dev/mmcblk1p2`.** A mesma imagem gravada
+  no eMMC vira `mmcblk0p2` (e no 2º slot de cartão, `mmcblk2p2`), e o kernel
+  pararia em `Waiting for root device`. A assinatura MBR passou a ser **fixa**
+  (`disk-signature = 0x47494f43` no `genimage.cfg`), o que dá
+  `PARTUUID=47494f43-02` (slot A) e `-03` (slot B) — verificado no `.img`
+  (bytes 0x1b8 e `blkid`: `ID_PART_TABLE_UUID=47494f43`).
+- **`saveenv` podia gravar no eMMC do aparelho de terceiro** (ver abaixo).
 - **"Não apareceu nada": o aparelho estava bootando o firmware de fábrica.**
   Diagnóstico sem abrir o aparelho, pelos descritores USB do console ligado ao
   PC: `manufacturer=ROCKNIX, product=x35h Handheld Device` — ou seja, o

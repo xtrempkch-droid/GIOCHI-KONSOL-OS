@@ -71,6 +71,18 @@ static int install_signal_handlers(giochi_init_ctx *ctx)
     (void)sigaction(SIGTERM, &sa, NULL);
     (void)sigaction(SIGINT, &sa, NULL);
     (void)sigaction(SIGHUP, &sa, NULL);
+
+    /* SIGPIPE IGNORADO: este processo e o supervisor da sessao inteira
+     * (secao 2.2) e escreve em sockets de terceiros — control.sock e o socket
+     * do musicd. Sem isto, um cliente que desconecta no meio de uma resposta
+     * mata o init por SIGPIPE. Medido: rc=141 (128+13) ao responder DEV_MODE a
+     * um cliente que ja tinha fechado; no aparelho o Launcher e cliente, entao
+     * fechar o app no momento errado derrubaria o sistema. As escritas tambem
+     * usam send(MSG_NOSIGNAL) (giochi_sock.c): defesa em profundidade, porque
+     * nem todo descritor daqui passa por giochi_sock_write_all. */
+    sa.sa_handler = SIG_IGN;
+    sa.sa_flags = 0;
+    (void)sigaction(SIGPIPE, &sa, NULL);
     return 0;
 }
 

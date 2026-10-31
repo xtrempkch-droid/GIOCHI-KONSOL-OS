@@ -158,6 +158,22 @@ if [ ! -f "$BINARIES_DIR/dtbs/$DTB_FILE" ] && \
     echo "post-image: dtb $DTB_FILE normalizado para dtbs/"
 fi
 
+# MESMO DTB EM dtbs/rockchip/ -- e nao capricho.
+#
+# No aparelho, o U-Boot de fabrica exporta 'fdtfile' como
+# "rockchip/rk3566-powkiddy-x55.dtb" (com o subdiretorio do vendor), porque e
+# assim que o kernel upstream organiza arch/arm64/boot/dts/rockchip/. O
+# boot.cmd faz 'load mmc ${d}:1 dtbs/${fdtfile}', o que resultava em
+# dtbs/rockchip/... e falhava, porque o cartao so tinha o nome plano.
+# Medido no console (serial): "Failed to load 'dtbs/rockchip/rk...'".
+# Duplicar custa ~59 KB no FAT (sobram ~15 MB) e faz o caminho PADRAO do
+# U-Boot funcionar sem depender do fallback.
+if [ -f "$BINARIES_DIR/dtbs/$DTB_FILE" ]; then
+    mkdir -p "$BINARIES_DIR/dtbs/rockchip"
+    cp "$BINARIES_DIR/dtbs/$DTB_FILE" "$BINARIES_DIR/dtbs/rockchip/$DTB_FILE"
+    echo "post-image: dtb tambem em dtbs/rockchip/$DTB_FILE (fdtfile do vendor)"
+fi
+
 # DTB pre-compilado (aparelho sem DTS no kernel): copiado pelo build-image.sh.
 if [ -n "${GIOCHI_PRECOMPILED_DTB:-}" ] && [ -f "$GIOCHI_PRECOMPILED_DTB" ]; then
     mkdir -p "$BINARIES_DIR/dtbs"
@@ -179,22 +195,27 @@ fi
 
 # extlinux.conf (F1): o DTB escolhe o driver de painel — X55 != X35S.
 #
-# O root= usa o MESMO caminho de dispositivo que o boot.cmd
-# (/dev/mmcblk<giochi_mmc>p2), e nao PARTUUID: o genimage nao substitui
-# %PARTUUID% (nao existe essa expansao no 17) e o arquivo saia com o texto
-# literal "%PARTUUID%", que o kernel nao resolve. Quem muda de slot (A/B) e o
-# boot.scr; este extlinux.conf e fallback/documentacao (F1).
-if [ ! -f "$BINARIES_DIR/extlinux.conf" ]; then
-    GIOCHI_DTB_NAME=${GIOCHI_DTB_NAME:-$DTB_FILE}
-    GIOCHI_BOOT_MMC=${GIOCHI_BOOT_MMC:-1}
-    cat > "$BINARIES_DIR/extlinux.conf" <<CONF
+# O root= usa PARTUUID, como o boot.cmd, e NAO "%PARTUUID%" literal: o
+# genimage 17 nao faz essa expansao e o arquivo saia com o texto cru, que o
+# kernel nao resolve. O PARTUUID e FIXO e montado a partir do disk-signature
+# declarado no genimage.cfg (0x47494f43) + numero da particao do slot.
+# Quem troca de slot (A/B) e o boot.scr; este extlinux.conf e
+# fallback/documentacao (F1).
+#
+# REGERADO SEMPRE, sem "if [ ! -f ]". O arquivo fica em BINARIES_DIR, que
+# sobrevive entre builds incrementais: com a guarda, uma mudanca de root= ou de
+# dtb NAO chegava na imagem. Medido: o extlinux.conf continuava com
+# root=/dev/mmcblk1p2 (e 5 dias de comentarios) depois de o boot.cmd ja usar
+# PARTUUID. E a mesma armadilha do boot.scr (AGENTS 3.33).
+GIOCHI_PARTUUID=${GIOCHI_PARTUUID:-47494f43}
+GIOCHI_DTB_NAME=${GIOCHI_DTB_NAME:-$DTB_FILE}
+cat > "$BINARIES_DIR/extlinux.conf" <<CONF
 DEFAULT giochi
 LABEL giochi
     KERNEL /Image
     FDT /dtbs/$GIOCHI_DTB_NAME
-    APPEND console=ttyS2,1500000n8 earlycon=uart8250,mmio32,0xfe660000 root=/dev/mmcblk${GIOCHI_BOOT_MMC}p2 giochi.slot=2 giochi.bootcount=0 rootfstype=squashfs ro rootwait
+    APPEND console=ttyS2,1500000n8 earlycon=uart8250,mmio32,0xfe660000 root=PARTUUID=${GIOCHI_PARTUUID}-02 giochi.slot=2 giochi.bootcount=0 rootfstype=squashfs ro rootwait
 CONF
-fi
 
 # Bootsplash do U-Boot: assets/bootlogo/<device>/splash.bmp -> /splash.bmp.
 # Requer CONFIG_SPLASH_SCREEN=y e 'splashimage' no boot.cmd (ver

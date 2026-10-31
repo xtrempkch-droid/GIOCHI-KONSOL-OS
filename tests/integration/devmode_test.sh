@@ -233,6 +233,32 @@ if [ -n "$BIN" ] && [ -x "$BIN/giochi-init" ] && \
     echo "cenario 6: comando DEV_MODE no control.sock"
     setup
     mkdir -p "$T/run/giochi" "$T/usr"
+    # Cliente do control.sock com RECONEXAO. Uma tentativa so e uma corrida: o
+    # giochi-init faz bind() e listen() em sequencia, e o arquivo do socket ja
+    # existe no intervalo entre os dois. Numa maquina carregada (build de 11
+    # jobs em paralelo) o processo e escalonado para fora nesse intervalo e o
+    # connect recebe ECONNREFUSED -- foi assim que esta suite passou a falhar
+    # de forma intermitente. Cliente de verdade tambem tenta de novo.
+    cat > "$T/ctrl.py" <<'PYCTRL'
+import socket, sys, time
+
+caminho, cmd = sys.argv[1], sys.argv[2]
+limite = time.time() + 10
+ultimo = None
+while time.time() < limite:
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            s.settimeout(5)
+            s.connect(caminho)
+            s.sendall(cmd.encode() + b"\n")
+            print(s.recv(256).decode().strip())
+            sys.exit(0)
+    except (ConnectionRefusedError, FileNotFoundError) as exc:
+        ultimo = exc
+        time.sleep(0.1)
+print("ERRO:", ultimo, file=sys.stderr)
+sys.exit(1)
+PYCTRL
     printf '#!/bin/sh\nwhile :; do sleep 0.1; done\n' > "$T/usr/giochi-launcher"
     chmod +x "$T/usr/giochi-launcher"
     GIOCHI_ROOT="$T" GIOCHI_LOG_LEVEL=error GIOCHI_DRY_RUN=1 \
@@ -244,42 +270,37 @@ if [ -n "$BIN" ] && [ -x "$BIN/giochi-init" ] && \
         i=$((i + 1))
     done
 
-    reply=$(python3 - "$T/run/giochi/control.sock" "DEV_MODE BLAH" <<'PY'
-import socket, sys
-
-with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
-    s.settimeout(3)
-    s.connect(sys.argv[1])
-    s.sendall(sys.argv[2].encode() + b"\n")
-    print(s.recv(256).decode().strip())
-PY
-)
+    reply=$(python3 "$T/ctrl.py" "$T/run/giochi/control.sock" "DEV_MODE BLAH")
     check "argumento invalido recusado" \
         "$([ "$reply" = "ERR invalid_mode" ] && echo 1)"
 
-    reply=$(python3 - "$T/run/giochi/control.sock" "DEV_MODE ON" <<'PY'
-import socket, sys
-
-with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
-    s.settimeout(3)
-    s.connect(sys.argv[1])
-    s.sendall(sys.argv[2].encode() + b"\n")
-    print(s.recv(256).decode().strip())
-PY
-)
+    reply=$(python3 "$T/ctrl.py" "$T/run/giochi/control.sock" "DEV_MODE ON")
     check "DEV_MODE ON aceito" "$([ "$reply" = "OK dev_mode ON" ] && echo 1)"
 
-    reply=$(python3 - "$T/run/giochi/control.sock" "DEV_MODE OFF" <<'PY'
-import socket, sys
-
-with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
-    s.settimeout(3)
-    s.connect(sys.argv[1])
-    s.sendall(sys.argv[2].encode() + b"\n")
-    print(s.recv(256).decode().strip())
-PY
-)
+    reply=$(python3 "$T/ctrl.py" "$T/run/giochi/control.sock" "DEV_MODE OFF")
     check "DEV_MODE OFF aceito" "$([ "$reply" = "OK dev_mode OFF" ] && echo 1)"
+
+    # Cenario 6b: cliente que desconecta NO MEIO da resposta nao pode matar o
+    # supervisor. Sem MSG_NOSIGNAL / SIGPIPE ignorado o init sai com 141
+    # (128+13) e a sessao inteira cai — no aparelho o Launcher e cliente.
+    python3 - "$T/run/giochi/control.sock" <<'PYDROP'
+import socket, sys, time
+
+try:
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.connect(sys.argv[1])
+    s.sendall(b"PING\n")
+    s.close()          # fecha sem ler a resposta
+except OSError:
+    pass
+time.sleep(0.2)
+PYDROP
+    kill -0 "$init_pid" 2>/dev/null
+    check "init sobrevive a cliente que desconecta no meio" "$([ $? -eq 0 ] && echo 1)"
+
+    reply=$(python3 "$T/ctrl.py" "$T/run/giochi/control.sock" "PING")
+    check "init ainda responde depois da desconexao" \
+        "$([ "$reply" = "PONG" ] && echo 1)"
 
     python3 -c 'import os,signal,sys; os.kill(int(sys.argv[1]), signal.SIGTERM)' \
         "$init_pid" 2>/dev/null
