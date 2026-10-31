@@ -178,7 +178,8 @@ TESTS_CXX := \
 TEST_BINS := $(patsubst tests/%.c,$(BIN)/%,$(TESTS_C)) \
              $(patsubst tests/%.cpp,$(BIN)/%,$(TESTS_CXX))
 
-.PHONY: all clean test install info check-config defconfigs lint images bootlogo
+.PHONY: all clean test install info check-config defconfigs lint images \
+        bootlogo screenshots proposta
 
 all: $(TARGETS)
 
@@ -285,6 +286,13 @@ defconfigs:
 screenshots:
 	@python3 tools/make-screenshots.py
 
+# Renders da PROPOSTA de layout (docs/proposta/): as 5 abas em 640x480 e
+# 1280x720, desenhadas nativamente. Nao e imagem do produto — e o alvo descrito
+# em docs/LAYOUT-PROPOSTA.md. O script falha (exit 1) se alguma assercao
+# geometrica quebrar: texto que nao cabe, item de hint bar que colide.
+proposta:
+	@python3 tools/make-layout-proposal.py
+
 bootlogo:
 	@python3 tools/make-bootlogo.py || { \
 		rc=$$?; \
@@ -351,8 +359,13 @@ lint:
 	@sh tools/check-image-contents.sh
 	@echo "== layout do cartao =="
 	@python3 -m unittest tests.test_image_layout 2>&1 | tail -3
+	@echo "== proposta de layout =="
+	@python3 -m unittest tests.test_layout_proposal 2>&1 | tail -3
+	@echo "== escala do override por aparelho =="
+	@python3 -m unittest tests.test_device_scale 2>&1 | tail -3
 	@echo "== ferramentas python =="
 	@python3 -m py_compile tools/make-screenshots.py \
+	           tools/make-layout-proposal.py \
 	           tools/check-buildroot-symbols.py tools/check-uboot.py \
 	           tools/check-links.py tools/make-bootlogo.py && echo "ok"
 

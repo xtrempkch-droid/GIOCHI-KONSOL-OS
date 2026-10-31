@@ -83,6 +83,33 @@ if command -v python3 >/dev/null 2>&1; then
     fi
 fi
 
+# Proposta de layout (docs/proposta/): renders nativos das 5 abas nos dois
+# paineis (640x480 e 1280x720) + as assercoes geometricas do proprio gerador.
+# Sem Pillow a suite se auto-pula (SkipTest), como as outras de imagem.
+if command -v python3 >/dev/null 2>&1; then
+    total=$((total + 1))
+    if (cd "$ROOT" && python3 -m unittest tests.test_layout_proposal) >/dev/null 2>&1; then
+        echo "OK     proposta-layout (python)"
+    else
+        echo "FALHA  proposta-layout (python)"
+        fail=$((fail + 1))
+    fi
+fi
+
+# Escala do override por aparelho: cada numero de assets/devices/x55/*.json tem
+# de ser round(base x 1,5), politica igual ao base, ou um dos especiais do
+# painel. Foi a ausencia deste guarda que deixou 7 fatores implicitos (1,28 a
+# 2,00) e 4,48 MB de thumbnail contra o teto de 4 MB. Sem Pillow: so stdlib.
+if command -v python3 >/dev/null 2>&1; then
+    total=$((total + 1))
+    if (cd "$ROOT" && python3 -m unittest tests.test_device_scale) >/dev/null 2>&1; then
+        echo "OK     escala-x55 (python)"
+    else
+        echo "FALHA  escala-x55 (python)"
+        fail=$((fail + 1))
+    fi
+fi
+
 # Gadget USB composto (rede + MTP) contra configfs falso.
 if [ -x "$ROOT/tests/integration/usbgadget_test.sh" ]; then
     total=$((total + 1))

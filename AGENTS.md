@@ -1051,3 +1051,69 @@ offset de gravação — o offset está certo, o **tamanho da região** é que n
 final de 936 MB é estimado por soma de partições — os artefatos individuais e a
 compressão são medidos. Encolher o kernel `Image` (47 MB, ~24 MB no `.xz`) é a
 próxima economia real e é trabalho de `linux.fragment`, não de empacotamento.
+
+### 2026-10-30 (16) — Copilot (proposta de layout das 5 abas + perfil ×1,5 aplicado)
+
+O mantenedor pediu uma **sugestão de layout documentada**, com **usabilidade
+das 5 abas**, mantendo o tema; depois aprovou D1/D2 (perfil ×1,5 nativo e 5
+colunas) e escolheu implementar no `render.cpp`.
+
+**Entregue e verificado:**
+
+1. [docs/LAYOUT-PROPOSTA.md](docs/LAYOUT-PROPOSTA.md): tabela de tokens
+   640×480 → 1280×720, anatomia (topbar, hint bar por itens medidos, conteúdo),
+   uma seção por aba (Home, Biblioteca, Música, Loja, Ports), análise de
+   usabilidade e as decisões D1–D5 com estado.
+2. `tools/make-layout-proposal.py` + `docs/proposta/` (10 PNGs nativos): desenha
+   por painel e **falha (exit 1)** se um texto não cabe, um item de hint bar
+   colide, a grade invade topbar/hint bar, a scrollbar encosta na coluna, o chip
+   passa da barra, ou as colunas declaradas no asset não cabem na largura.
+3. `assets/devices/x55/*.json` **reescritos** para o perfil ×1,5 (topbar 60,
+   hint 45, tile 228×128, título 30, scrollbar 6, hero 168×95, recentes 120×68,
+   capa 180, controles 75, fonte das abas 21, `columns: 5`). Antes eram 7
+   fatores implícitos (1,28 a 2,00) e 24 thumbnails de 288×162 = **4,48 MB**,
+   acima do teto de 4 MB da §4.1.6; agora 228×128 = **2,80 MB**.
+4. `tests/test_device_scale.py` (suíte `escala-x55`, em `make test` e
+   `make lint`): todo inteiro do arquivo do aparelho tem de ser
+   `round(base × 1,5)`, política igual ao base, ou especial do painel
+   (`screen.*`, `columns`); campo novo fora disso falha. Testado ao contrário
+   (`tile 288` → `288 != 228 : esperado round(152 x 1,5)`).
+5. `tests/test_layout_proposal.py` (suíte `proposta-layout`, 6 testes).
+6. O gerador passou a **ler** os assets do aparelho; os 10 PNGs saíram byte a
+   byte idênticos aos de antes (SHA-256), provando que o valor está no asset.
+
+**Defeitos encontrados (medidos):**
+
+- `make-screenshots.py` só tinha caminhos de fonte de Linux → no Windows caía em
+  `ImageFont.load_default()` (10 px fixos) e todo texto saía com métrica errada.
+  Adicionados Windows/macOS. (O "rótulo colado" que eu reportei antes era isso,
+  não a imagem commitada: ela difere da regenerada em 1,6% dos pixels.)
+- **Pillow ≥ 11** desenha contorno **branco** em `rectangle`/`rounded_rectangle`
+  com `fill=None` e `outline=None`. Guarda em `Sheet.box`; o
+  `test_nenhum_pixel_branco` falha se voltar.
+- Scrollbar da Biblioteca no `make-screenshots.py` cobre 2 px da grade
+  (`634..638` contra grade até `636`).
+- §4.7 diz que o app externo reativa o Launcher **"na Home"**, mas o código só
+  faz `SIGCONT` (`supervisor.c:429/389`) e o Launcher volta para a aba em que
+  estava; e as abas 4/5 (`layout.cpp:42-43`) não têm JSON de layout. Vira D4.
+- **Não há fonte no repositório** (`theme.json` pede `builtin_sans`) nem
+  `SDL2_ttf`/freetype em nenhum defconfig: `render.cpp` não desenha um rótulo.
+  É D5, e é o bloqueio do desenho.
+- A polegada dos painéis não está documentada: legibilidade em mm é hipótese.
+
+**Por que o `render.cpp` não foi escrito:** não há compilador nesta máquina
+(`cl`, `clang`, `gcc`, `cmake`, `ninja` inexistentes; nenhum `SDL.h` no disco) e
+o desenho depende de D5 (texto). Escrever sem poder compilar seria declarar
+feito o que não rodou.
+
+**Verificação:** `make-layout-proposal.py` exit 0 / 10 imagens / nenhuma
+violação; `test_layout_proposal` 6/6; `test_device_scale` 3/3; `test_bootlogo`
+OK, `test_default_games` 7/7, `test_image_layout` 9/9; `check-links.py` ok
+(26 arquivos). **Não rodou:** `make`, `make lint`, qualquer compilação.
+`test_screenshots` e `forge` falham aqui só por `PermissionError` do `tempfile`
+sob o sandbox do Windows — não é bug do repositório.
+
+**Aberto:** D4 (contrato do app externo) e D5 (pipeline de texto, recomendo
+atlas gerado no build); desenho no `render.cpp`; `make-screenshots.py` continua
+com letterbox; `docs/screenshots/*.png` ainda são o render antigo. Sem `git`
+aqui, nada foi commitado.

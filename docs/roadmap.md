@@ -87,19 +87,32 @@ Ou seja: **×2 não cabe** na vertical (só caberia com 2 linhas em vez de 3) e
 ×1,5 deixa 166 px de margem de cada lado — espaço suficiente para uma **quinta
 coluna** (1188 dos 1280). Decisão a tomar, com uma destas saídas:
 
-- [ ] **(a) Layout nativo por painel** — `assets/devices/x55/layout.json` com
+- [x] **(a) Layout nativo por painel** — `assets/devices/x55/layout.json` com
       métricas próprias de 16:9 (topbar 60, hint 45, tile 228×128, título 30,
       canto 6, 5 colunas). É a que preserva qualidade de texto e aproveita a
-      tela; exige um segundo conjunto de números para manter.
+      tela; exige um segundo conjunto de números para manter — **aplicado em
+      2026-10-30**, com `tests/test_device_scale.py` amarrando base × 1,5.
 - [ ] **(b) Escala ×1,5 no render** — um só layout, métricas multiplicadas e
       arredondadas para inteiro (sem meio-pixel: `topbar 60`, `hint 45`,
       `tile 228×128`, `corner 6`). Simples; perde a chance das 5 colunas.
+      *(não escolhida: os assets já carregam o perfil)*
 - [ ] **(c) Letterbox** — manter 4:3 centralizado (é o que
       `tools/make-screenshots.py` faz para gerar `x55-home.png`). Honesto,
-      desperdiça 33% da largura.
+      desperdiça 33% da largura. *(não escolhida)*
 
 Requisitos em qualquer caso: nada de esticar, texto legível no painel de 5",
 métricas inteiras e `hint_bar`/`topbar` proporcionais.
+
+**Proposta documentada e decidida (2026-10-30):**
+[LAYOUT-PROPOSTA.md](./LAYOUT-PROPOSTA.md) resolve as três opções com número
+medido — perfil ×1,5 (topbar 60, hint 45, tile 228×128, **5 colunas**, 24
+texturas = 2,80 MB de VRAM contra o teto de 4 MB), renders nativos das 5 abas em
+`docs/proposta/` e a análise de usabilidade aba por aba. As opções **(a) e a
+quinta coluna foram aprovadas** e aplicadas em `assets/devices/x55/*.json`
+(antes: 7 fatores implícitos, 1,28 a 2,00, e 4,48 MB de thumbnail);
+`tests/test_device_scale.py` (suíte `escala-x55`) falha se a divergência voltar.
+Falta a implementação em `render.cpp`, que depende da decisão D5 (pipeline de
+texto — hoje não há fonte nem `SDL2_ttf` no rootfs).
 
 **Aceite:** na X55 a UI ocupa a tela sem distorção e com texto legível; nos
 aparelhos 640×480 nada muda. Regravar `docs/screenshots/x55-home.png` com o
@@ -188,7 +201,9 @@ silencioso. Falta o app.
 - [ ] **Ports** (`portmaster`, RAM ≤ 30 MB, VRAM ≤ 4 MB): download de wrappers
       ARM64 para `/user/ports/`, sem distribuir arquivos originais dos jogos.
 - [ ] Enquanto não existirem, decidir na UI: esconder as abas, ou mostrar um
-      aviso ("instale o componente") em vez de tentar lançar.
+      aviso ("instale o componente") em vez de tentar lançar. A tela de estado
+      (cartão `componente ausente`, com os botões que existem) está desenhada em
+      [LAYOUT-PROPOSTA.md](./LAYOUT-PROPOSTA.md) §5.4 — falta implementar.
 - [ ] Se forem ficar de fora da v1.2, registrar isso na spec — hoje as duas
       abas estão no `layout.json` e no §4.1.3/§4.7 como se existissem.
 

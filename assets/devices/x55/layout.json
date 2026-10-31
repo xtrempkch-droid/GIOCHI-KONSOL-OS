@@ -6,7 +6,7 @@
     "order": ["music", "library", "home", "store", "ports"],
     "default": "home",
     "visual_center": "home",
-    "bar": { "position": "topbar_left", "font_size": 20, "active_style": "accent_underline" },
+    "bar": { "position": "topbar_left", "font_size": 21, "active_style": "accent_underline" },
     "controls": { "prev": "BTN_TL", "next": "BTN_TR" },
     "switch_transition": "fade_150ms",
     "layouts": {

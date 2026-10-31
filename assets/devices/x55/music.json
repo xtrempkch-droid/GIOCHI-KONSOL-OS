@@ -2,15 +2,15 @@
   "schema_version": "1.6",
   "tab": "music",
   "regions": {
-    "top_bar": { "height": 56 },
+    "top_bar": { "height": 60 },
     "now_playing": {
       "height": 240,
-      "album_art": { "type": "album_art", "size": { "width": 200, "height": 200 } },
+      "album_art": { "type": "album_art", "size": { "width": 180, "height": 180 } },
       "text": ["title", "artist", "album"]
     },
-    "progress": { "height": 28, "widgets": ["progress_bar", "time_elapsed", "time_total"] },
+    "progress": { "height": 30, "widgets": ["progress_bar", "time_elapsed", "time_total"] },
     "controls": {
-      "height": 64,
+      "height": 75,
       "type": "transport_controls",
       "buttons": { "prev": "Y", "play_pause": "A", "next": "X" }
     },
@@ -20,9 +20,9 @@
       "scroll": "vertical",
       "show_artist": true
     },
-    "hint_bar": { "height": 40 }
+    "hint_bar": { "height": 45 }
   },
   "socket": "/run/giochi/music.sock",
-  "vram_budget_kb": 2048,
+  "vram_budget_kb": 1024,
   "cpu_budget_pct": { "rk3326": 3, "rk3566": 2 }
 }

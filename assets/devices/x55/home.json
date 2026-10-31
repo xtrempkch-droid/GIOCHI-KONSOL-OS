@@ -2,10 +2,10 @@
   "schema_version": "1.6",
   "tab": "home",
   "regions": {
-    "top_bar": { "height": 56, "widgets": ["battery_indicator", "network_indicator", "clock"] },
+    "top_bar": { "height": 60, "widgets": ["battery_indicator", "network_indicator", "clock"] },
     "continue": {
       "type": "hero_tile",
-      "size": { "width": 224, "height": 126 },
+      "size": { "width": 168, "height": 95 },
       "source": "/user/.cache/continue.json",
       "fallback_text": "Nada em andamento"
     },
@@ -16,11 +16,11 @@
     },
     "recent": {
       "type": "horizontal_list",
-      "item_size": { "width": 160, "height": 90 },
+      "item_size": { "width": 120, "height": 68 },
       "max_items": 5,
       "source": "/user/.cache/recent.json"
     },
-    "hint_bar": { "height": 40 }
+    "hint_bar": { "height": 45 }
   },
   "vram_budget_kb": 800
 }

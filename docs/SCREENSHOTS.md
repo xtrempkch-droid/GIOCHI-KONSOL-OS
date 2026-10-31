@@ -17,6 +17,11 @@ make screenshots        # equivalente a: tools/make-screenshots.py
 | `x55-home.png` | `assets/devices/x55/layout.json` | canvas 1280×720 do painel da X55 |
 | `bootlogo.png` | `assets/bootlogo/bootlogo.rgba` | **splash real**, desenhado pelo Launcher |
 
+O alvo de layout (o que a UI **deveria** desenhar, com perfil de painel ×1,5 para
+a X55 e a análise de usabilidade das 5 abas) está em
+[LAYOUT-PROPOSTA.md](./LAYOUT-PROPOSTA.md), com os renders em `docs/proposta/`.
+Este documento continua descrevendo apenas o que os assets declaram hoje.
+
 ## O que estas imagens são — e o que não são
 
 **São** a geometria e as cores declaradas nos assets: alturas de topbar (40) e

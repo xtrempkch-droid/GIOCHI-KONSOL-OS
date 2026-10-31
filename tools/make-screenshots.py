@@ -39,15 +39,25 @@ ROOT = Path(__file__).resolve().parent.parent
 ASSETS = ROOT / "assets"
 DEFAULT_OUT = ROOT / "docs" / "screenshots"
 
+# DejaVu tambem vem instalada no Windows (C:\Windows\Fonts). Sem estes caminhos
+# o script cai em ImageFont.load_default() fora do Linux e todo texto sai com
+# ~10 px e metricas erradas — o render deixa de refletir os tamanhos declarados
+# (aconteceu ao rodar no Windows: a barra de dicas saiu com rotulos colados).
 FONT_CANDIDATES = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/TTF/DejaVuSans.ttf",
+    "C:/Windows/Fonts/DejaVuSans.ttf",
+    "C:/Windows/Fonts/segoeui.ttf",
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
 ]
 FONT_BOLD_CANDIDATES = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+    "C:/Windows/Fonts/DejaVuSans-Bold.ttf",
+    "C:/Windows/Fonts/segoeuib.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
 ]
 
 
