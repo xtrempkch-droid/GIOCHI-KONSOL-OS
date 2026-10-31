@@ -870,9 +870,15 @@ tudo:
   não.**
 - O mesmo DTS usa `&joypad` (rocknix-joypad), também fora da árvore — a mesma
   lacuna já registrada no §4.
-- Decisão **não tomada**: trazer o driver é portar código **GPL-2.0** para um
-  repositório **MIT**. É decisão de licenciamento do mantenedor, não de um
-  agente. O caminho técnico está mapeado em [docs/DEVICES.md](docs/DEVICES.md).
+- **decisão adiada pelo mantenedor (2026-10-31):** "sobre o licenciamento será
+  revisto mais à frente no projeto". Traduzindo para o código: o driver **não**
+  entra agora, e a lacuna continua aberta e registrada — mas por escolha de
+  sequenciamento, não por impedimento técnico. Trazer o driver é portar código
+  **GPL-2.0** para um repositório **MIT**; o caminho técnico está mapeado em
+  [docs/DEVICES.md](docs/DEVICES.md). Quando a revisão de licenciamento
+  acontecer, o trabalho é: copiar `panel-generic-dsi.c` para
+  `src/kernel/patches/`, um fragmento de Kconfig com
+  `CONFIG_DRM_PANEL_GENERIC_DSI=m` e o DTS do X35S como `GIOCHI_DTS_UPSTREAM`.
 
 **O que ficou pronto e é nosso:** `tools/check-dts-panel.py` + suíte
 `painel-do-dts`. Ele resolve o DTS que a imagem vai usar (seguindo `#include`,

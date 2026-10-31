@@ -68,8 +68,10 @@ preflight falha de propósito até você fornecer o arquivo.
 > X35S/X35H não liga — a tela fica preta e o boot está correto. O mesmo DTS
 > usa `&joypad`, também fora da árvore.
 >
-> Ninguém decidiu ainda trazer esse driver: ele é **GPL-2.0** e este
-> repositório é **MIT**. Decisão do mantenedor — o caminho técnico está em
+> O driver **não** entra por ora: ele é **GPL-2.0** e este repositório é
+> **MIT**, e o mantenedor decidiu (2026-10-31) revisar licenciamento mais à
+> frente no projeto. É uma lacuna **conhecida e adiada**, não um defeito de
+> bootloader — o caminho técnico está em
 > [Componentes fora do mainline](#componentes-fora-do-mainline).
 >
 > Enquanto isso, `tools/check-dts-panel.py` responde em 0,2 s se o DTS que
@@ -170,7 +172,7 @@ você exige que a imagem venha com bootloader).
 | Componente | Necessário para | Situação |
 |---|---|---|
 | `rocknix-joypad` | gamepad de X55/X35S/X35H | não empacotado; análogos dependem dele |
-| `panel-generic-dsi` | painel de X35S/X35H | não empacotado. É o **bloqueio da tela** desses dois aparelhos; fonte única `sources/panel-generic-dsi.c` (724 linhas, GPL-2.0). Trazê-lo é decisão de licenciamento: o repositório é MIT |
+| `panel-generic-dsi` | painel de X35S/X35H | não empacotado. É o **bloqueio da tela** desses dois aparelhos; fonte única `sources/panel-generic-dsi.c` (724 linhas, GPL-2.0). Licenciamento a revisar (adiado pelo mantenedor em 2026-10-31) |
 | DTS `rk3566-powkiddy-x35s` | X35S/X35H | externo (ver acima) |
 
 O preflight avisa quando o aparelho usa `rocknix` e o módulo não está em

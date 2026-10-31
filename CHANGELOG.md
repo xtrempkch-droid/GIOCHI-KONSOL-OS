@@ -103,9 +103,11 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
   Com o DTS certo e sem esse driver o painel não liga — e o boot está correto.
   O mesmo DTS usa `&joypad` (também fora da árvore). Registrado em
   [docs/DEVICES.md](docs/DEVICES.md) e no [AGENTS.md](AGENTS.md) §3.43.
-  A decisão de trazer código GPL-2.0 para um repositório MIT fica com o
-  mantenedor; a guarda acima evita que a falta dele seja confundida com defeito
-  de bootloader.
+  O mantenedor decidiu (2026-10-31) **adiar** a revisão de licenciamento: o
+  driver não entra por ora, e a lacuna fica registrada como conhecida e adiada
+  (não como defeito). `tools/check-dts-panel.py` impede que a falta dele seja
+  confundida com problema de bootloader; o trabalho técnico de quando entrar
+  está anotado nos `.conf` de X35S/X35H.
 - **Primeiro boot validado em hardware.** O console serial da X55 mostrou,
   com a imagem corrigida, a cadeia inteira funcionando:
   `boot.scr em execucao (root=PARTUUID=47494f43-02)` →
