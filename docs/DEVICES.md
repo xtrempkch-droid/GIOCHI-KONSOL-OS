@@ -51,7 +51,34 @@ para `dist/`. `GIOCHI_NO_COMPRESS=1` desliga (útil em build local iterativo).
 ## Aparelhos sem DTS upstream
 
 X35S e X35H dependem do DTS da ROCKNIX (não está no kernel mainline). O
-preflight falha de propósito até você fornecer o arquivo:
+preflight falha de propósito até você fornecer o arquivo.
+
+> **Antes de gastar um ciclo de flash, leia isto.** O DTS oficial da ROCKNIX
+> (`0016-arm64-dts-rockchip-add-device-tree-for-powkiddy-x35s.patch`, 41 linhas
+> sobre o DTS da X55) troca o painel para
+>
+> ```
+> &panel { compatible = "rocknix,generic-dsi"; ...  rotation = <0>; };
+> &hdmi  { status = "disabled"; };
+> ```
+>
+> `rocknix,generic-dsi` é um driver **fora da árvore** do mainline
+> (`packages/linux-drivers/generic-dsi`, 724 linhas, GPL-2.0, com guardas de
+> versão que cobrem o 6.12). Com o DTS certo e **sem** esse driver, o painel do
+> X35S/X35H não liga — a tela fica preta e o boot está correto. O mesmo DTS
+> usa `&joypad`, também fora da árvore.
+>
+> Ninguém decidiu ainda trazer esse driver: ele é **GPL-2.0** e este
+> repositório é **MIT**. Decisão do mantenedor — o caminho técnico está em
+> [Componentes fora do mainline](#componentes-fora-do-mainline).
+>
+> Enquanto isso, `tools/check-dts-panel.py` responde em 0,2 s se o DTS que
+> você escolheu tem painel utilizável:
+>
+> ```sh
+> tools/check-dts-panel.py                        # todos os aparelhos
+> tools/check-dts-panel.py --dts meu-x35h.dts --strict
+> ```
 
 ```sh
 # opção A: DTS fonte
@@ -143,7 +170,7 @@ você exige que a imagem venha com bootloader).
 | Componente | Necessário para | Situação |
 |---|---|---|
 | `rocknix-joypad` | gamepad de X55/X35S/X35H | não empacotado; análogos dependem dele |
-| `panel-generic-dsi` | painel de X35S/X35H | não empacotado |
+| `panel-generic-dsi` | painel de X35S/X35H | não empacotado. É o **bloqueio da tela** desses dois aparelhos; fonte única `sources/panel-generic-dsi.c` (724 linhas, GPL-2.0). Trazê-lo é decisão de licenciamento: o repositório é MIT |
 | DTS `rk3566-powkiddy-x35s` | X35S/X35H | externo (ver acima) |
 
 O preflight avisa quando o aparelho usa `rocknix` e o módulo não está em

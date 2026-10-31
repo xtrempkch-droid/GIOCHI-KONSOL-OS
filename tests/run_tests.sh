@@ -111,6 +111,18 @@ if command -v python3 >/dev/null 2>&1; then
     fi
 fi
 
+# Painel do DTS escolhido por aparelho: uma imagem cujo DTS nao tem no de
+# painel utilizavel nunca acende a tela, e o build termina com sucesso.
+if command -v python3 >/dev/null 2>&1; then
+    total=$((total + 1))
+    if (cd "$ROOT" && python3 -m unittest tests.test_dts_panel) >/dev/null 2>&1; then
+        echo "OK     painel-do-dts (python)"
+    else
+        echo "FALHA  painel-do-dts (python)"
+        fail=$((fail + 1))
+    fi
+fi
+
 # Proposta de layout (docs/proposta/): renders nativos das 5 abas nos dois
 # paineis (640x480 e 1280x720) + as assercoes geometricas do proprio gerador.
 # Sem Pillow a suite se auto-pula (SkipTest), como as outras de imagem.

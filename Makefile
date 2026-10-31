@@ -383,6 +383,8 @@ lint:
 	@python3 -m unittest tests.test_boot_log 2>&1 | tail -3
 	@echo "== verificador de cartao =="
 	@python3 -m unittest tests.test_verify_card 2>&1 | tail -3
+	@echo "== painel do DTS por aparelho =="
+	@tools/check-dts-panel.py
 	@echo "== proposta de layout =="
 	@python3 -m unittest tests.test_layout_proposal 2>&1 | tail -3
 	@echo "== escala do override por aparelho =="
@@ -392,7 +394,8 @@ lint:
 	           tools/make-layout-proposal.py \
 	           tools/check-buildroot-symbols.py tools/check-uboot.py \
 	           tools/check-links.py tools/make-bootlogo.py \
-	           tools/serial-capture.py tools/verify-card.py && echo "ok"
+	           tools/serial-capture.py tools/verify-card.py \
+	           tools/check-dts-panel.py && echo "ok"
 
 # 'all' antes dos testes: a suite de integracao roda o giochi-init REAL, e num
 # clone limpo 'make test' sozinho nao o teria compilado.

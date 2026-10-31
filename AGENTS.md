@@ -846,6 +846,54 @@ Ou seja, o defeito está entre o PC e a mídia. Duas causas com ações opostas:
   3. log na partição FAT (o `rcS` chegou a rodar?);
   4. §7 (erro de I/O = cartão).
 
+### 3.43 O painel do X35S/X35H exige um driver FORA da árvore
+
+Investigando por que a tela do X35H não acende, achei o DTS oficial nas fontes
+do ROCKNIX (`projects/ROCKNIX/devices/RK3566/patches/linux/0016-...x35s.patch`).
+Ele é um delta de **41 linhas** sobre o DTS da X55, e o que ele muda explica
+tudo:
+
+```
+&panel {
+        compatible = "rocknix,generic-dsi";
+        panel_description = "G size=70,52 ... I seq=b9f11283", ...;
+        rotation = <0>;
+};
+&hdmi { status = "disabled"; };
+```
+
+- O painel do X35S/X35H **não é** o `himax,hx8394` da X55. É um painel MIPI
+  genérico, e a ROCKNIX escreveu um driver próprio para lê-lo do DTB
+  (`packages/linux-drivers/generic-dsi/sources/panel-generic-dsi.c`, 724
+  linhas, `compatible = "rocknix,generic-dsi"`, GPL-2.0, tem guardas de versão
+  que cobrem o 6.12). **Sem esse driver o painel não liga, com o DTS certo ou
+  não.**
+- O mesmo DTS usa `&joypad` (rocknix-joypad), também fora da árvore — a mesma
+  lacuna já registrada no §4.
+- Decisão **não tomada**: trazer o driver é portar código **GPL-2.0** para um
+  repositório **MIT**. É decisão de licenciamento do mantenedor, não de um
+  agente. O caminho técnico está mapeado em [docs/DEVICES.md](docs/DEVICES.md).
+
+**O que ficou pronto e é nosso:** `tools/check-dts-panel.py` + suíte
+`painel-do-dts`. Ele resolve o DTS que a imagem vai usar (seguindo `#include`,
+inclusive `DTS_PATH` out-of-tree) e diz se há painel utilizável:
+
+```
+x55    painel: ok (rk3566-powkiddy-x55.dts)
+x35h   painel: ? (DTS externo, informe com --dts)
+rk3326-generic painel: AUSENTE ... -> a tela fica preta
+```
+
+- Roda no `make lint` e no `build-image.sh` (o `--fallback-dts` agora **avisa**
+  quando o DTS de fallback não tem painel; antes passava calado e o usuário
+  gastava um ciclo de flash).
+- Medição que corrige uma suposição minha: o `rk3566-anbernic-rg353v` usado como
+  fallback **tem** painel — herdado do `rg353p` por `#include`
+  (`newvision,nv3051d`, 640×480, driver mainline). Procurar `panel` só no
+  arquivo do aparelho dava falso negativo; é preciso seguir os includes.
+- `rk3326-generic` (fallback `rg351v`) **não** tem painel: aquela imagem nunca
+  acende. Descoberto pela guarda, não por tentativa.
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):

@@ -300,6 +300,23 @@ build_device() {
             GIOCHI_TEST_IMAGE=1
             export GIOCHI_TEST_IMAGE
             echo "  FALLBACK: $GIOCHI_DTS_FALLBACK (imagem de TESTE)" >&2
+            # O fallback NAO e o painel do aparelho. Se o DTS de fallback nao
+            # tiver no de painel utilizavel, a tela nunca acende -- e o build
+            # passava sem dizer nada disto (medido: 1 ciclo de flash perdido).
+            # --buscar resolve o DTS nas arvores de kernel ja extraidas em
+            # dist/ (o checker sabe onde procurar; nao repetimos o caminho).
+            if [ -x "$ROOT/tools/check-dts-panel.py" ]; then
+                _fb_tmp=${TMPDIR:-/tmp}/.giochi_fb.$$
+                if ! "$ROOT/tools/check-dts-panel.py" \
+                        --buscar "$GIOCHI_DTS_FALLBACK" --strict \
+                        >"$_fb_tmp" 2>&1; then
+                    echo "  AVISO: o DTS de fallback nao tem painel utilizavel:" >&2
+                    sed 's/^/         /' "$_fb_tmp" >&2
+                    echo "         a TELA nao vai acender; o kernel e o LOG NO" >&2
+                    echo "         CARTAO (docs/BOOT-DEBUG.md) continuam validos" >&2
+                fi
+                rm -f "$_fb_tmp"
+            fi
         else
             echo "ERRO DTS ausente: $dts" >&2
             return 1

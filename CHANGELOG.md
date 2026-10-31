@@ -6,6 +6,15 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 ## [Não publicado]
 
 ### Adicionado
+- **`tools/check-dts-panel.py`** + suíte `painel-do-dts`: diz, antes de gastar
+  um ciclo de flash, se o DTS escolhido tem painel utilizável. Segue
+  `#include` (inclusive `DTS_PATH` out-of-tree) e reconhece o caso de driver
+  fora da árvore. Roda no `make lint`; o `build-image.sh --fallback-dts` passou
+  a **avisar** quando o fallback não tem painel — antes passava calado.
+  Já produziu dois resultados úteis: `rk3326-generic` (fallback `rg351v`)
+  **não** tem painel nenhum (aquela imagem nunca acende), enquanto o
+  `rg353v` usado no X35S/X35H **tem** (`newvision,nv3051d`, herdado do
+  `rg353p` por `#include`).
 - **`tools/verify-card.py`** + suíte `verificador-de-cartao`: compara o cartão
   gravado com a imagem byte a byte e separa duas causas com ações opostas —
   "a gravação não terminou" (`dd` sem `conv=fsync`) de "o cartão tem setor
@@ -88,6 +97,15 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 - `tools/check-links.py` agora valida também as tags de imagem HTML.
 
 ### Corrigido
+- **A tela do X35S/X35H tem uma causa conhecida e ela não é o build.** O DTS
+  oficial da ROCKNIX troca o painel para `compatible = "rocknix,generic-dsi"`,
+  driver **fora da árvore** do mainline (fonte única, 724 linhas, GPL-2.0).
+  Com o DTS certo e sem esse driver o painel não liga — e o boot está correto.
+  O mesmo DTS usa `&joypad` (também fora da árvore). Registrado em
+  [docs/DEVICES.md](docs/DEVICES.md) e no [AGENTS.md](AGENTS.md) §3.43.
+  A decisão de trazer código GPL-2.0 para um repositório MIT fica com o
+  mantenedor; a guarda acima evita que a falta dele seja confundida com defeito
+  de bootloader.
 - **Primeiro boot validado em hardware.** O console serial da X55 mostrou,
   com a imagem corrigida, a cadeia inteira funcionando:
   `boot.scr em execucao (root=PARTUUID=47494f43-02)` →
