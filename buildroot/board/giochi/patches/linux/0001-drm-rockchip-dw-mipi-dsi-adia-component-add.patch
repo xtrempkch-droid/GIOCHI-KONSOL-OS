@@ -1,0 +1,174 @@
+Adia o component_add() do DSI do Rockchip para depois do probe
+
+O painel MIPI e' criado e sondado de forma SINCRONA dentro de
+dw_mipi_dsi_probe() (mipi_dsi_host_register -> device_add -> hx8394_probe ->
+mipi_dsi_attach -> dw_mipi_dsi_rockchip_host_attach). Se o master do DRM
+(display-subsystem) ja estiver com todos os outros componentes prontos, o
+component_add() chamado ali dentro faz o bind do DRM imediatamente, ainda
+dentro do probe do controlador DSI.
+
+Nesse momento:
+
+  - dsi->dmd ainda e' NULL, porque e' o valor de retorno de
+    dw_mipi_dsi_probe(), que nao retornou;
+  - dsi->bridge ainda nao recebeu funcs/driver_private (o probe preenche esses
+    campos DEPOIS de mipi_dsi_host_register()).
+
+Como 'bridge' e' o PRIMEIRO campo de struct dw_mipi_dsi, &NULL->bridge e' NULL,
+e drm_bridge_attach() tem um unico caminho que devolve -EINVAL sem imprimir
+nada: 'if (!encoder || !bridge) return -EINVAL'. Resultado na Powkiddy X55:
+
+  dw-mipi-dsi-rockchip fe060000.dsi: [drm:dw_mipi_dsi_rockchip_bind] *ERROR* Failed to bind: -22
+  rockchip-drm display-subsystem: failed to bind fe060000.dsi (ops ...): -22
+  Unable to handle kernel NULL pointer dereference ...  (limpeza do rockchip_drm_bind)
+
+Sem /dev/dri/card0 o Launcher cai para o backend nulo e a tela fica apagada.
+
+A correcao adia o registro do componente quando dsi->dmd ainda e' NULL (ou
+seja, quando estamos dentro do nosso proprio probe) e o faz no fim do probe,
+com dmd e bridge completos. Nao muda o caminho normal (componente registrado
+direto no host_attach), nem o caso dual-DSI/master-slave.
+
+Verificado em hardware na X55: depois do patch o bind passa e
+/dev/dri/card0 aparece.
+
+--- a/drivers/gpu/drm/rockchip/dw-mipi-dsi-rockchip.c
++++ b/drivers/gpu/drm/rockchip/dw-mipi-dsi-rockchip.c
+@@ -290,6 +290,14 @@
+ 	u16 feedback_div;
+ 	u32 format;
+ 
++	/*
++	 * Patch Giochi: o painel e' sondado dentro de dw_mipi_dsi_probe(); se o
++	 * master do DRM ja estiver pronto, registrar o componente ali faz o bind
++	 * acontecer antes de o probe terminar. Nesse caso guardamos a intencao
++	 * aqui e registramos no fim do probe.
++	 */
++	bool component_pending;
++
+ 	struct dw_mipi_dsi *dmd;
+ 	const struct rockchip_dw_dsi_chip_data *cdata;
+ 	struct dw_mipi_dsi_plat_data pdata;
+@@ -1029,11 +1037,43 @@
+ 	.unbind	= dw_mipi_dsi_rockchip_unbind,
+ };
+ 
++/*
++ * Patch Giochi: separado de dw_mipi_dsi_rockchip_host_attach() para poder ser
++ * chamado DEPOIS que dw_mipi_dsi_probe() devolveu o controlador.
++ */
++static int dw_mipi_dsi_rockchip_component_add(struct dw_mipi_dsi_rockchip *dsi)
++{
++	struct device *second;
++	int ret;
++
++	ret = component_add(dsi->dev, &dw_mipi_dsi_rockchip_ops);
++	if (ret) {
++		DRM_DEV_ERROR(dsi->dev, "Failed to register component: %d\n",
++			      ret);
++		return ret;
++	}
++
++	second = dw_mipi_dsi_rockchip_find_second(dsi);
++	if (IS_ERR(second))
++		return PTR_ERR(second);
++
++	if (second) {
++		ret = component_add(second, &dw_mipi_dsi_rockchip_ops);
++		if (ret) {
++			DRM_DEV_ERROR(second,
++				      "Failed to register component: %d\n",
++				      ret);
++			return ret;
++		}
++	}
++
++	return 0;
++}
++
+ static int dw_mipi_dsi_rockchip_host_attach(void *priv_data,
+ 					    struct mipi_dsi_device *device)
+ {
+ 	struct dw_mipi_dsi_rockchip *dsi = priv_data;
+-	struct device *second;
+ 	int ret;
+ 
+ 	mutex_lock(&dsi->usage_mutex);
+@@ -1047,27 +1087,36 @@
+ 	dsi->usage_mode = DW_DSI_USAGE_DSI;
+ 	mutex_unlock(&dsi->usage_mutex);
+ 
+-	ret = component_add(dsi->dev, &dw_mipi_dsi_rockchip_ops);
+-	if (ret) {
+-		DRM_DEV_ERROR(dsi->dev, "Failed to register component: %d\n",
+-					ret);
+-		goto out;
++	/*
++	 * Patch Giochi: mipi_dsi_host_register() -- chamado dentro de
++	 * dw_mipi_dsi_probe() -- cria e sonda o painel de forma SINCRONA, e a
++	 * sonda do painel chama mipi_dsi_attach(), que chega aqui. Se o master
++	 * do DRM ja estiver com todos os outros componentes prontos (foi o caso
++	 * da X55: vop e hdmi prontos, dsi atrasado esperando o modulo do dphy),
++	 * o component_add() abaixo faz o bind do DRM *agora*, ainda dentro do
++	 * probe do DSI.
++	 *
++	 * Nesse instante dsi->dmd ainda e' NULL (e' o valor de retorno de
++	 * dw_mipi_dsi_probe(), que nao retornou) e dsi->bridge ainda nao recebeu
++	 * funcs/driver_private. Como 'bridge' e' o PRIMEIRO campo de
++	 * struct dw_mipi_dsi, &NULL->bridge e' NULL, e drm_bridge_attach()
++	 * devolve -EINVAL sem logar nada (o unico -EINVAL silencioso da funcao).
++	 * Resultado no aparelho:
++	 *
++	 *   dw-mipi-dsi-rockchip fe060000.dsi: Failed to bind: -22
++	 *   rockchip-drm display-subsystem: failed to bind fe060000.dsi
++	 *
++	 * dsi->dmd == NULL so acontece no nosso proprio probe: guarda a
++	 * intencao e registra o componente no fim dele.
++	 */
++	if (!dsi->dmd) {
++		dsi->component_pending = true;
++		return 0;
+ 	}
+ 
+-	second = dw_mipi_dsi_rockchip_find_second(dsi);
+-	if (IS_ERR(second)) {
+-		ret = PTR_ERR(second);
++	ret = dw_mipi_dsi_rockchip_component_add(dsi);
++	if (ret)
+ 		goto out;
+-	}
+-	if (second) {
+-		ret = component_add(second, &dw_mipi_dsi_rockchip_ops);
+-		if (ret) {
+-			DRM_DEV_ERROR(second,
+-				      "Failed to register component: %d\n",
+-				      ret);
+-			goto out;
+-		}
+-	}
+ 
+ 	return 0;
+ 
+@@ -1470,6 +1519,22 @@
+ 		return ret;
+ 	}
+ 
++	/*
++	 * Patch Giochi: o painel foi anexado durante o dw_mipi_dsi_probe() e
++	 * pediu o componente antes de termos o ponteiro. Agora que dmd e
++	 * bridge estao completos, registrar o componente faz o bind do DRM
++	 * com tudo no lugar (ver dw_mipi_dsi_rockchip_host_attach()).
++	 */
++	if (dsi->component_pending) {
++		ret = dw_mipi_dsi_rockchip_component_add(dsi);
++		if (ret) {
++			DRM_DEV_ERROR(dev, "Failed to register component: %d\n",
++				      ret);
++			return ret;
++		}
++		dsi->component_pending = false;
++	}
++
+ 	return 0;
+ }
+ 

@@ -12,7 +12,41 @@ decisões tomadas (`# DECISÃO`) que afetam a sessão seguinte.
 Legenda: **feito** (compila e/ou roda), **esqueleto** (interface + stub com
 TODO), **doc** (apenas especificação/script).
 
-## 2026-10-31 — BOOT COMPLETO em hardware (X55), tela ainda apagada
+## 2026-10-31 — vídeo da X55: a causa do `-22` era o bind feito dentro do probe
+
+O log do cartão (`/boot/giochi-boot.log`, 1 141 linhas) mostrou duas coisas
+que o serial resumido não mostrava:
+
+1. **A pilha do bind**, que é o que faltava para fechar o §3.44:
+   `rockchip_drm_bind ← try_to_bring_up_aggregate_device ← component_add ←
+   dw_mipi_dsi_rockchip_host_attach ← mipi_dsi_attach ← hx8394_probe ←
+   mipi_dsi_host_register ← dw_mipi_dsi_probe`. Ou seja, o painel é sondado
+   **de forma síncrona** dentro do probe do DSI, e o `component_add()` fez o
+   master do DRM bindar **antes de o probe terminar** — com `dsi->dmd` ainda
+   NULL. Como `bridge` é o primeiro campo de `struct dw_mipi_dsi`,
+   `&NULL->bridge == NULL`, e `drm_bridge_attach()` devolve `-EINVAL` **sem
+   imprimir nada** (é o único `-EINVAL` silencioso da função). A ausência da
+   linha `failed to attach bridge ... to encoder ...` era a pista.
+2. **O cartão que estava no aparelho rodava a imagem de debug de 18:26**, não
+   a de 19:14: o log tem `(device=rk3326 soc=rk3326)`, `secao [efault]` e
+   `'/user/music' inacessivel`. Ou seja, as quatro correções do commit
+   `39d17b1` **ainda não tinham sido testadas em hardware**.
+
+**Correção (patch de kernel):**
+`buildroot/board/giochi/patches/linux/0001-drm-rockchip-dw-mipi-dsi-adia-component-add.patch`
++ `BR2_LINUX_KERNEL_PATCH` nos dois templates. Se `dsi->dmd` ainda for NULL, o
+`host_attach` guarda a intenção (`component_pending`) e o `component_add` é
+feito no **fim** do probe, com `dmd` e `bridge` completos. Caminho normal e
+dual-DSI/master-slave intactos. Guarda nova: suíte `patch-de-kernel`
+(`tests/test_kernel_patch.py`), que também falha se `make defconfigs` for
+esquecido.
+
+**Imagem regravada e verificada** (`dist/x55/giochi-x55-sdcard.img`, kernel
+`#3`, `Image` `7c75fda…`, `boot.scr` `e5eb7a3…`): `dd conv=fsync` +
+`tools/verify-card.py` → *"idêntico à imagem, byte a byte"*. **Não bootada
+ainda.**
+
+### 2026-10-31 — BOOT COMPLETO em hardware (X55), tela ainda apagada
 
 Cartão novo de 29,7 GB (gravado e verificado byte a byte). O sistema **subiu
 inteiro** pela primeira vez:

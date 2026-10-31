@@ -421,6 +421,13 @@ Ordem de diagnóstico (do mais barato ao mais caro):
    confira `CONFIG_DRM_ROCKCHIP`, `CONFIG_DRM_DW_MIPI_DSI`,
    `CONFIG_DRM_PANEL_<painel>` (=y, não =m) no `.config` do build.
 
-Caso aberto na X55: `dw_mipi_dsi_rockchip_bind` devolve `-22` e a cadeia de
-`-EINVAL` está mapeada (função por função) no §3.44 do
-[AGENTS.md](../AGENTS.md). O `render=null` **não** é bug do Launcher.
+5. **Se o `-22` vier de `drm_bridge_attach`, olhe a pilha.** O `dmesg` já
+   imprime a pilha do `rockchip_drm_bind`; ela mostra *quem* chamou o bind. Foi
+   assim que o caso da X55 foi fechado (§3.48 do [AGENTS.md](../AGENTS.md)): o
+   `component_add()` do DSI fazia o bind **de dentro do probe do próprio DSI**,
+   quando `dsi->dmd` ainda era NULL. Um `-22` sem **nenhum** outro log é
+   `if (!encoder || !bridge) return -EINVAL` — ponteiro nulo, não configuração.
+
+Caso fechado na X55 (patch em `buildroot/board/giochi/patches/linux/`): o
+`render=null` **não** é bug do Launcher, e o `-22` **não** era o painel — o
+driver do painel (`himax,hx8394`) existe e é mainline.

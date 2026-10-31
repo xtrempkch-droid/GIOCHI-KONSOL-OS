@@ -137,6 +137,19 @@ if command -v python3 >/dev/null 2>&1; then
     fi
 fi
 
+# Patches locais de kernel: um patch que nao entra no build nao avisa nada --
+# a imagem sai com o defeito de volta. Foi assim que o bind do DSI (-22) ficou
+# escondido atras de um build "verde" (AGENTS.md §3.48).
+if command -v python3 >/dev/null 2>&1; then
+    total=$((total + 1))
+    if (cd "$ROOT" && python3 -m unittest tests.test_kernel_patch) >/dev/null 2>&1; then
+        echo "OK     patch-de-kernel (python)"
+    else
+        echo "FALHA  patch-de-kernel (python)"
+        fail=$((fail + 1))
+    fi
+fi
+
 # Proposta de layout (docs/proposta/): renders nativos das 5 abas nos dois
 # paineis (640x480 e 1280x720) + as assercoes geometricas do proprio gerador.
 # Sem Pillow a suite se auto-pula (SkipTest), como as outras de imagem.

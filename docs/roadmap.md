@@ -42,8 +42,10 @@ Especificação normativa: [architecture-v1.2.md](./architecture-v1.2.md).
 - [x] Registrar o log em [HANDOFF.md](./HANDOFF.md).
 - [ ] **A tela acender.** O DRM não faz bind do DSI:
       `rockchip-drm: failed to bind fe060000.dsi: -22` → sem `/dev/dri/card0`
-      → `render=null`. É o bloqueio atual; cadeia e pontos de `-EINVAL` em
-      [AGENTS.md](../AGENTS.md) §3.44.
+      → `render=null`. **Causa encontrada** (§3.48): o `component_add()` do DSI
+      bindava o DRM de dentro do probe do próprio DSI, com `dsi->dmd` NULL →
+      `drm_bridge_attach(NULL)` → `-EINVAL` silencioso. Corrigido por patch de
+      kernel; imagem regravada e verificada, **aguardando boot**.
 - [ ] Ver o splash e responder ao `control.sock` **pela tela**.
 
 **Aceite:** a X55 liga, mostra o splash, chega ao Launcher e responde ao

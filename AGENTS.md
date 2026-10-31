@@ -33,7 +33,7 @@ em que ordem em [docs/roadmap.md](docs/roadmap.md); inventário de cada app
 | `giochi-musicd`: protocolo e socket | **pronto**; decodificação PCM/ALSA **pendente** |
 | Log de boot no cartão (`S00bootlog`) + modo `--debug` com fbcon | **pronto**, testado com mount/syslogd simulados |
 | Boot completo até o Launcher em hardware (X55) | **PROVADO**: `giochi-init pronto` + `launcher v1.2 pronto: 5 abas` em **3,9 s** (entrada 19) |
-| Vídeo na X55: bind do `dw-mipi-dsi` | **bloqueado**: `rockchip-drm: failed to bind fe060000.dsi: -22` → sem `/dev/dri/card0` → `render=null` (§3.44) |
+| Vídeo na X55: bind do `dw-mipi-dsi` | **causa encontrada e corrigida** por patch de kernel (§3.48); imagem regravada e verificada, **boot pendente** |
 
 **Nunca repita (custou tempo de build ou passou silencioso):** leia
 [§3 Armadilhas](#3-armadilhas-já-resolvidas-não-repita) antes de qualquer coisa.
@@ -940,6 +940,12 @@ passo é uma instrumentação (patch de kernel) ou comparar com o DTS/patch da
 ROCKNIX, que roda esses mesmos aparelhos. Enquanto isso, o aparelho **não deve**
 ser dado como "sem vídeo por causa do painel": o painel é a etapa seguinte.
 
+> **FECHADO no §3.48.** A resposta estava na pilha do `dmesg`: o
+> `component_add()` do DSI bindava o DRM de dentro do probe do próprio DSI, com
+> `dsi->dmd` NULL — e `drm_bridge_attach()` devolve `-EINVAL` **sem logar** nesse
+> caso. Preservado aqui porque a tabela de pontos de `-EINVAL` continua sendo o
+> roteiro de diagnóstico.
+
 - Guarda relacionada: `tools/check-dts-panel.py` (suíte `painel-do-dts`) olha o
   DTS, não o bind. Ele **não** teria pego este defeito.
 - Não confunda com §3.43: lá falta **driver** para o painel do X35S/X35H; aqui o
@@ -1013,6 +1019,66 @@ Dois sintomas do mesmo dono de dado, os dois silenciosos:
 **Regra que fica:** dado que existe **dentro da imagem** (`/etc/giochi/*.conf`)
 não deve depender de macro de compilação. `devices/<id>.conf` já era a fonte
 única no build (§3.20); isto é a mesma regra em runtime.
+
+### 3.48 X55: o DSI fazia o bind do DRM de dentro do próprio probe (`-22`)
+
+Fecha o bloqueio do §3.44. O log do aparelho dava só isto, sem mais nada:
+
+```
+dw-mipi-dsi-rockchip fe060000.dsi: [drm:dw_mipi_dsi_rockchip_bind] *ERROR* Failed to bind: -22
+rockchip-drm display-subsystem: failed to bind fe060000.dsi (ops ...): -22
+```
+
+A serial com o `dmesg` completo mostrou o que faltava — **a pilha do bind**:
+
+```
+rockchip_drm_bind
+  <- try_to_bring_up_aggregate_device
+  <- __component_add <- component_add
+  <- dw_mipi_dsi_rockchip_host_attach
+  <- dw_mipi_dsi_host_attach <- mipi_dsi_attach <- hx8394_probe
+  <- mipi_dsi_device_register_full <- mipi_dsi_host_register
+  <- dw_mipi_dsi_probe <- dw_mipi_dsi_rockchip_probe
+```
+
+Ou seja: o painel MIPI é criado e sondado **de forma síncrona** dentro de
+`dw_mipi_dsi_probe()`, e o `component_add()` do `host_attach` fez o master do
+DRM bindar **dentro do probe do DSI**, antes de o probe terminar. Nesse
+instante:
+
+- `dsi->dmd` era **NULL** (é o valor de retorno de `dw_mipi_dsi_probe()`, que
+  ainda não retornou);
+- `dsi->bridge` ainda não tinha `funcs`/`driver_private` (o probe preenche
+  depois de `mipi_dsi_host_register()`).
+
+Como `bridge` é o **primeiro** campo de `struct dw_mipi_dsi`, `&NULL->bridge`
+é `NULL`, e `drm_bridge_attach()` tem **um único** caminho que devolve
+`-EINVAL` sem imprimir nada (`if (!encoder || !bridge) return -EINVAL`). É
+por isso que o `-22` aparecia sem a linha
+`failed to attach bridge ... to encoder ...: -22` — a ausência dessa linha era
+a pista, não um log faltando.
+
+A ordem depende de quem chega primeiro: na X55 o `display-subsystem` já estava
+pronto (vop e hdmi bindados) e o DSI estava atrasado esperando o módulo
+`phy_rockchip_inno_dsidphy` — então o `component_add` encontrou o conjunto
+completo e bindou na hora. O oops que vem em seguida
+(`drm_mode_config_cleanup` → `drm_connector_list_iter_next`) é a limpeza do
+`rockchip_drm_bind` depois da falha, não a causa.
+
+- Correção: patch local de kernel
+  `buildroot/board/giochi/patches/linux/0001-drm-rockchip-dw-mipi-dsi-adia-component-add.patch`
+  (+ `BR2_LINUX_KERNEL_PATCH` nos dois templates). Se `dsi->dmd` ainda for
+  NULL, o `host_attach` marca `component_pending` e o `component_add` é feito
+  **no fim** do probe, com `dmd` e `bridge` completos. O caminho normal e o
+  dual-DSI/master-slave não mudam.
+- **Regra que fica**: `-22` sem log nenhum é `drm_bridge_attach()` recusando
+  ponteiro nulo — antes de instrumentar kernel, **olhe a pilha** do bind
+  (o `dmesg` já a tem) e confira se algum campo do bridge estava sendo
+  preenchido depois do `component_add`.
+- `BR2_LINUX_KERNEL_PATCH` exige forçar o pacote: mudar o defconfig **não**
+  re-arma os stamps. `rm build/linux-*/.stamp_{patched,built,installed,
+  target_installed,images_installed}` antes do build (ou `make linux-dirclean`,
+  que recompila tudo).
 
 ## 4. O que NÃO foi verificado
 
@@ -2029,3 +2095,52 @@ Armadilhas novas: §3.45, §3.46, §3.47; o bloqueio de vídeo em §3.44.
   e o overlay de verdade continuam não verificados.
 - Push para o GitHub continua bloqueado por credencial; estado em
   `/home/charles/giochi-builder/pending.bundle`.
+
+### 2026-10-31 (20) — Copilot (vídeo da X55: o `-22` era bind dentro do probe)
+
+O log que o mantenedor trouxe do cartão (`/boot/giochi-boot.log`, 1 141 linhas)
+tinha a peça que faltava desde a entrada 19: **a pilha do bind**. O serial
+resumido só mostrava `Failed to bind: -22`.
+
+```
+rockchip_drm_bind
+  <- try_to_bring_up_aggregate_device <- component_add
+  <- dw_mipi_dsi_rockchip_host_attach <- dw_mipi_dsi_host_attach
+  <- mipi_dsi_attach <- hx8394_probe <- mipi_dsi_device_register_full
+  <- mipi_dsi_host_register <- dw_mipi_dsi_probe <- dw_mipi_dsi_rockchip_probe
+```
+
+O painel MIPI é sondado **de forma síncrona** dentro de `dw_mipi_dsi_probe()`, e
+o `component_add()` do `host_attach` fez o master do DRM bindar **dentro do
+probe do DSI**, antes do `return`. Nesse instante `dsi->dmd` era NULL (é o valor
+de retorno de `dw_mipi_dsi_probe()`) e `dsi->bridge` ainda não tinha
+`funcs`/`driver_private`. `bridge` é o **primeiro** campo de
+`struct dw_mipi_dsi`, logo `&NULL->bridge == NULL`, e `drm_bridge_attach()` tem
+um único caminho que devolve `-EINVAL` **sem logar**
+(`if (!encoder || !bridge) return -EINVAL`). A ausência da linha
+`failed to attach bridge ... to encoder ...` era a pista, não um log faltando.
+
+- Correção: `buildroot/board/giochi/patches/linux/0001-drm-rockchip-dw-mipi-dsi-adia-component-add.patch`
+  + `BR2_LINUX_KERNEL_PATCH` nos dois templates. Se `dsi->dmd` for NULL, guarda
+  `component_pending` e registra o componente no fim do probe.
+- Guarda nova: suíte `patch-de-kernel` (`tests/test_kernel_patch.py`, 9 testes) —
+  formato do diff, presença nos dois templates **e** nos defconfigs gerados
+  (pega "esqueci o `make defconfigs`"), e aplicação limpa na árvore de `dist/`
+  quando houver. Testada ao contrário: sem o arquivo, 5 falhas.
+- **Armadilha do build**: `BR2_LINUX_KERNEL_PATCH` **não** re-arma os stamps do
+  pacote `linux`. Trocado o defconfig, é preciso apagar
+  `build/linux-*/.stamp_{patched,built,installed,target_installed,images_installed}`
+  (ou `make linux-dirclean`) — senão o build fica verde e a imagem sai sem o
+  patch, exatamente o tipo de defeito silencioso desta lista.
+- Imagem regravada: `dist/x55/giochi-x55-sdcard.img`, kernel `#3`
+  (`Image` `7c75fda…`, `boot.scr` `e5eb7a3…`), `dd conv=fsync` +
+  `tools/verify-card.py` → *"idêntico à imagem, byte a byte"*.
+- **Achado do mesmo log**: o cartão que estava no aparelho rodava a imagem de
+  debug de 18:26, não a de 19:14 — o log tem `(device=rk3326 soc=rk3326)`,
+  `secao [efault]` e `'/user/music' inacessivel`. As quatro correções do
+  `39d17b1` **nunca foram testadas em hardware**. A imagem nova as leva.
+- `make test` → **25/25**. `make lint` → rc=0.
+- **Aberto**: o boot com o patch ainda não aconteceu. Se o bind falhar de novo,
+  agora ele **imprime** `failed to attach bridge ... to encoder ...: -22`, que
+  diz qual bridge recusou — antes esse log não existia porque o ponteiro era
+  nulo antes de chegar lá.
