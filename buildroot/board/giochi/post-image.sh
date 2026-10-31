@@ -115,6 +115,36 @@ fi
 fits u-boot-rockchip.bin "$UB_BIN" u-boot || exit 1
 fits rootfs.squashfs "$BINARIES_DIR/rootfs.squashfs" system-a || exit 1
 
+# boot.scr: REGERADO AQUI, sempre, a partir de board/giochi/boot.cmd.
+#
+# O Buildroot gera o boot.scr dentro do pacote host-uboot-tools
+# (uboot-tools.mk: HOST_UBOOT_TOOLS_INSTALL_BOOT_SCRIPT), e um pacote so e
+# reconstruido quando ELE muda — editar o boot.cmd nao invalida nada. Medido
+# neste repositorio: boot.cmd de 31/10 com boot.scr de 27/10 dentro da imagem,
+# ou seja, quatro dias de mudancas no script de boot (rollback, dtb, bootargs,
+# marcadores de serial) simplesmente nao existiam no cartao.
+HOST_DIR=${HOST_DIR:-$(dirname "$BINARIES_DIR")/host}
+MKIMAGE="$HOST_DIR/bin/mkimage"
+BOOT_CMD="$BOARD_DIR/boot.cmd"
+if [ -x "$MKIMAGE" ] && [ -f "$BOOT_CMD" ]; then
+    # -A: o cabecalho do uImage. Nao muda nada em -T script, mas mantem o
+    # artefato coerente com o SoC.
+    case "${GIOCHI_SOC:-}" in
+        rk3326*) MK_ARCH=arm ;;
+        *)       MK_ARCH=arm64 ;;
+    esac
+    if "$MKIMAGE" -C none -A "$MK_ARCH" -T script \
+            -d "$BOOT_CMD" "$BINARIES_DIR/boot.scr" >/dev/null 2>&1; then
+        echo "post-image: boot.scr regerado de boot.cmd ($(wc -c <"$BOOT_CMD") B)"
+    else
+        echo "post-image: ERRO: mkimage falhou ao gerar boot.scr" >&2
+        exit 1
+    fi
+elif [ ! -f "$BINARIES_DIR/boot.scr" ]; then
+    echo "post-image: ERRO: sem mkimage em $HOST_DIR/bin e sem boot.scr" >&2
+    exit 1
+fi
+
 # DTB de aparelho com DTS upstream: o linux.mk do Buildroot instala o blob
 # DIRETO em $BINARIES_DIR (sem subdiretorio). Nao existe
 # BR2_LINUX_KERNEL_INSTALL_DTBS no 2024.02 -- so DTB_KEEP_DIRNAME, que

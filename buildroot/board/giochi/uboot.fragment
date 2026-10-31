@@ -10,12 +10,21 @@ CONFIG_CMD_SETEXPR=y
 CONFIG_CMD_FS_GENERIC=y
 CONFIG_ENV_IS_IN_FAT=y
 CONFIG_ENV_FAT_INTERFACE="mmc"
-CONFIG_ENV_FAT_DEVICE_AND_PART="0:1"
+# O CARTAO SD E O MMC 1, NAO O 0. Em rk3566-powkiddy-x55.dts (upstream, o mesmo
+# que o U-Boot usa): mmc0 = &sdhci (eMMC), mmc1 = &sdmmc0 (cartao SD),
+# mmc2 = &sdmmc2, mmc3 = &sdmmc1 (SDIO do Wi-Fi). A X55 nao tem eMMC soldado,
+# entao "mmc 0:1" nao tem dispositivo: o load falha, o boot.scr nunca roda e a
+# tela fica preta sem nenhuma mensagem. Era "0:1" aqui.
+CONFIG_ENV_FAT_DEVICE_AND_PART="1:1"
 CONFIG_ENV_FAT_FILE="uboot.env"
+CONFIG_SYS_MMC_ENV_DEV=1
 CONFIG_SYS_REDUNDAND_ENVIRONMENT=y
 CONFIG_BOOTDELAY=0
 CONFIG_USE_BOOTCOMMAND=y
-CONFIG_BOOTCOMMAND="load mmc 0:1 ${scriptaddr} boot.scr; source ${scriptaddr}"
+# Sonda 1 (cartao) e depois 0 (eMMC), em vez de fixar um numero: cobre aparelho
+# com eMMC presente e mantem o cartao como prioridade. 'giochi_mmc' fica com o
+# dispositivo que funcionou e o boot.cmd usa esse valor para achar a raiz.
+CONFIG_BOOTCOMMAND="for d in 1 0; do if load mmc ${d}:1 ${scriptaddr} boot.scr; then setenv giochi_mmc ${d}; source ${scriptaddr}; fi; done; echo GIOCHI: nenhum boot.scr legivel (mmc 1 e 0)"
 
 # ---------------------------------------------------------------------------
 # Bootsplash (PRE-PRONTO — desativado)

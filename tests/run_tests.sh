@@ -83,6 +83,21 @@ if command -v python3 >/dev/null 2>&1; then
     fi
 fi
 
+# Log de boot e dispositivo de boot do cartao. Cada checagem corresponde a um
+# defeito que deixa a tela preta sem pista: o cartao e mmc1 (mmc0 e o eMMC, que
+# a X55 nao tem), o env do U-Boot tem de ficar no cartao, o /boot precisa
+# existir na imagem (raiz e somente leitura) e o busybox precisa de
+# FEATURE_MOUNT_LABEL para o LABEL= do fstab.
+if command -v python3 >/dev/null 2>&1; then
+    total=$((total + 1))
+    if (cd "$ROOT" && python3 -m unittest tests.test_boot_log) >/dev/null 2>&1; then
+        echo "OK     log-de-boot (python)"
+    else
+        echo "FALHA  log-de-boot (python)"
+        fail=$((fail + 1))
+    fi
+fi
+
 # Proposta de layout (docs/proposta/): renders nativos das 5 abas nos dois
 # paineis (640x480 e 1280x720) + as assercoes geometricas do proprio gerador.
 # Sem Pillow a suite se auto-pula (SkipTest), como as outras de imagem.

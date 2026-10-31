@@ -16,6 +16,19 @@ CONFIG_ASH=y
 CONFIG_ASH_JOB_CONTROL=y
 CONFIG_LOGGER=y
 CONFIG_FEATURE_SYSLOGD_CFG=y
+# --- log de boot no cartao SD (S00bootlog, docs/BOOT-DEBUG.md) ---------
+# syslogd -O grava com write() direto no arquivo (sobrevive a desligamento
+# bruto); klogd repassa o kernel; tee duplica rcS. Os tres sao default no
+# Buildroot, mas ficam explicitos porque sem eles o log some em silencio.
+CONFIG_SYSLOGD=y
+CONFIG_KLOGD=y
+CONFIG_TEE=y
+# --- LABEL= no fstab (PARTICAO C /user) --------------------------------
+# Sem FEATURE_MOUNT_LABEL o busybox trata "LABEL=GIOCHI_USER" como NOME DE
+# ARQUIVO: o mount -a falha calado e /user nunca e montada (settings.json,
+# /user/music, symlink de chaves do dropbear: tudo em cima de SquashFS
+# somente-leitura). Medido no .config do busybox 1.36.1 da imagem.
+CONFIG_FEATURE_MOUNT_LABEL=y
 CONFIG_FIND=y
 CONFIG_OD=y
 CONFIG_DF=y

@@ -17,6 +17,7 @@
 #   BUILDROOT_REF  branch/tag do Buildroot (default: 2024.02.x)
 #   JOBS           paralelismo (default: nucleos do host)
 #   DL_DIR         cache de downloads (default: .cache/buildroot-dl)
+#   GIOCHI_DEBUG_BOOT=1  imagem de diagnostico com fbcon (docs/BOOT-DEBUG.md)
 #
 # Nota: com o Docker do snap, o contexto de build precisa estar sob $HOME —
 # o snap nao enxerga /tmp. Este script usa a raiz do repositorio, que em uso
@@ -78,6 +79,7 @@ set -- docker run --rm --init \
     -e JOBS="$JOBS" \
     -e GIOCHI_NO_COMPRESS="${GIOCHI_NO_COMPRESS:-}" \
     -e GIOCHI_MIN_FREE_GB="${GIOCHI_MIN_FREE_GB:-15}" \
+    -e GIOCHI_DEBUG_BOOT="${GIOCHI_DEBUG_BOOT:-}" \
     -v "$ROOT:/work" \
     -v "$DL_DIR:/dl" \
     -w /work \

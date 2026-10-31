@@ -36,6 +36,20 @@ fi
 
 setenv bootargs "${bootargs_base} root=${giochi_root} giochi.slot=${giochi_slot} giochi.bootcount=${bootcount}"
 
+# Rotacao do console de video do kernel (so existe na imagem de diagnostico,
+# com fbcon; ver board/giochi/linux-debug.fragment). O painel da X55 e
+# 720x1280 com rotacao 270: sem isto o texto sai deitado. Opcional, porque
+# varia por aparelho:
+#   => setenv giochi_fbcon 1 ; saveenv
+if test -n "${giochi_fbcon}"; then
+  setenv bootargs "${bootargs} fbcon=rotate:${giochi_fbcon}"
+fi
+
+# Marcadores no console serial (ttyS2, 1500000 8N1). Um cabo USB-UART e a
+# unica forma de ver o que acontece ANTES do kernel; com estes echo da para
+# saber se o boot.scr rodou e com que dispositivo/raiz ele decidiu bootar.
+echo "GIOCHI: boot.scr em execucao (mmc=${giochi_mmc} slot=${giochi_slot} root=${giochi_root})"
+
 # DTB por placa: X55 (mainline) x X35S/X35H (mesmo DTB). Sem fdtfile, usa
 # board.dtb gravado no cartao (post-image).
 if test -n "${fdtfile}"; then
@@ -59,5 +73,10 @@ fi
 # fi
 # ---------------------------------------------------------------------
 
-load mmc ${giochi_mmc}:1 ${kernel_addr_r} Image
+if load mmc ${giochi_mmc}:1 ${kernel_addr_r} Image; then
+  echo "GIOCHI: Image carregada de mmc ${giochi_mmc}:1"
+else
+  echo "GIOCHI: FALHA ao ler Image de mmc ${giochi_mmc}:1"
+fi
+echo "GIOCHI: booti kernel=${kernel_addr_r} fdt=${fdt_addr_r}"
 booti ${kernel_addr_r} - ${fdt_addr_r}

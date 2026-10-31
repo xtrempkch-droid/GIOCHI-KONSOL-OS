@@ -53,8 +53,8 @@ fi
 # um skip silencioso (foi assim que um .gitignore errado passou despercebido).
 install -d "$TARGET_DIR/etc/init.d"
 missing_init=""
-for s in S05update S10storage S20graphics S30swap S40dongle S50usb \
-         S55usbnet S62sshd S99launcher; do
+for s in S00bootlog S05update S10storage S20graphics S30swap S40dongle \
+         S50usb S55usbnet S62sshd S99launcher; do
     if [ -f "$SCRIPTS_DIR/$s" ]; then
         install -m 0755 "$SCRIPTS_DIR/$s" "$TARGET_DIR/etc/init.d/$s"
     else
@@ -66,6 +66,27 @@ if [ -n "$missing_init" ]; then
     echo "post-build: verifique se scripts/init.d esta versionado" >&2
     exit 1
 fi
+
+# --- scripts de init dos PACOTES que conflitam com os nossos --------------
+# Cada pacote do Buildroot instala o proprio /etc/init.d/Sxx. Dois deles
+# brigam com uma decisao deste projeto, e a briga e silenciosa:
+#
+#   S01syslogd / S02klogd (busybox.mk): sobem syslogd/klogd SEM -O, gravando
+#     em /var/log/messages (tmpfs). O busybox syslogd desvincula /dev/log e
+#     cria o proprio socket, entao o syslogd que o S00bootlog subiu perde o
+#     socket e o log no cartao PARA DE CRESCER sem nenhum erro. O S00bootlog
+#     e o dono de syslogd/klogd nesta imagem.
+#
+#   S50dropbear (dropbear.mk): sobe sshd incondicionalmente, em todas as
+#     interfaces, sem checar o Modo Desenvolvedor. Isso anula o adendo 4.6.1
+#     (SSH desligado por padrao e so em 10.55.0.2) — o S62sshd e quem decide.
+#     Guarda: tools/check-image-contents.sh.
+for conflito in S01syslogd S02klogd S50dropbear; do
+    if [ -f "$TARGET_DIR/etc/init.d/$conflito" ]; then
+        rm -f "$TARGET_DIR/etc/init.d/$conflito"
+        echo "post-build: removido /etc/init.d/$conflito (conflita com o nosso)"
+    fi
+done
 
 # --- helpers ----------------------------------------------------------
 install -d "$TARGET_DIR/usr/sbin"

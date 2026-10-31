@@ -3,6 +3,7 @@
 /dev/input	d	755	0	0	-	-	-	-	-
 /dev/giochi	d	755	0	0	-	-	-	-	-
 /run	d	755	0	0	-	-	-	-	-
+/boot	d	755	0	0	-	-	-	-	-
 /user	d	755	1000	1000	-	-	-	-	-
 /user/games	d	755	1000	1000	-	-	-	-	-
 /user/music	d	755	1000	1000	-	-	-	-	-

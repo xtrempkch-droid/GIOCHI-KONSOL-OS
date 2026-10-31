@@ -103,6 +103,23 @@ giochi_slot2_swapdir() {
     return 1
 }
 
+# Caminho do log de boot na particao FAT (vazio se S00bootlog nao rodou).
+giochi_bootlog_path() {
+    [ -r /run/giochi/bootlog.path ] || return 1
+    sed -n '1p' /run/giochi/bootlog.path 2>/dev/null
+}
+
+# Marca o boot como concluido (chamado quando o controle passa ao supervisor).
+# Sem isso o proximo boot reportaria "BOOT ANTERIOR NAO TERMINOU" para sempre,
+# porque rcS nao retorna: S20graphics faz exec do giochi-init.
+giochi_boot_marker_clear() {
+    _log=$(giochi_bootlog_path) || return 0
+    [ -n "${_log:-}" ] || return 0
+    _dir=$(dirname "$_log")
+    rm -f "$_dir/giochi-boot.inprogress" 2>/dev/null || true
+    return 0
+}
+
 giochi_active_slot() {
     case "$(giochi_root_part)" in
         *p2) echo 2 ;;

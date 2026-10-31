@@ -201,6 +201,7 @@ docs/           arquitetura, hardware, build, aparelhos, USB, QA, handoff
 | [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md) | imagens do sistema: como são geradas e o que representam |
 | [docs/BOOTSPLASH.md](docs/BOOTSPLASH.md) | logo/bootsplash: assets, Launcher e ativação do U-Boot |
 | [docs/BUILD.md](docs/BUILD.md) | buildroot, kernel, cross-compile, assinatura |
+| [docs/BOOT-DEBUG.md](docs/BOOT-DEBUG.md) | **a tela não acendeu**: log de boot no cartão, imagem com fbcon, serial |
 | [docs/QA-CHECKLIST.md](docs/QA-CHECKLIST.md) | checklist por camada e matriz de testes |
 | [docs/APPS.md](docs/APPS.md) | inventário dos 11 apps + artefatos: o que roda no console e no PC, o que falta |
 | [docs/roadmap.md](docs/roadmap.md) | o que falta, em ordem de risco, com critério de aceite |

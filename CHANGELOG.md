@@ -6,6 +6,24 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 ## [Não publicado]
 
 ### Adicionado
+- **[docs/BOOT-DEBUG.md](docs/BOOT-DEBUG.md)**: procedimento para quando a tela
+  não acende — log na partição FAT do cartão, imagem de diagnóstico com `fbcon`
+  e console serial (`ttyS2`, `1500000 8N1`), com tabela sintoma → causa.
+- **`scripts/init.d/S00bootlog`**: primeiro script de `rcS`. Grava
+  `giochi-boot.log`, `giochi-boot.1.log`, `giochi-boot.dmesg` e o marcador
+  `giochi-boot.inprogress` na partição FAT (`/boot`) — legível em qualquer PC.
+  Usa `syslogd -O` (escrita sem buffer) + `klogd`, e o `rcS` duplica a saída
+  dos serviços com `tee`. Fallback `/user` → `/run`; nunca aborta o boot;
+  desliga com `touch nolog`.
+- **Modo diagnóstico de imagem**: `tools/build-image.sh <aparelho> --debug`
+  (ou `GIOCHI_DEBUG_BOOT=1`) liga `fbcon` via
+  `board/giochi/linux-debug.fragment`, fazendo o kernel escrever na tela. A
+  árvore de build é reaproveitada e o artefato sai como `...-sdcard-debug.img`.
+- `boot.cmd`: marcadores de progresso no serial (`GIOCHI: boot.scr em
+  execucao`, `Image carregada`, `booti`) e `giochi_fbcon` para
+  `fbcon=rotate:N` no painel 720×1280/270° da X55.
+- Suíte `log-de-boot` (`tests/test_boot_log.py`, 19 checagens) e seção 6 em
+  `tools/check-image-contents.sh` (scripts de pacote que não podem voltar).
 - **Primeira imagem completa gerada neste repositório**:
   `dist/x55/giochi-x55-sdcard.img`, 936 MB (147 MB de blocos reais), com U-Boot
   mainline em 32 KiB, kernel 6.12, DTB do `rockchip`, SquashFS de 29 MB nos dois
@@ -51,6 +69,26 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 - `tools/check-links.py` agora valida também as tags de imagem HTML.
 
 ### Corrigido
+- **Log de boot na sdcard e a caçada ao "boot sem nada na tela"**
+  (`docs/BOOT-DEBUG.md`). Quatro defeitos apareceram; três impediam o boot ou o
+  próprio log:
+  - **U-Boot carregava o `boot.scr` de `mmc 0` (eMMC)**, não do cartão. Em
+    `rk3566-powkiddy-x55.dts` o SD é `mmc1` e a X55 não tem eMMC soldado: o
+    `load` falhava, o kernel nunca iniciava e a tela ficava preta sem uma linha
+    de log. `BOOTCOMMAND` agora sonda `1` e `0`, e `uboot.env` foi para `1:1`
+    (em `0:1` o `saveenv` falhava e o rollback A/B não gravava).
+  - **`LABEL=GIOCHI_USER` no `fstab` não funcionava**: faltava
+    `CONFIG_FEATURE_MOUNT_LABEL` no BusyBox (medido no `.config` do 1.36.1).
+    Sem ela o `mount` trata a string como nome de arquivo, o `mount -a` falha e
+    `/user` — a única partição gravável — nunca é montada.
+  - **`boot.scr` de 27/10 numa imagem de 31/10**: o artefato é gerado nas
+    etapas de build do `host-uboot-tools`, que não é reconstruído quando o
+    `boot.cmd` muda. Agora o `post-image.sh` regenera sempre com o `mkimage`.
+  - **Scripts de init de pacote brigando com os nossos**: `S01syslogd`/
+    `S02klogd` subiam um segundo `syslogd` sem `-O` e roubavam `/dev/log` (o log
+    no cartão parava de crescer sem erro); `S50dropbear` subia **SSH em todas as
+    interfaces, por padrão**, anulando o adendo 4.6.1. Os três são removidos no
+    `post-build.sh`, com o motivo ao lado de cada um.
 - **Quatro defeitos que derrubavam o build no ÚLTIMO passo**, todos com mensagem
   que não aponta o culpado, todos agora com guarda no lint:
   - `device_table.txt` usava `g` (de "grupo") no campo de *tipo de arquivo*;

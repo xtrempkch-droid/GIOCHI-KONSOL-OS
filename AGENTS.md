@@ -28,6 +28,7 @@ em que ordem em [docs/roadmap.md](docs/roadmap.md); inventário de cada app
 | Launcher: motor de layout, tema, `settings.json`, overlay 2 níveis, biblioteca | **pronto** |
 | Launcher: **desenho dos widgets** no backend SDL2 | **esboço** (`TODO(v1.2)` em `render.cpp`) |
 | `giochi-musicd`: protocolo e socket | **pronto**; decodificação PCM/ALSA **pendente** |
+| Log de boot no cartão (`S00bootlog`) + modo `--debug` com fbcon | **pronto**, testado com mount/syslogd simulados |
 | Imagem gerada e bootada em hardware | **nunca** — ver [§4](#4-o-que-não-foi-verificado) |
 
 **Nunca repita (custou tempo de build ou passou silencioso):** leia
@@ -540,6 +541,125 @@ make: *** [Makefile:820: target-post-image] Error 1
 - Use `if [ -f "$f" ]; then ...; fi` e termine o script com `exit 0` explícito.
 - Mesma classe da armadilha §3.4 (`set -e` + `$(teste && cmd)`).
 - Guarda: `tests/test_image_layout.py` exige `exit 0` como último comando.
+
+### 3.29 O cartão é `mmc 1`; `mmc 0` é o eMMC (que a X55 não tem)
+
+`uboot.fragment` mandava o U-Boot carregar o `boot.scr` de **`mmc 0:1`**:
+
+```
+CONFIG_BOOTCOMMAND="load mmc 0:1 ${scriptaddr} boot.scr; source ${scriptaddr}"
+CONFIG_ENV_FAT_DEVICE_AND_PART="0:1"
+```
+
+Em `rk3566-powkiddy-x55.dts` (o upstream, que é o DTS que o U-Boot usa):
+`mmc0 = &sdhci` (eMMC), `mmc1 = &sdmmc0` (**cartão SD**), `mmc2 = &sdmmc2`,
+`mmc3 = &sdmmc1` (SDIO do Wi-Fi). A X55 não tem eMMC soldado, então `mmc 0:1`
+não existe: o `load` falha, o `boot.scr` nunca roda, o kernel nunca inicia e a
+tela fica preta **sem uma única mensagem**. É a explicação mais provável para
+um "boot que não deu nada".
+
+- `BOOTCOMMAND` agora **sonda** `for d in 1 0` e guarda o que funcionou em
+  `giochi_mmc` (o `boot.cmd` já respeita essa variável).
+- `uboot.env` foi para `1:1` e `CONFIG_SYS_MMC_ENV_DEV=1`: em `mmc 0` o
+  `saveenv` falhava, e sem env gravável o rollback por `bootcount` (ADR-01) não
+  funciona.
+- Guarda: `tests/test_boot_log.py` reprova `load mmc 0:` e exige a sondagem.
+
+### 3.30 `LABEL=` no `fstab` precisa de `FEATURE_MOUNT_LABEL` no BusyBox
+
+O `fstab` monta a partição C com `LABEL=GIOCHI_USER` (correto: o nome do
+dispositivo varia, `mmcblk1` × `sda`). Mas o BusyBox da imagem estava com
+`# CONFIG_FEATURE_MOUNT_LABEL is not set` — medido no `.config` do 1.36.1 do
+build real. Sem essa opção o `mount` trata a string como **nome de arquivo**:
+`mount -a` falha, `/user` nunca é montada e o sistema inteiro passa a escrever
+num diretório dentro do SquashFS somente-leitura (`settings.json`, `/user/music`,
+`/etc/dropbear -> /user/.ssh/dropbear`). Nada no boot avisa.
+
+- `CONFIG_FEATURE_MOUNT_LABEL=y` no `busybox.fragment`.
+- Guarda: `tests/test_boot_log.py` exige a opção no fragmento **e** o
+  `LABEL=` no `fstab` (se um mudar, o outro tem de mudar junto).
+- Lembrete: `/dev/disk/by-label/` não existe sem udev. O `lib.sh` tem um
+  fallback por esse caminho em `giochi_user_part`, que só funciona porque o
+  caminho principal (derivar do `/proc/cmdline`) resolve antes.
+
+### 3.31 Sem `fbcon`, falha antes do Launcher é invisível
+
+`linux.fragment` declara `CONFIG_FB=n` (decisão por boot rápido: ~1 MB de
+kernel e alguns ms). O efeito colateral é que o kernel **não tem console de
+vídeo**: qualquer erro de driver, de montagem da raiz ou de painel acontece com
+a tela apagada. Não há o que ver.
+
+- Imagem de diagnóstico: `tools/build-image.sh <aparelho> --debug` (ou
+  `GIOCHI_DEBUG_BOOT=1`) anexa `board/giochi/linux-debug.fragment` à lista de
+  fragmentos **derivada** do defconfig (não repetida — §3.20) e escreve em
+  `<out>/<aparelho>-debug/` para não confundir com a imagem normal.
+- Texto deitado no painel 720×1280/270°: `setenv giochi_fbcon 1; saveenv` no
+  U-Boot; o `boot.cmd` acrescenta `fbcon=rotate:1`.
+- O `fbcon` só aparece quando o DRM do kernel sobe. Antes disso (BootROM, TPL,
+  U-Boot) **só** o serial `ttyS2` em `1500000 8N1` mostra algo — por isso o
+  `boot.cmd` ganhou `echo` de progresso.
+
+### 3.32 O log de boot precisa de um ponto de conclusão que exista de verdade
+
+`S00bootlog` (primeiro script de `rcS`) grava o log na partição FAT e deixa
+`giochi-boot.inprogress`; se ele ainda estiver lá no próximo boot, o anterior
+não terminou. O detalhe que quase passou: **`rcS` nunca retorna** neste sistema
+— o `S20graphics` faz `exec /usr/bin/giochi-init`. Se o marcador fosse apagado
+no fim do `rcS`, ele nunca sairia e todo boot reportaria falha falsa.
+
+- O marcador é apagado em `giochi_boot_marker_clear` (em `lib.sh`), chamado pelo
+  `S20graphics` e pelo `S99launcher` **antes** do `exec`: o critério é "o
+  controle chegou ao supervisor", não "o rcS terminou".
+- `rcS` roda `S00bootlog` **sozinho e antes do laço** (é ele quem cria o destino
+  do `tee`) e depois duplica a saída do resto com `tee -a`.
+- Nada aqui escreve em `/etc`; e o `S00bootlog` nunca aborta o boot: sem cartão
+  gravável cai para `/user` e depois para `/run`.
+- Desligar sem recompilar: `touch nolog` na partição 1.
+- Guarda: `tests/test_boot_log.py` (16 checagens), suíte `log-de-boot`.
+
+### 3.33 Editar `boot.cmd` NÃO atualizava o `boot.scr` da imagem
+
+O `boot.scr` é gerado dentro do pacote **host-uboot-tools**
+(`uboot-tools.mk`, `HOST_UBOOT_TOOLS_INSTALL_BOOT_SCRIPT`) — ou seja, nas
+etapas de *build/install do pacote*. O Buildroot só reconstrói um pacote quando
+**ele** muda; o `boot.cmd` é apenas um caminho dentro de uma variável de
+configuração. Resultado medido neste repositório: `boot.cmd` de **31/10** e
+`boot.scr` de **27/10** dentro da imagem. Quatro dias de mudanças no script de
+boot (rollback A/B, carga do dtb, `bootargs`, marcadores de serial) não existiam
+no cartão, e nada avisava.
+
+- `post-image.sh` agora **regenera o `boot.scr` sempre**, com o `mkimage` do
+  `HOST_DIR`, a partir de `board/giochi/boot.cmd`. O artefato passa a ser função
+  do arquivo, não do cache de pacote.
+- Vale como regra geral: **artefato derivado de arquivo do projeto dentro de
+  pacote do Buildroot é cache velho esperando acontecer.** Se o `post-image.sh`
+  depende do artefato, gere-o no `post-image.sh`.
+- Guarda: `tests/test_boot_log.py` exige a chamada do `mkimage` no
+  `post-image.sh` e os marcadores de serial no `boot.cmd`.
+
+### 3.34 Script de init de PACOTE briga com o nosso — e ganha em silêncio
+
+Cada pacote instala o próprio `/etc/init.d/Sxx`. Dois anulavam decisões deste
+projeto, sem erro nenhum no boot:
+
+- **`S01syslogd` / `S02klogd`** (de `busybox.mk`) sobem `syslogd -n` **sem
+  `-O`**, gravando em `/var/log/messages` (tmpfs). O `syslogd` do BusyBox
+  desvincula `/dev/log` e cria o próprio socket: o `syslogd` que o
+  `S00bootlog` subiu **perde o socket** e o log no cartão para de crescer.
+- **`S50dropbear`** (de `dropbear.mk`) sobe `sshd` **incondicionalmente, em
+  todas as interfaces**, sem olhar `/user/settings.json`. Isso anula o adendo
+  4.6.1 e o `S62sshd` (que existe justamente para decidir). SSH ligado por
+  padrão num aparelho de bolso é o tipo de defeito que não aparece em teste
+  funcional.
+
+- `post-build.sh` remove os três (bloco "scripts de init dos PACOTES que
+  conflitam"), com o motivo escrito ao lado de cada um.
+- Guarda: `tools/check-image-contents.sh` (seção 6) falha se o bloco sumir, e
+  `tests/test_boot_log.py` confere as três remoções **sem comentários** do
+  arquivo (checar o texto inteiro passava mesmo com o `rm` removido — testado
+  ao contrário).
+- Ao adicionar um pacote novo, **liste o `Sxx` dele** e decida: convive com os
+  nossos ou sai no `post-build.sh`.
 
 ## 4. O que NÃO foi verificado
 
@@ -1333,3 +1453,93 @@ casos, que é o que este repositório faz.
 do aparelho); o `rg351v`/`rg353v` usam o mesmo caminho de DTS upstream e devem
 gerar igual, mas só a X55 foi compilada; nada foi testado com U-Boot do vendor
 (`genimage-no-uboot.cfg`).
+
+### 2026-10-31 (17) — Copilot (log de boot no cartão e o porquê da tela preta)
+
+O mantenedor relatou que a primeira tentativa de boot no aparelho "parece ter
+dado erro" e pediu **log na sdcard** para poder saber onde parou. O pedido
+virou também uma caçada: três dos quatro defeitos abaixo **impediam** o boot ou
+o log, e nenhum deles produzia mensagem.
+
+**1. O U-Boot carregava o `boot.scr` do lugar errado (§3.29).**
+`CONFIG_BOOTCOMMAND="load mmc 0:1 ... boot.scr"`. Em
+`rk3566-powkiddy-x55.dts`, `mmc0 = &sdhci` (eMMC) e `mmc1 = &sdmmc0` (cartão).
+A X55 não tem eMMC soldado: `load` falha, o `boot.scr` não roda, o kernel não
+inicia e a tela fica preta sem uma linha de log. Agora o `BOOTCOMMAND` sonda
+`for d in 1 0` e publica o que funcionou em `giochi_mmc`; `uboot.env` foi para
+`1:1` (em `0:1` o `saveenv` falhava, e sem env o rollback por `bootcount` do
+ADR-01 não funciona).
+
+**2. `LABEL=GIOCHI_USER` no `fstab` não funcionava (§3.30).**
+O BusyBox da imagem estava com `# CONFIG_FEATURE_MOUNT_LABEL is not set`
+(medido no `.config` do 1.36.1 do build real). Sem essa opção o `mount` trata a
+string como nome de arquivo: `mount -a` falha, `/user` nunca é montada e o
+sistema inteiro escreve num diretório dentro do SquashFS somente-leitura. Era o
+único lugar gravável do sistema.
+
+**3. `boot.scr` de 27/10 numa imagem de 31/10 (§3.33).**
+O `boot.scr` é gerado nas etapas de build do **host-uboot-tools**, que não é
+reconstruído quando o `boot.cmd` muda. Quatro dias de mudanças no script de
+boot nunca chegaram ao cartão. Agora o `post-image.sh` regenera sempre.
+
+**4. Scripts de init de pacote roubando o nosso log (§3.34).**
+`S01syslogd`/`S02klogd` (busybox.mk) subiam um segundo `syslogd` **sem `-O`** —
+e o `syslogd` do BusyBox desvincula `/dev/log`, então o daemon do `S00bootlog`
+perdia o socket e o log no cartão parava de crescer, sem erro. Pior:
+`S50dropbear` (dropbear.mk) subia **SSH em todas as interfaces, sempre**,
+anulando o adendo 4.6.1 e o `S62sshd`. Os três saem no `post-build.sh`.
+
+**O que foi entregue para o pedido original:**
+
+- `scripts/init.d/S00bootlog` — primeiro script de `rcS`. Monta a partição FAT
+  (p1) em `/boot` e grava `giochi-boot.log`, `giochi-boot.1.log` (boot
+  anterior), `giochi-boot.dmesg` e `giochi-boot.inprogress`. Se o marcador
+  ainda existir no próximo boot, o log abre com "O BOOT ANTERIOR NÃO TERMINOU".
+  `syslogd -O` grava com `write()` direto (sem buffer), então sobrevive a
+  desligamento bruto; `klogd` repassa o kernel; `rcS` duplica a saída do resto
+  com `tee -a`. Fallback: `/user`, depois `/run` — nunca aborta o boot.
+  Desligar: `touch nolog` na partição 1.
+- `linux-debug.fragment` + `tools/build-image.sh <id> --debug`
+  (`GIOCHI_DEBUG_BOOT=1`): liga `fbcon` para o kernel escrever **na tela**.
+  A lista de fragmentos é **derivada** do defconfig (não repetida) e a árvore de
+  build é a mesma (incremental); só o nome do artefato muda, para
+  `...-sdcard-debug.img`.
+- `boot.cmd` ganhou `echo` de progresso no serial (`ttyS2`, `1500000 8N1`) e
+  `giochi_fbcon` para rotação do console (`fbcon=rotate:N`).
+- [docs/BOOT-DEBUG.md](docs/BOOT-DEBUG.md): como coletar, o que cada arquivo
+  significa, tabela sintoma → causa, e a limitação honesta (fbcon só aparece
+  quando o DRM sobe; antes disso, só serial).
+
+**Verificação (tudo rodado):**
+
+- `S00bootlog` executado num harness com `mount`/`mountpoint`/`syslogd`/`klogd`
+  simulados: destino FAT (principal), `/user` (fallback) e `/run` (último
+  recurso); rotação `.log` → `.1.log`; detecção de "boot anterior não
+  terminou"; `nolog` desliga e não toca no arquivo. O harness revelou um bug
+  **meu**: a listagem de `/proc/partitions` com `sed` perdia o *major* e casava
+  com o cabeçalho — trocado por `awk`.
+- Build real: `rc=0`; na imagem final, `/etc/init.d` tem `S00bootlog` e **não**
+  tem `S01syslogd`, `S02klogd` nem `S50dropbear`; `/boot/` existe no
+  `rootfs.tar` (a raiz é somente-leitura, não dá para `mkdir` em runtime).
+- `.config` do busybox: `CONFIG_FEATURE_MOUNT_LABEL=y`, `SYSLOGD`, `KLOGD`,
+  `TEE`. `.config` do U-Boot: `BOOTCOMMAND` com `for d in 1 0`,
+  `ENV_FAT_DEVICE_AND_PART="1:1"`, `SYS_MMC_ENV_DEV=1`.
+- `boot.scr` de 3171 B (era 2270 B, de 27/10) e, extraído do `.img`, contém os
+  marcadores `GIOCHI: boot.scr em execucao` e `booti`. Imagem de debug:
+  `CONFIG_FB=y`, `CONFIG_FRAMEBUFFER_CONSOLE=y`, `fbcon.o` compilado.
+- `make lint` ok (nova seção "log de boot e dispositivo de boot").
+  `make test` **20/20**. As 6 guardas novas foram testadas ao contrário
+  (reintroduzir `mmc 0`, `ENV_FAT` em 0, tirar `/boot` da device_table, tirar
+  `MOUNT_LABEL`, tirar o `rm` dos scripts de pacote, tirar o `tee` do `rcS`):
+  todas reprovam; corrigidas, voltam a OK.
+
+**Artefatos prontos:** `dist/x55/giochi-x55-sdcard.img` (normal) e
+`dist/x55/giochi-x55-sdcard-debug.img` (com fbcon). Nenhum dos dois foi
+bootado — o aparelho é o próximo passo.
+
+**Aberto:** o `dist/` tem uma árvore de build só (~15 GB); alternar entre
+normal e `--debug` recompila o kernel (fragmento diferente), uns 6 min no
+container. `S60mtpd` (umtprd) também sobe MTP incondicionalmente — não conflita
+com a decisão atual (MTP é o modo padrão), mas entra na mesma revisão de
+scripts de pacote quando o mux de USB for fechado. O `S40network`/`S40bluetoothd`
+seguem a mesma pergunta em aberto: quem decide, o pacote ou o `giochi-init`?

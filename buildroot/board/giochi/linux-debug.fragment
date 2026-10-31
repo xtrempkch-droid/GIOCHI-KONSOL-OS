@@ -1,0 +1,31 @@
+# Giochi Konsol OS v1.2 — fragmento de kernel do MODO DIAGNOSTICO de boot.
+#
+# Nao entra na imagem normal. E anexado por:
+#   tools/build-image.sh x55 --debug        (ou GIOCHI_DEBUG_BOOT=1)
+#
+# Por que existe: com CONFIG_FB=n (decisao registrada em linux.fragment), o
+# kernel NAO tem console de video — qualquer falha antes do Launcher fica
+# invisivel: a tela simplesmente nao acende e nao ha o que ler. Este fragmento
+# liga o fbcon em cima do DRM do Rockchip, entao as mensagens do kernel
+# aparecem no painel desde o primeiro driver que sobe.
+#
+# Custo: alguns ms de boot e ~1 MB de kernel. Por isso e opcional, nao padrao.
+#
+# Limitacao honesta: o fbcon so aparece quando o DRM do kernel sobe. Se o
+# aparelho nao passa do U-Boot (bootloader do vendor errado, DDR marginal,
+# boot.scr ilegivel), a tela continua preta — nesse caso a unica fonte e o
+# console serial (ttyS2, 1500000 8N1) ou o log na particao FAT
+# (docs/BOOT-DEBUG.md).
+CONFIG_FB=y
+CONFIG_FRAMEBUFFER_CONSOLE=y
+CONFIG_FRAMEBUFFER_CONSOLE_DETECT_PRIMARY=y
+# Painel da X55 e 720x1280 com rotacao 270: permite 'fbcon=rotate:1' no
+# bootargs (ver boot.cmd e docs/BOOT-DEBUG.md) sem recompilar o kernel.
+CONFIG_FRAMEBUFFER_CONSOLE_ROTATION=y
+CONFIG_DRM_FBDEV_EMULATION=y
+CONFIG_VT=y
+CONFIG_VT_CONSOLE=y
+CONFIG_DUMMY_CONSOLE=y
+CONFIG_HW_CONSOLE=y
+# Nada de logo (o splash e do U-Boot/Launcher; ver linux.fragment).
+CONFIG_LOGO=n

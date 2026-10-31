@@ -379,6 +379,8 @@ lint:
 	@sh tools/check-device-table.sh
 	@echo "== layout do cartao =="
 	@python3 -m unittest tests.test_image_layout 2>&1 | tail -3
+	@echo "== log de boot e dispositivo de boot =="
+	@python3 -m unittest tests.test_boot_log 2>&1 | tail -3
 	@echo "== proposta de layout =="
 	@python3 -m unittest tests.test_layout_proposal 2>&1 | tail -3
 	@echo "== escala do override por aparelho =="

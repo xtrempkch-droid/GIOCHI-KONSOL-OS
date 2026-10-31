@@ -137,6 +137,22 @@ if [ -f Makefile ]; then
     done
 fi
 
+# --- 6) scripts de init de PACOTE que anulam uma decisao nossa -----------
+# O post-build.sh remove tres. Se alguem apagar esse bloco (ou o pacote mudar
+# de nome), o defeito volta em silencio: syslogd sem -O rouba /dev/log e o log
+# do cartao para de crescer; dropbear do pacote sobe SSH em todas as interfaces
+# e anula o Modo Desenvolvedor (adendo 4.6.1).
+PB=buildroot/board/giochi/post-build.sh
+if [ -f "$PB" ]; then
+    for conflito in S01syslogd S02klogd S50dropbear; do
+        if ! grep -q "$conflito" "$PB"; then
+            echo "  ERRO $PB nao remove /etc/init.d/$conflito" >&2
+            echo "       ele conflita com um script nosso (ver comentario la)" >&2
+            fail=$((fail + 1))
+        fi
+    done
+fi
+
 if [ "$fail" -ne 0 ]; then
     echo "check-image-contents: $fail problema(s) de conteudo da imagem" >&2
     exit 1

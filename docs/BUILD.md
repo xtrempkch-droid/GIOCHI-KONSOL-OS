@@ -75,8 +75,16 @@ export BUILDROOT_DIR=/caminho/para/buildroot
 
 tools/build-image.sh --check --all      # valida (sem compilar)
 tools/build-image.sh x55                # dist/x55/giochi-x55-sdcard.img
+tools/build-image.sh x55 --debug        # ...-sdcard-debug.img (fbcon na tela)
 tools/build-image.sh --all --jobs 8
 ```
+
+`--debug` (ou `GIOCHI_DEBUG_BOOT=1`) anexa
+`board/giochi/linux-debug.fragment` à lista de fragmentos do kernel e liga o
+`fbcon`: as mensagens de boot passam a aparecer **na tela**, em vez de só no
+serial. A árvore de build é reaproveitada (troca de fragmento → recompila o
+kernel, ~6 min); o artefato sai com sufixo `-debug` para não ser confundido com
+a imagem normal. Uso e limitações em [BOOT-DEBUG.md](./BOOT-DEBUG.md).
 
 | Aparelho | Defconfig | SoC | DTS | SquashFS |
 |---|---|---|---|---|
@@ -106,6 +114,7 @@ compila o Buildroot completo dentro do container:
 
 ```sh
 tools/docker-build.sh x55                    # imagem completa
+GIOCHI_DEBUG_BOOT=1 tools/docker-build.sh x55   # imagem de diagnóstico (fbcon)
 tools/docker-build.sh x55 --target uboot     # só toolchain + U-Boot
 tools/docker-build.sh x55 --target "uboot linux"
 tools/docker-build.sh --rebuild-image        # refaz o container

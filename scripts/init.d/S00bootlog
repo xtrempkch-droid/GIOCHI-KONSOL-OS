@@ -1,0 +1,196 @@
+#!/bin/sh
+# Giochi Konsol OS v1.2 — S00bootlog: log de boot gravado no cartao SD.
+#
+# PARA QUE SERVE (leia antes de mexer)
+# ------------------------------------
+# Quando o aparelho liga e a tela fica preta nao ha como saber em que ponto o
+# boot parou. Este e o PRIMEIRO script de rcS e grava tudo na particao FAT (p1)
+# do proprio cartao SD, que qualquer PC monta sem ferramenta especial:
+#
+#   giochi-boot.log          log do boot atual (kernel + servicos + Launcher)
+#   giochi-boot.1.log        log do boot anterior
+#   giochi-boot.inprogress   existe enquanto o boot nao chega ao Launcher. Se
+#                            ainda estiver la no proximo boot, o boot anterior
+#                            NAO terminou — e este log diz ate onde ele foi.
+#   giochi-boot.dmesg        copia do dmesg no instante em que este script roda
+#
+# COMO COLETAR: docs/BOOT-DEBUG.md.
+#
+# REGRAS
+#   - A raiz e SquashFS somente leitura: nada aqui escreve em /etc.
+#   - Nunca aborta o boot. Sem cartao gravavel cai para /user e depois /run.
+#   - O arquivo cresce sem rotacao durante UM boot; a rotacao e por boot
+#     (log -> giochi-boot.1.log), o que basta para 2 boots de historico.
+set -u
+
+TAG=S00bootlog
+LOG_NAME=giochi-boot.log
+PREV_NAME=giochi-boot.1.log
+MARK_NAME=giochi-boot.inprogress
+DMESG_NAME=giochi-boot.dmesg
+MOUNT=/boot
+PATH_FILE=/run/giochi/bootlog.path
+
+say() {
+    # Antes do syslogd existir, 'logger' nao tem para onde ir: o echo e o que
+    # aparece no console (tela/serial) durante o boot.
+    echo "$TAG: $*" >&2
+    logger -t "$TAG" -- "$*" 2>/dev/null || true
+}
+
+root_part() {
+    sed -n 's/.*[ ]root=\([^ ]*\).*/\1/p' /proc/cmdline 2>/dev/null | sed -n '1p'
+}
+
+# p1 do MESMO disco da raiz: /dev/mmcblk1p2 -> /dev/mmcblk1p1, /dev/sda2 ->
+# /dev/sda1. Nunca assume mmcblk0 (o SD e mmcblk1 nestes aparelhos).
+boot_part_of() {
+    case "${1:-}" in
+        *p[0-9][0-9]) echo "${1%p??}p1" ;;
+        *p[0-9])      echo "${1%p?}p1" ;;
+        *[0-9])       echo "${1%?}1" ;;
+        *)            echo "" ;;
+    esac
+}
+
+can_write() {
+    [ -d "$1" ] || return 1
+    ( : > "$1/.giochi-wtest" ) 2>/dev/null || return 1
+    rm -f "$1/.giochi-wtest" 2>/dev/null || true
+    return 0
+}
+
+# /run e sempre gravavel (tmpfs, montado no inittab antes de rcS).
+mkdir -p /run/giochi 2>/dev/null || true
+
+# ---------------------------------------------------------------- 1. montar
+# A particao de boot e FAT e o kernel traz vfat embutido (CONFIG_VFAT_FS=y).
+# 'rw' e necessario: o U-Boot so le, mas o log precisa escrever.
+try_mount() {
+    _dev=$1
+    [ -n "$_dev" ] && [ -b "$_dev" ] || return 1
+    if mountpoint -q "$MOUNT" 2>/dev/null; then
+        return 0
+    fi
+    # /boot precisa existir na imagem: a raiz e somente leitura e nao da para
+    # criar diretorio em runtime (esta em board/giochi/device_table.txt).
+    [ -d "$MOUNT" ] || return 1
+    mount -t vfat -o rw,noatime,utf8 "$_dev" "$MOUNT" 2>/dev/null || return 1
+    return 0
+}
+
+mounted=""
+try_mount "$(boot_part_of "$(root_part)")" && mounted=$MOUNT
+if [ -z "$mounted" ]; then
+    # Fallback: procura a primeira particao FAT que aparecer. Cobre cartao
+    # lido por leitor USB (sda) e numeracao inesperada.
+    for cand in /dev/mmcblk?p1 /dev/mmcblk??p1 /dev/sd?1 /dev/sd??1; do
+        try_mount "$cand" && { mounted=$MOUNT; break; }
+    done
+fi
+
+# ------------------------------------------------------------- 2. destino
+LOG_DIR=""
+if [ -n "$mounted" ] && can_write "$mounted"; then
+    LOG_DIR=$mounted
+elif mountpoint -q /user 2>/dev/null && can_write /user; then
+    LOG_DIR=/user
+    say "particao de boot nao gravavel; log em /user (ext4, exige PC Linux)"
+else
+    LOG_DIR=/run/giochi
+    say "sem armazenamento gravavel; log volatil em /run/giochi"
+fi
+
+LOG=$LOG_DIR/$LOG_NAME
+MARK=$LOG_DIR/$MARK_NAME
+
+# Desligar sem recompilar: 'touch nolog' na particao 1 (docs/BOOT-DEBUG.md §5).
+if [ -f "$LOG_DIR/nolog" ]; then
+    say "log de boot desativado (arquivo 'nolog' em $LOG_DIR)"
+    exit 0
+fi
+
+# ------------------------------------------------------------ 3. rotacao
+# Um boot de historico: o log corrente vira .1. Nao apaga nada alem disso.
+if [ "$LOG_DIR" != "/run/giochi" ]; then
+    if [ -f "$LOG" ]; then
+        mv -f "$LOG" "$LOG_DIR/$PREV_NAME" 2>/dev/null || true
+    fi
+    rm -f "$LOG_DIR/$DMESG_NAME" 2>/dev/null || true
+fi
+
+# ------------------------------------------------- 4. o boot anterior caiu?
+incomplete=""
+if [ -f "$MARK" ]; then
+    incomplete=$(sed -n '1p' "$MARK" 2>/dev/null)
+fi
+
+# ------------------------------------------------------------- 5. cabecalho
+{
+    echo "================================================================"
+    echo " Giochi Konsol OS — log de boot"
+    echo " arquivo...: $LOG"
+    echo " inicio....: $(date -u '+%Y-%m-%d %H:%M:%S UTC' 2>/dev/null || echo '?')"
+    echo " cmdline...: $(cat /proc/cmdline 2>/dev/null)"
+    echo " kernel....: $(uname -srm 2>/dev/null)"
+    echo " aparelho..: $(tr -d '\0' </proc/device-tree/compatible 2>/dev/null | tr ',' '\n' | sed -n '1p')"
+    echo " raiz......: $(root_part)"
+    echo " boot......: $(boot_part_of "$(root_part)")"
+    echo " particoes.:"
+    # awk e nao sed: o formato de /proc/partitions e
+    # "major minor #blocks nome" e uma expressao regular com grupos opcionais
+    # perdia o major e casava com o cabecalho (medido no harness).
+    awk 'NR > 1 && NF >= 4 { printf "    %s %s %s %s\n", $1, $2, $3, $4 }' \
+        /proc/partitions 2>/dev/null
+    if [ -n "$incomplete" ]; then
+        echo ""
+        echo " *** O BOOT ANTERIOR NAO TERMINOU ***"
+        echo " *** comecou em: $incomplete"
+        echo " *** o log dele esta em $PREV_NAME"
+    fi
+    echo "================================================================"
+} >> "$LOG" 2>/dev/null || {
+    # Se nem isso funcionou, cai para tmpfs e recomeca.
+    LOG_DIR=/run/giochi
+    LOG=$LOG_DIR/$LOG_NAME
+    MARK=$LOG_DIR/$MARK_NAME
+    say "escrita falhou em $LOG_DIR; usando $LOG"
+}
+
+# ---------------------------------------------------- 6. dmesg ate agora
+# O syslogd/klogd so comeca a valer daqui para frente; o que o kernel ja
+# imprimiu (inclusive erros de driver e de montagem da raiz) esta no ring
+# buffer e seria perdido num reboot.
+dmesg > "$LOG_DIR/$DMESG_NAME" 2>/dev/null || true
+{
+    echo "--- dmesg no inicio do userspace (copia em $DMESG_NAME) ---"
+    dmesg 2>/dev/null
+    echo "--- fim do dmesg ---"
+} >> "$LOG" 2>/dev/null || true
+
+# --------------------------------------------- 7. syslogd + klogd daqui pra frente
+# Todo 'logger' do sistema (lib.sh: giochi_log, scripts de init, giochi-init)
+# passa a cair no arquivo. klogd repassa o kernel; syslogd grava com write()
+# direto no arquivo (-O), sem buffer — o que sobrevive a um desligamento bruto.
+if command -v syslogd >/dev/null 2>&1; then
+    # -s 0: sem rotacao do syslogd (a rotacao e por boot, feita acima).
+    syslogd -O "$LOG" -s 0 -b 0 >/dev/null 2>&1 || \
+        say "aviso: syslogd nao subiu; so o log direto estara no arquivo"
+    if command -v klogd >/dev/null 2>&1; then
+        klogd >/dev/null 2>&1 || say "aviso: klogd nao subiu"
+    fi
+else
+    say "aviso: syslogd ausente no busybox; so o log direto estara no arquivo"
+fi
+
+# ----------------------------------------------- 8. publica o caminho
+# O rcS le este arquivo para duplicar ('tee') a saida dos servicos, e o
+# giochi-init/Launcher para o proprio stderr.
+echo "$LOG" > "$PATH_FILE" 2>/dev/null || true
+
+# ------------------------------------------------------- 9. marca o boot
+printf '%s\n' "$(date -u '+%Y-%m-%d %H:%M:%S UTC' 2>/dev/null || echo '?')" \
+    > "$MARK" 2>/dev/null || true
+
+say "log de boot: $LOG"
+exit 0

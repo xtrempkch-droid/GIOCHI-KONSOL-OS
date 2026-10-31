@@ -21,6 +21,11 @@
 # smoke-test sem ele, use --fallback-dts: a imagem eh marcada como de teste e
 # provavelmente NAO inicia video/controles corretamente.
 #   GIOCHI_OUT=dist                    (default: dist)
+#   GIOCHI_DEBUG_BOOT=1                imagem de diagnostico: liga o fbcon no
+#                                      kernel (mensagens de boot na TELA). O
+#                                      artefato vira <aparelho>/giochi-
+#                                      <aparelho>-sdcard-debug.img; a arvore
+#                                      de build e a mesma (incremental).
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -32,6 +37,7 @@ LIST=0
 ALL=0
 FALLBACK=0
 VENDOR_UBOOT=0
+DEBUG_BOOT=${GIOCHI_DEBUG_BOOT:-0}
 DEVICES=""
 
 usage() {
@@ -45,6 +51,8 @@ uso: tools/build-image.sh [opcoes] [aparelho...]
   --jobs N         paralelismo do make
   --fallback-dts   permite usar o DTS de fallback (imagem de TESTE)
   --vendor-uboot   exige U-Boot do vendor (GIOCHI_UBOOT_DIR/BIN)
+  --debug          imagem de diagnostico: fbcon no kernel (mensagens de boot
+                   na tela); o artefato sai como ...-sdcard-debug.img
   -h, --help       esta ajuda
 
 Aparelhos disponiveis: $(device_ids | tr '\n' ' ')
@@ -77,6 +85,7 @@ while [ $# -gt 0 ]; do
         --check) CHECK=1 ;;
         --fallback-dts) FALLBACK=1 ;;
         --vendor-uboot) VENDOR_UBOOT=1 ;;
+        --debug) DEBUG_BOOT=1 ;;
         --out) shift; OUT=${1:?--out exige um diretorio} ;;
         --jobs) shift; JOBS=${1:?--jobs exige um numero} ;;
         -h|--help) usage; exit 0 ;;
@@ -207,7 +216,17 @@ build_device() {
         return 1
     }
 
+    # A arvore de build e SEMPRE a mesma: criar dist/<id>-debug obrigaria a
+    # recompilar toolchain + kernel + tudo so para trocar um fragmento de
+    # kernel. O que muda e o NOME do artefato, para nao gravar o cartao com a
+    # imagem errada (a de diagnostico tem fbcon e kernel maior).
+    if [ "$DEBUG_BOOT" = "1" ]; then
+        img_suffix="-debug"
+    else
+        img_suffix=""
+    fi
     out="$OUT/$id"
+    img_name="giochi-$id-sdcard$img_suffix.img"
     mkdir -p "$out"
     echo "== compilando $id -> $out =="
 
@@ -287,6 +306,26 @@ build_device() {
         fi
     fi
 
+    # Modo diagnostico: acrescenta o fragmento de fbcon a lista de fragmentos
+    # JA declarada no defconfig. A lista e derivada, nao repetida, para nao
+    # virar um segundo lugar onde os mesmos nomes de arquivo vivem (AGENTS 3.20).
+    if [ "$DEBUG_BOOT" = "1" ]; then
+        dbg_rel='$(BR2_EXTERNAL_GIOCHI_PATH)/board/giochi/linux-debug.fragment'
+        dbg_file="$ROOT/buildroot/board/giochi/linux-debug.fragment"
+        if [ ! -f "$dbg_file" ]; then
+            echo "ERRO $id: $dbg_file ausente" >&2
+            return 1
+        fi
+        sed -i "s|^\(BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES=\"[^\"]*\)\"$|\1 $dbg_rel\"|" \
+            "$effective"
+        if ! grep -q "linux-debug.fragment" "$effective"; then
+            echo "ERRO $id: nao consegui anexar linux-debug.fragment" >&2
+            echo "     o defconfig nao tem BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES?" >&2
+            return 1
+        fi
+        echo "  MODO DIAGNOSTICO: fbcon ligado (mensagens do kernel na tela)"
+    fi
+
     export GIOCHI_DEVICE="$id"
 
     # U-Boot: mainline (defconfig) ou binario do vendor.
@@ -315,19 +354,19 @@ build_device() {
 
     images="$out/build/images"
     if [ -f "$images/sdcard.img" ]; then
-        cp "$images/sdcard.img" "$out/giochi-$id-sdcard.img"
+        cp "$images/sdcard.img" "$out/$img_name"
         summary="$summary
-  $id: $out/giochi-$id-sdcard.img ($(du -h "$out/giochi-$id-sdcard.img" | cut -f1))"
+  $id: $out/$img_name ($(du -h "$out/$img_name" | cut -f1))"
         # O artefato de distribuicao e o comprimido (~40 MB contra ~900 MB):
         # o .img cru e quase todo zero e nao deve ser publicado.
         for ext in xz zst gz; do
             [ -f "$images/sdcard.img.$ext" ] || continue
-            cp "$images/sdcard.img.$ext" "$out/giochi-$id-sdcard.img.$ext"
-            ( cd "$out" && sha256sum "giochi-$id-sdcard.img.$ext" \
-                  > "giochi-$id-sdcard.img.$ext.sha256" )
+            cp "$images/sdcard.img.$ext" "$out/$img_name.$ext"
+            ( cd "$out" && sha256sum "$img_name.$ext" \
+                  > "$img_name.$ext.sha256" )
             summary="$summary
-      -> giochi-$id-sdcard.img.$ext ($(du -h \
-            "$out/giochi-$id-sdcard.img.$ext" | cut -f1))"
+      -> $img_name.$ext ($(du -h \
+            "$out/$img_name.$ext" | cut -f1))"
             break
         done
     else
