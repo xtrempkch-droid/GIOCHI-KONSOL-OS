@@ -180,6 +180,7 @@ log do cartão (seção 1) ou o fbcon (seção 2) mostra onde.
 | `boot.scr` roda, mas "FALHA ao ler Image" | Partição 1 sem `Image`, ou `giochi_mmc` errado. |
 | Kernel inicia e para em `Waiting for root device` | O `root=` não existe: slot vazio ou imagem gravada a partir do offset errado. |
 | Boot chega ao userspace e trava | `giochi-boot.log` na partição 1: a última linha do `rcS` antes do silêncio é o culpado. |
+| `Mounted root` e depois `No working init found` + `I/O error` | Endereço do cartão, não do build: seção 7 (`tools/verify-card.py`) |
 | Boot "ok" mas tela preta | O desenho dos widgets do Launcher ainda é esboço (`render.cpp`). Use `giochi-boot.log` para confirmar que o processo está vivo. |
 | `/user` não grava nada | `LABEL=GIOCHI_USER` no `fstab` exige `CONFIG_FEATURE_MOUNT_LABEL` no BusyBox (está em `busybox.fragment`). |
 
@@ -314,3 +315,70 @@ A imagem é a **mesma** para cartão e eMMC porque a raiz é achada por
 `root=PARTUUID=47494f43-02` (assinatura MBR fixa no `genimage.cfg`), e não por
 `/dev/mmcblk1p2`. Sem isso a mesma imagem gravada no eMMC viraria `mmcblk0p2` e
 o kernel pararia em `Waiting for root device`.
+
+---
+
+## 7. O kernel monta a raiz e sai com `No working init found`
+
+Este é o estágio seguinte a "nada na tela". O console mostra algo assim:
+
+```
+VFS: Mounted root (squashfs filesystem) readonly on device 179:2.
+I/O error, dev mmcblk1, sector 213180 op 0x0:(READ) flags 0x800
+SQUASHFS error: Failed to read block 0x66: -5
+Starting init: /sbin/init exists but couldn't execute it (error -5)
+Kernel panic - not syncing: No working init found.
+```
+
+Aqui **nada está errado no build**: o kernel bootou, o DTB correto foi usado, o
+`root=PARTUUID` resolveu e o SquashFS montou (o superbloco foi lido). O que falha
+é a **leitura de blocos de dados** — e `-5` é `EIO`, erro de hardware.
+
+### Primeiro: a imagem está boa?
+
+Antes de acusar o cartão, confirme que o arquivo gerado está íntegro:
+
+```sh
+# extrai tudo; qualquer bloco corrompido faz o comando falhar
+unsquashfs -d /tmp/ex rootfs.squashfs && echo "imagem OK"
+```
+
+Se a extração termina sem erro, o defeito está entre o PC e o cartão.
+
+### Segundo: gravação ou mídia? `tools/verify-card.py` responde
+
+Regrave com **`conv=fsync`** (isto é o que mais causa este sintoma: `dd` sem
+`conv=fsync`, com o cartão removido antes do flush, grava só o começo) e depois
+compare byte a byte:
+
+```sh
+sudo umount /dev/sdX* 2>/dev/null
+sudo dd if=dist/x55/giochi-x55-sdcard.img of=/dev/sdX bs=4M conv=fsync status=progress
+sudo sync
+sudo tools/verify-card.py dist/x55/giochi-x55-sdcard.img /dev/sdX
+```
+
+O verificador dá um de três resultados, com ações diferentes:
+
+| Resultado | Significado | Ação |
+|---|---|---|
+| `OK: o cartao e' identico` | gravação íntegra | o problema é outro (veja as seções 1–6) |
+| `DADOS DIFERENTES` | a gravação **não terminou** | regrave com `conv=fsync` e verifique de novo |
+| `ERRO(S) DE LEITURA` | setor defeituoso na **mídia** | regrave (a controladora realoca); se repetir no mesmo setor, **troque o cartão** |
+
+A ferramenta é **somente leitura** no dispositivo e recusa alvo com partição
+montada (para não confundir o cartão com o disco do sistema).
+
+### Se acontecer sempre, no mesmo setor
+
+Cartão SD de grande capacidade (o X35H/ X55 aceita SDXC) em leitor integrado é
+o caso mais comum. Duas coisas ajudam, nesta ordem:
+
+1. **Grave com outro leitor** (leitor externo USB, de preferência).
+2. Diminua a velocidade da interface SD no kernel (`max-frequency` abaixo de
+   150 MHz no DTS do `&sdmmc0`): cartão marginal a SDR104 erra leitura de forma
+   esporádica, e o log mostra sempre o mesmo setor só porque o SquashFS pede
+   sempre os mesmos blocos.
+
+O log do serial é o que permite dizer em qual das duas você está: sem
+`I/O error, dev mmcblkX` o problema **não** é mídia.

@@ -808,6 +808,44 @@ Conclusão prática: um teste intermitente é uma pergunta, não um incômodo.
 Antes de subir timeout, instrumente o **processo** (wrapper que registra
 `$?` — foi assim que `rc=141` apareceu) para saber se o servidor morreu.
 
+### 3.42 `Mounted root` + `No working init found` = cartão, não build
+
+Segundo boot medido no console serial (X35H). O kernel bootou, o `PARTUUID`
+resolveu, o SquashFS **montou** — e então:
+
+```
+VFS: Mounted root (squashfs filesystem) readonly on device 179:2.
+I/O error, dev mmcblk1, sector 213180 op 0x0:(READ) flags 0x800
+SQUASHFS error: Failed to read block 0x66: -5
+Starting init: /sbin/init exists but couldn't execute it (error -5)
+Kernel panic - not syncing: No working init found.
+```
+
+`-5` é `EIO`. **Nada disso é erro de build**, e é fácil perder horas nele:
+
+- `unsquashfs -d /tmp/ex rootfs.squashfs` extraiu **tudo** (rc=0) → a imagem
+  gerada está íntegra;
+- os setores reclamados (`213088`, `213180`, `213184`, offset 104,0–104,1 MiB,
+  ou seja 49–98 KiB *dentro* do SquashFS) têm **dados válidos** no arquivo.
+
+Ou seja, o defeito está entre o PC e a mídia. Duas causas com ações opostas:
+
+| Medição | Causa | Ação |
+|---|---|---|
+| dados diferentes no cartão | gravação não terminou (`dd` sem `conv=fsync`, cartão removido cedo) | regravar |
+| `ERRO(S) DE LEITURA` no cartão | setor ruim na mídia | regravar (realoca); repetindo no mesmo setor, trocar o cartão |
+
+- Ferramenta: `tools/verify-card.py` (leitura pura, recusa alvo montado).
+  Suíte `verificador-de-cartao`.
+- **Regra geral**: depois de gravar, compare. O `dd` termina com sucesso mesmo
+  quando o cartão devolve lixo.
+- Ordem de diagnóstico quando a tela não acende, do mais barato ao mais caro:
+  1. serial (tem linha do tempo?);
+  2. `docs/BOOT-DEBUG.md` §1.5 (quem está rodando: nosso sistema ou o de
+     fábrica?);
+  3. log na partição FAT (o `rcS` chegou a rodar?);
+  4. §7 (erro de I/O = cartão).
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):
@@ -1690,3 +1728,58 @@ container. `S60mtpd` (umtprd) também sobe MTP incondicionalmente — não confl
 com a decisão atual (MTP é o modo padrão), mas entra na mesma revisão de
 scripts de pacote quando o mux de USB for fechado. O `S40network`/`S40bluetoothd`
 seguem a mesma pergunta em aberto: quem decide, o pacote ou o `giochi-init`?
+
+### 2026-10-31 (18) — Copilot (serial no aparelho: o boot chegou ao kernel)
+
+O mantenedor ligou um adaptador CH340, e o serial respondeu tudo o que oito
+tentativas de adivinhação não responderam. Dois boots capturados.
+
+**Boot 1 — imagem antiga (sem as correções):**
+`boot.scr` rodou, `Image` leu 47 516 160 B e o `booti` falhou por device tree
+(`Failed to load 'dtbs/rockchip/rk...'`). Foi essa linha que fechou o §3.38.
+
+**Boot 2 — imagem corrigida (a que está no cartão agora):**
+
+```
+GIOCHI: boot.scr em execucao (mmc=1 slot=2 root=PARTUUID=47494f43-02)
+GIOCHI: dtb dtbs/rockchip/rk3566-powkiddy-x55.dtb
+GIOCHI: Image carregada de mmc 1:1
+GIOCHI: booti kernel=0x02000000 fdt=0x12000000
+Starting kernel ...
+mmcblk1: mmc1:5048 SD128 116 GiB
+ mmcblk1: p1 p2 p3 p4
+VFS: Mounted root (squashfs filesystem) readonly on device 179:2.
+```
+
+**Todas as correções da entrada (17) estão provadas em hardware**: DTB com
+subdiretório, `PARTUUID` resolvendo a raiz, `boot.scr` regerado, kernel subindo.
+
+**O que ainda falha — e não é build (§3.42):** três `I/O error` em
+`mmcblk1` (setores 213088/213180/213184, ~104 MiB), `SQUASHFS error: Failed to
+read block 0x66: -5` e `No working init found`. Medido que a imagem **está
+íntegra** (`unsquashfs` extraiu tudo, rc=0) e que aqueles setores têm dados
+válidos no arquivo. Portanto: gravação/mídia. O cartão usado era SDXC de 116 GB.
+
+**Feito a partir disso:**
+
+- `tools/verify-card.py` + suíte `verificador-de-cartao` (8 checagens, testadas
+  com arquivos regulares; o caso de EIO é verificado no código, não é
+  simulável). Separa "gravação incompleta" de "setor ruim", que exigem ações
+  opostas.
+- `docs/BOOT-DEBUG.md` §7 com o sintoma, a ordem de diagnóstico e a dica de
+  `max-frequency` no `&sdmmc0` para cartão marginal em SDR104.
+- Cartão novo (29,7 GB) gravado com `dd conv=fsync` e **verificado byte a byte**:
+  `sha256` do cartão = `sha256` da imagem
+  (`fd09e7df…5166`); MBR com `43 4f 49 47` (→ `PARTUUID=47494f43-02`) e as 4
+  partições (`GIOCHI_BOOT` 80M, system-a/b 160M, `GIOCHI_USER` 512M) conferidas
+  no dispositivo, não só na imagem.
+
+**Armadilha de método**: dois containers lendo `/dev/ttyUSB0` ao mesmo tempo
+corrompem o log — cada um rouba bytes do outro, e o texto sai truncado como se
+fosse problema de baud. Antes de acusar o adaptador, verifique se há **um**
+leitor (`docker ps`, `fuser /dev/ttyUSB0`).
+
+**Aberto:** o X35H segue usando imagem de X55 (painel 640×480 × 720×1280); o
+build `x35h --fallback-dts` estava em andamento. Se o novo cartão bootar, o
+próximo dado é o `giochi-boot.log` na partição FAT — ele existe independente de
+painel.

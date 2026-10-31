@@ -24,7 +24,7 @@ fail=0
 # --- 1. nada de ferramenta de PC no TARGET --------------------------------
 # Estes arquivos pertencem ao lado do PC (autor/publicador) por definicao.
 PC_ONLY="giochi-pack.sh giochi-sign.sh giochi-keys.sh giochi-forge \
-         serial-capture.py serial-capture.sh"
+         serial-capture.py serial-capture.sh verify-card.py"
 
 for mk in buildroot/package/*/*.mk; do
     [ -f "$mk" ] || continue

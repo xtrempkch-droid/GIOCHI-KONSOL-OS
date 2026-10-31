@@ -98,6 +98,19 @@ if command -v python3 >/dev/null 2>&1; then
     fi
 fi
 
+# Verificador do cartao (tools/verify-card.py). Distingue "a gravacao nao
+# terminou" de "o cartao tem setor ruim" -- medido num boot real que parou em
+# "No working init found" com a imagem integra e o cartao devolvendo EIO.
+if command -v python3 >/dev/null 2>&1; then
+    total=$((total + 1))
+    if (cd "$ROOT" && python3 -m unittest tests.test_verify_card) >/dev/null 2>&1; then
+        echo "OK     verificador-de-cartao (python)"
+    else
+        echo "FALHA  verificador-de-cartao (python)"
+        fail=$((fail + 1))
+    fi
+fi
+
 # Proposta de layout (docs/proposta/): renders nativos das 5 abas nos dois
 # paineis (640x480 e 1280x720) + as assercoes geometricas do proprio gerador.
 # Sem Pillow a suite se auto-pula (SkipTest), como as outras de imagem.

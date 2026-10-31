@@ -6,6 +6,15 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 ## [Não publicado]
 
 ### Adicionado
+- **`tools/verify-card.py`** + suíte `verificador-de-cartao`: compara o cartão
+  gravado com a imagem byte a byte e separa duas causas com ações opostas —
+  "a gravação não terminou" (`dd` sem `conv=fsync`) de "o cartão tem setor
+  ruim". Nasceu de um boot real que parou em `No working init found` com a
+  imagem íntegra (`unsquashfs` extraiu tudo) e o cartão devolvendo `EIO`.
+  Leitura pura, recusa alvo com partição montada.
+- **[docs/BOOT-DEBUG.md](docs/BOOT-DEBUG.md) §7**: sintoma `Mounted root` +
+  `No working init found` + `I/O error`, ordem de diagnóstico e a nota sobre
+  `max-frequency` no `&sdmmc0` para cartão marginal em SDR104.
 - **`tools/serial-capture.py`**: lê o console UART2 (`ttyS2`, 1500000 8N1) pelo
   PC, autodetecta o adaptador, configura via `stty` (o `termios` do Python não
   tem constante para 1500000) e grava com carimbo de tempo por linha. Foi com
@@ -79,6 +88,14 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 - `tools/check-links.py` agora valida também as tags de imagem HTML.
 
 ### Corrigido
+- **Primeiro boot validado em hardware.** O console serial da X55 mostrou,
+  com a imagem corrigida, a cadeia inteira funcionando:
+  `boot.scr em execucao (root=PARTUUID=47494f43-02)` →
+  `dtb dtbs/rockchip/rk3566-powkiddy-x55.dtb` → `Image carregada` →
+  `Starting kernel` → `Mounted root (squashfs)`. Todas as correções do bloco
+  anterior estão provadas no aparelho, não só na configuração. O que ainda
+  falha é leitura de cartão (`I/O error` em `mmcblk1`), não build — ver o
+  verificador de cartão acima.
 - **`SIGPIPE` matava o `giochi-init`.** `giochi_sock_write_all` usava `write()`;
   se um cliente fechasse antes de ler a resposta inteira, o processo morria com
   `rc=141` (128+SIGPIPE) sem log nenhum. No aparelho quem fala com o
