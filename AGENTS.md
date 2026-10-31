@@ -1080,6 +1080,28 @@ completo e bindou na hora. O oops que vem em seguida
   target_installed,images_installed}` antes do build (ou `make linux-dirclean`,
   que recompila tudo).
 
+### 3.49 A API de conteúdo do GitHub trunca em 1000 entradas — e mente por omissão
+
+Ao avaliar o SuperTux (ver [docs/SUPERTUX.md](docs/SUPERTUX.md)) precisei saber
+quais pacotes o Buildroot 2024.02 tem. Pedi a listagem de `package/` e filtrei
+por nome — o resultado foi **"supertux: não existe"**, **"sdl2: não existe"**,
+"physfs: não existe". Os três existem.
+
+`GET /repos/{dono}/{repo}/contents/{dir}` devolve **no máximo 1000 entradas**, e
+`package/` do Buildroot passa de 3.000. A resposta não vem marcada como
+incompleta (diferente da API de *tree*, que tem o campo `truncated`): ela
+simplesmente acaba. Filtrar essa lista produz **falso negativo silencioso** —
+justo o tipo de defeito que este arquivo cataloga. E a conclusão errada
+("o Buildroot não empacota SuperTux") teria custado um pacote escrito à mão.
+
+- **Sonde por caminho**, não por listagem: `contents/package/<nome>?ref=<tag>`
+  devolve **200** ou **404**, sem ambiguidade.
+- Para somar tamanhos de muitos arquivos, use a API de *tree*
+  (`git/trees/<ref>?recursive=1`) e **cheque o campo `truncated`** antes de
+  acreditar no total.
+- Vale para qualquer inventário remoto: se a resposta tem limite de página,
+  "não achei" só vale depois de esgotar as páginas.
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):
@@ -2144,3 +2166,56 @@ um único caminho que devolve `-EINVAL` **sem logar**
   agora ele **imprime** `failed to attach bridge ... to encoder ...: -22`, que
   diz qual bridge recusou — antes esse log não existia porque o ponteiro era
   nulo antes de chegar lá.
+
+### 2026-10-31 (21) — Copilot (viabilidade do SuperTux: 40 fps, tamanho e licença)
+
+O mantenedor perguntou se valia adicionar o **SuperTux** e se **40 fps** não
+estraga a jogabilidade. Resposta e decisão em
+[docs/SUPERTUX.md](docs/SUPERTUX.md); **nada foi adicionado** (decisão:
+"não adicionar agora, só registrar a análise").
+
+**A pergunta dos 40 fps tem resposta no fonte, não em opinião.** O 0.6.3 separa
+passo lógico de desenho (`ScreenManager::loop_iter`): `ms_per_step = 15 ms`
+(`LOGICAL_FPS = 64.0`, mas o `static_cast<Uint32>(1000/64)` **trunca** para 15,
+então o passo real é 66,7 Hz), `steps = elapsed_ticks / ms_per_step` e
+`max_steps_per_frame = ceilf((1/fps)/0.015)` limitado a 4. A 40 fps sobram 1,67
+passos por quadro e o teto calculado é 2: **a física roda correta e a velocidade
+não muda**; o teto só morde abaixo de ~16,7 fps, onde o jogo desacelera de
+propósito para o jogador ainda conseguir controlar o Tux. O que 40 fps custa é
+fluidez da rolagem, não controle.
+
+**Três bloqueios, nenhum de desempenho:**
+
+1. **Tamanho (o decisivo).** `data/` = **234 MB crus em 4.061 arquivos**;
+   compressão medida por amostra (`.ogg` 1,09x, `.png` 1,10x, `.stl` 23,89x,
+   `.po` 5,71x, `.wav` 1,99x, `.otf` 1,33x) dá **≈160 MB** no SquashFS. Com os
+   28 MB atuais, **188 MB contra a partição `system-a` de 160 MB**. Os 132 MB
+   de áudio+imagem já estão comprimidos, então nenhum ajuste de SquashFS
+   resolve; só caberia sem música (≈108 MB) ou aumentando a partição — e aí o
+   `.xz` publicado sairia de 41 MB para ~170 MB.
+2. **Licença.** `GPL-3.0+` no código **e** `CC-BY-SA`/`GPL-2.0+` nas imagens,
+   música e sons. Mesmo §6 (*Installation Information*) × raiz assinada já
+   discutido na entrada (14); o caminho é `/user`, como lá.
+3. **Contrato de jogo padrão.** O schema exige `runtime ∈ {godot, retroarch,
+   proton}` e `scripts/bench.gd` + `tests/run_tests.sh`; SuperTux é binário
+   nativo C++. Nem entraria em `assets/default-games.json` com licença livre.
+
+**Plataforma, para a próxima tentativa:** o Buildroot 2024.02 **tem** o pacote
+(`supertux 0.6.3`), mas o `Config.in` exige `BR2_PACKAGE_XORG7` e
+`HAS_LIBGL` (GLX), que não temos, e o `.mk` fixa `-DENABLE_OPENGLES2=OFF`. O
+CMake **suporta** GLES2 (`pkg_check_modules(GLESV2)`), que é o que o nosso
+Mesa/panfrost + SDL2 KMSDRM entrega — o patch é habilitar GLES2 e cair
+`XORG7`/`libgl`/`libglew`. A versão 0.7.0 está fora: depende de **SDL3**, que
+não existe no Buildroot 2024.02.
+
+**Armadilha nova (§3.49):** a API de conteúdo do GitHub trunca em 1000 entradas
+e, filtrando a listagem de `package/`, cheguei a "supertux/sdl2 não existem" —
+ambos existem. Sondar por caminho (200/404), e checar `truncated` na API de
+tree.
+
+**Verificação (tudo medido, nada estimado sem dizer que é estimativa):**
+tamanho e razões de compressão por amostra local com `zstd -19`; exigências e
+versão lidas do `supertux.mk`/`Config.in` do Buildroot 2024.02.x; passo lógico
+lido do `screen_manager.cpp`/`constants.hpp` no tag `v0.6.3`. **Não rodou:**
+build do SuperTux, e **nada em aparelho** — o fps real no Mali-G52/G31 continua
+desconhecido.

@@ -66,6 +66,15 @@ em `/user`, fora da imagem assinada) estão em
 toda entrada precisa de **evidência** de licença, e o jogo GPL precisa
 continuar registrado em `excluded` (para ninguém reverter sem saber).
 
+## Candidatos já avaliados
+
+Jogo proposto e **recusado** fica com a análise documentada, para a decisão não
+depender de memória:
+
+| Jogo | Veredito | Por quê |
+|---|---|---|
+| [SuperTux](SUPERTUX.md) | **não adicionado** (2026-10-31) | 40 fps é jogável (o motor tem passo lógico fixo), mas o `data/` ocupa ≈160 MB comprimido — não cabe na partição de 160 MB —, a licença é GPL-3.0+ com assets CC-BY-SA, e é binário nativo (o contrato de jogo padrão hoje é Godot). Ver a análise completa. |
+
 ## Benchmark
 
 O mesmo comando funciona no PC e no aparelho:
