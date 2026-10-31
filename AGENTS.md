@@ -447,6 +447,20 @@ apareceram:
 - **Regra geral**: nunca aponte `SITE_METHOD = local` para um diretório que
   contém a saída do build. Se precisar da árvore, copie só o que é fonte.
 
+### 3.24 CRLF no índice vira diff de 2 mil linhas
+
+`.gitattributes` declara `* text=auto eol=lf`, e isso normaliza quando o git
+toca no arquivo — mas um blob commitado com CRLF fica assim até alguém
+normalizar. Na próxima edição o diff sai como **arquivo inteiro** (2 296 linhas
+no caso do `AGENTS.md`), escondendo a mudança real.
+
+- Guarda: `tools/check-tracked.sh` usa `git ls-files --eol` e falha em
+  `i/crlf`. Corrija com `git add --renormalize .`.
+- **Não use `$'\r'` para detectar CRLF**: é bashism e o script roda com `sh`
+  (dash), onde o padrão vira o texto `\r` — uma versão anterior da guarda
+  acusou 8 arquivos que estavam corretos. `git ls-files --eol` é portátil e
+  reporta índice (`i/`) e cópia de trabalho (`w/`) separados.
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):

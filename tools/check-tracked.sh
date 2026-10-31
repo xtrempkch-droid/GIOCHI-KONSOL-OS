@@ -80,5 +80,33 @@ for s in rcS rcK; do
     fi
 done
 
+# --- EOL: o alvo e Linux, todo texto versionado tem de estar em LF ---------
+# .gitattributes declara `* text=auto eol=lf`, mas isso so normaliza quando o
+# git toca no arquivo: um commit vindo de ferramenta no Windows pode guardar
+# CRLF no blob. O efeito aparece depois, como diff de arquivo inteiro (2 mil
+# linhas) na proxima alteracao -- ja aconteceu com AGENTS.md.
+#
+# Usa `git ls-files --eol`, que reporta o EOL do INDICE (i/) e da copia de
+# trabalho (w/) por arquivo. Nao use `$'\r'`: e bashism, e com `sh` (dash) o
+# padrao vira o texto "\r" -- foi assim que uma versao anterior desta guarda
+# acusou 8 arquivos que estavam corretos.
+crlf_n=0
+while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    f=${line##*'	'}
+    echo "  CRLF no indice: $f" >&2
+    crlf_n=$((crlf_n + 1))
+done <<FILELIST
+$(git ls-files --eol -- . ':(exclude)build' ':(exclude)dist' \
+    ':(exclude)output' 2>/dev/null | grep '^i/crlf' || true)
+FILELIST
+
+if [ "$crlf_n" -ne 0 ]; then
+    echo "check-tracked: $crlf_n arquivo(s) com CRLF no indice (o repo usa LF)" >&2
+    echo "               fixe com: git add --renormalize ." >&2
+    bad=$((bad + crlf_n))
+fi
+
+
 [ "$bad" -eq 0 ] || exit 1
 echo "ok"

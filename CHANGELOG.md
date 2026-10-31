@@ -52,6 +52,12 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
   `SITE = $(if $(GIOCHI_PKGSRC),$(GIOCHI_PKGSRC),<raiz>)`.
   `tools/check-image-contents.sh` (em `make lint`) recusa `SITE_METHOD = local`
   sem `GIOCHI_PKGSRC` e exige o `export` no `build-image.sh`.
+- **CRLF no índice**: `AGENTS.md` e `assets/devices/x55/library.json` estavam
+  commitados com CRLF apesar do `* text=auto eol=lf`, então a edição seguinte
+  saía como diff de 2 mil linhas. Normalizados para LF, e
+  `tools/check-tracked.sh` passou a falhar em `i/crlf` (via
+  `git ls-files --eol`, portátil — `$'\r'` é bashism e dava falso positivo com
+  `sh`).
 - `tools/docker-build.sh` não exportava `BUILDROOT_DIR` para dentro do
   container, então falhava antes de compilar; e o Dockerfile não tinha
   `xz-utils`, que o `post-image.sh` usa para comprimir o `.img`.
