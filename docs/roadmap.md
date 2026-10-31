@@ -25,18 +25,36 @@ Especificação normativa: [architecture-v1.2.md](./architecture-v1.2.md).
 
 ## 1. Colocar uma imagem para bootar no aparelho 🧪
 
-**É a prioridade zero.** Toda a configuração está validada contra as árvores
-reais (Buildroot 2024.02.13, U-Boot v2024.10, rkbin no commit pinado), mas
-nenhuma imagem deste repositório foi gravada e ligada.
+**É a prioridade zero.** Configuração validada contra as árvores reais
+(Buildroot 2024.02.13, U-Boot v2024.10, rkbin no commit pinado).
 
-- [ ] `tools/build-image.sh x55` no CI (workflow **Images**, input `x55`).
-- [ ] Gravar `dist/x55/giochi-x55-sdcard.img` e ligar a X55.
-- [ ] Coletar: tela liga? serial do U-Boot? `dmesg`? o Launcher sobe?
-- [ ] Registrar o resultado em [HANDOFF.md](./HANDOFF.md) com o log colado.
+**Progresso medido no aparelho (2026-10-31, console serial):**
+
+- [x] `tools/build-image.sh x55` gera a imagem de ponta a ponta.
+- [x] Gravar e ligar a X55 — **o bootloader, o kernel e a raiz funcionam**:
+      DDR → U-Boot → `boot.scr` → `dtbs/rockchip/rk3566-powkiddy-x55.dtb` →
+      `Starting kernel` → `Mounted root (squashfs) on device 179:2`
+      (por `root=PARTUUID=47494f43-02`).
+- [x] **O `init` executa**: `rcS` → `giochi-init pronto` →
+      `launcher v1.2 pronto: 5 abas` → `primeiro frame, aba 'home'`, **3,9 s**
+      depois de `Starting kernel`. (O cartão de 116 GB dava `I/O error`; o
+      defeito era mídia, não build — [BOOT-DEBUG.md](./BOOT-DEBUG.md) §7.)
+- [x] Registrar o log em [HANDOFF.md](./HANDOFF.md).
+- [ ] **A tela acender.** O DRM não faz bind do DSI:
+      `rockchip-drm: failed to bind fe060000.dsi: -22` → sem `/dev/dri/card0`
+      → `render=null`. É o bloqueio atual; cadeia e pontos de `-EINVAL` em
+      [AGENTS.md](../AGENTS.md) §3.44.
+- [ ] Ver o splash e responder ao `control.sock` **pela tela**.
 
 **Aceite:** a X55 liga, mostra o splash, chega ao Launcher e responde ao
 `control.sock`. Se falhar, o log do console serial (1500000 8n1) é o próximo
-dado — não presuma causa.
+dado — não presuma causa. `tools/serial-capture.py` grava esse log com carimbo
+de tempo; `S00bootlog` grava o do userspace na partição FAT do cartão.
+
+**Ordem de diagnóstico que funcionou** (não invente outra):
+serial → quem está rodando (§1.5 do BOOT-DEBUG) → log no cartão → erro de I/O.
+Cada passo custa minutos; pular direto para "o bootloader está errado" custou
+vários ciclos de flash neste projeto.
 
 Sinais de alerta conhecidos e onde olhar: `docs/hardware-e-drivers.md` (F1–F12),
 `docs/DEVICES.md` (bootloader e DTS), `AGENTS.md` §3.8 (BL31/TPL).
@@ -141,7 +159,7 @@ sem os analógicos. Nenhum é upstream.
 | Componente | Para quê | Situação |
 |---|---|---|
 | `rocknix-joypad` | gamepad e analógicos nas 3 placas | não empacotado |
-| `panel-generic-dsi` | painel de X35S/X35H | não empacotado |
+| `panel-generic-dsi` | painel de X35S/X35H | não empacotado — **bloqueia a tela**; licenciamento a revisar (adiado em 2026-10-31) |
 | DTS `rk3566-powkiddy-x35s` | painel/controles de X35S/X35H | não está no repo (terceiros) |
 
 - [ ] Trazer o driver e o `panel-generic-dsi` como pacote do `BR2_EXTERNAL`,

@@ -382,3 +382,45 @@ o caso mais comum. Duas coisas ajudam, nesta ordem:
 
 O log do serial é o que permite dizer em qual das duas você está: sem
 `I/O error, dev mmcblkX` o problema **não** é mídia.
+
+## 8. O sistema sobe e a tela fica apagada: o culpado é o DRM, não o Launcher
+
+Sintoma no serial (medido na X55):
+
+```
+[    3.842] I: Giochi Konsol OS v1.2 - giochi-init pronto
+[    3.934] W: render: SDL2 indisponivel; usando backend headless
+[    3.934] I: launcher v1.2 pronto: 5 abas, default 'home', render=null
+```
+
+A tentação é procurar SDL2 no rootfs. **Não é isso.** A mensagem é
+*consequência*: sem `/dev/dri/card0` o SDL2 não tem backend KMSDRM e cai para o
+renderizador nulo. A causa está **antes**, no kernel:
+
+```sh
+grep -E "drm|dsi|panel|vop" /var/log/dmesg      # ou dmesg | grep -iE "..."
+```
+
+```
+rockchip-drm display-subsystem: bound fe040000.vop
+rockchip-drm display-subsystem: bound fe0a0000.hdmi
+dw-mipi-dsi-rockchip fe060000.dsi: *ERROR* Failed to bind: -22
+rockchip-drm display-subsystem: failed to bind fe060000.dsi: -22
+```
+
+Ordem de diagnóstico (do mais barato ao mais caro):
+
+1. **Existe `/dev/dri/card0`?** `ls /dev/dri`. Se não existe, nada de SDL2
+   resolve — pare aqui.
+2. **O bind de algum componente falhou?** `dmesg | grep -i bind`. O nome do
+   componente (`fe060000.dsi`, `fe040000.vop`, `fe0a0000.hdmi`) diz qual driver.
+3. **O DTB tem painel?** `tools/check-dts-panel.py --device <id>`. Ele olha o
+   DTS, não o bind — se disser `ok`, o problema é no bind (§3.44 do
+   [AGENTS.md](../AGENTS.md)), não no painel.
+4. **O kernel tem os drivers?** `zcat /proc/config.gz` não existe nesta imagem;
+   confira `CONFIG_DRM_ROCKCHIP`, `CONFIG_DRM_DW_MIPI_DSI`,
+   `CONFIG_DRM_PANEL_<painel>` (=y, não =m) no `.config` do build.
+
+Caso aberto na X55: `dw_mipi_dsi_rockchip_bind` devolve `-22` e a cadeia de
+`-EINVAL` está mapeada (função por função) no §3.44 do
+[AGENTS.md](../AGENTS.md). O `render=null` **não** é bug do Launcher.

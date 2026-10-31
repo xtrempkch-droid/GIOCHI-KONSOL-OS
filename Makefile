@@ -127,7 +127,8 @@ COMMON_SRC := \
 	src/common/giochi_transition.c \
 	src/common/giochi_hotkey.c \
 	src/common/giochi_sha256.c \
-	src/common/giochi_ed25519.c
+	src/common/giochi_ed25519.c \
+	src/common/giochi_deviceconf.c
 
 COMMON_OBJ := $(patsubst src/%.c,$(OBJ)/%.o,$(COMMON_SRC))
 
@@ -191,7 +192,8 @@ TESTS_CXX := \
 	tests/test_layout.cpp \
 	tests/test_metadata.cpp \
 	tests/test_settings.cpp \
-	tests/test_buttonsmap.cpp
+	tests/test_buttonsmap.cpp \
+	tests/test_deviceconf.cpp
 
 TEST_BINS := $(patsubst tests/%.c,$(BIN)/%,$(TESTS_C)) \
              $(patsubst tests/%.cpp,$(BIN)/%,$(TESTS_CXX))
@@ -289,6 +291,10 @@ $(BIN)/test_buttonsmap: $(OBJ)/tests/test_buttonsmap.o $(OBJ)/launcher/input.o $
 	$(CXX) $^ -o $@ $(LDFLAGS) $(EXTRA_LDFLAGS) $(CRYPTO_LIBS)
 
 $(BIN)/test_settings: $(OBJ)/tests/test_settings.o $(OBJ)/launcher/settings.o $(COMMON_OBJ)
+	@mkdir -p $(BIN)
+	$(CXX) $^ -o $@ $(LDFLAGS) $(EXTRA_LDFLAGS) $(CRYPTO_LIBS)
+
+$(BIN)/test_deviceconf: $(OBJ)/tests/test_deviceconf.o $(COMMON_OBJ)
 	@mkdir -p $(BIN)
 	$(CXX) $^ -o $@ $(LDFLAGS) $(EXTRA_LDFLAGS) $(CRYPTO_LIBS)
 

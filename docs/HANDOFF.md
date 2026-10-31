@@ -12,6 +12,89 @@ decisões tomadas (`# DECISÃO`) que afetam a sessão seguinte.
 Legenda: **feito** (compila e/ou roda), **esqueleto** (interface + stub com
 TODO), **doc** (apenas especificação/script).
 
+## 2026-10-31 — BOOT COMPLETO em hardware (X55), tela ainda apagada
+
+Cartão novo de 29,7 GB (gravado e verificado byte a byte). O sistema **subiu
+inteiro** pela primeira vez:
+
+```
+[    0.000000] Booting Linux on physical CPU 0x0000000000
+[    3.270510] rockchip-drm display-subsystem: bound fe040000.vop
+[    3.279075] rockchip-drm display-subsystem: bound fe0a0000.hdmi
+[    3.280577] dw-mipi-dsi-rockchip fe060000.dsi: *ERROR* Failed to bind: -22
+[    3.280577] rockchip-drm display-subsystem: failed to bind fe060000.dsi
+[    3.840] I: device_profile.json gravado em /user/.giochi/device_profile.json
+[    3.840] I: control.sock ativo em /run/giochi/control.sock
+[    3.841] I: musicd iniciado (pid 228)
+[    3.842] I: launcher iniciado (pid 229)
+[    3.842] I: Giochi Konsol OS v1.2 - giochi-init pronto
+[    3.934] W: render: SDL2 indisponivel; usando backend headless
+[    3.934] I: launcher v1.2 pronto: 5 abas, default 'home', render=null
+[    3.934] I: render: primeiro frame, aba 'home'
+[    3.934] I: giochi-musicd v1.2: 0 faixas, socket /run/giochi/music.sock
+```
+
+**3,9 s** de `Starting kernel` ao primeiro quadro. Bootloader, kernel, DTB,
+SquashFS por `PARTUUID`, `rcS`, `giochi-init` e Launcher: tudo em aparelho.
+
+**Bloqueio atual — vídeo, não sistema.** O bind do DSI falha com `-22`, então
+não existe `/dev/dri/card0`; o `render: SDL2 indisponivel` é consequência (o
+backend cai para `null`). Cadeia lida no fonte 6.12 e pontos de `-EINVAL` em
+[../AGENTS.md](../AGENTS.md) §3.44. Descartado com medição: drivers `=y`/`=m`
+misturados e DTS sem painel. O patch da ROCKNIX para a X55 não toca DSI/painel.
+
+**Quatro defeitos silenciosos do mesmo log, corrigidos** (todos com guarda na
+suíte `primeiro-boot`):
+
+| Sintoma no log | Causa |
+|---|---|
+| `(device=rk3326 soc=rk3326)` numa X55 | os `-D` de identidade não chegavam ao compilador; agora `device.conf` manda |
+| `buttons.map: secao [efault]` | a chave tem 19 caracteres e o código pulava 20 |
+| `Usage: /etc/init.d/S10mdev {start\|stop\|restart}` | `rcS` chamava o serviço duas vezes; `S10mdev` saiu da imagem |
+| `'/user/music' inacessivel`, `0 pacotes` | `user.ext4` é criado vazio e esconde os diretórios do SquashFS; `S10storage` semeia a árvore |
+
+**Ainda aberto no aparelho:** Wi-Fi (`rtw8821c_fw.bin` não empacotado),
+`Battery voltage` a cada 8 s, `regulatory.db`, áudio, gamepad
+(`rocknix-joypad` não empacotado) e o `control.sock` pela tela.
+
+## 2026-10-31 — primeiro boot medido em hardware (X55, console serial)
+
+**O que ficou provado no aparelho** (CH340 em `ttyS2`, 1500000 8n1):
+
+```
+GIOCHI: boot.scr em execucao (mmc=1 slot=2 root=PARTUUID=47494f43-02)
+GIOCHI: dtb dtbs/rockchip/rk3566-powkiddy-x55.dtb
+GIOCHI: Image carregada de mmc 1:1
+Starting kernel ...
+ mmcblk1: p1 p2 p3 p4
+VFS: Mounted root (squashfs filesystem) readonly on device 179:2.
+```
+
+- U-Boot mainline com BL31/TPL do rkbin **boota**.
+- `boot.scr` regerado pelo `post-image.sh` **executa** e escolhe o slot.
+- DTB em `dtbs/rockchip/<placa>.dtb` **é encontrado** (era o defeito do
+  `fdtfile` com subdiretório).
+- `root=PARTUUID=47494f43-02` **resolve** — sem depender de `/dev/mmcblk1p2`.
+- SquashFS **monta**.
+
+**Onde parou:** leitura de blocos com `EIO` → `SQUASHFS error: Failed to read
+block 0x66: -5` → `No working init found`. Medido que a imagem está íntegra
+(`unsquashfs` extraiu tudo, rc=0) e que os setores reclamados têm dados
+válidos. É **mídia/gravação**, não build. Ferramenta:
+[../tools/verify-card.py](../tools/verify-card.py) e
+[BOOT-DEBUG.md](./BOOT-DEBUG.md) §7.
+
+**Estado dos aparelhos:**
+
+| Aparelho | Situação |
+|---|---|
+| X55 | imagem correta; falta vencer o erro de I/O do cartão |
+| X35H | sem imagem própria; painel exige `panel-generic-dsi` (fora da árvore, GPL — licenciamento adiado). Mesmo com o DTS certo a tela não acende |
+
+**Ordem de diagnóstico que funcionou** (e que custou vários ciclos de flash
+para ser descoberta): serial → quem está rodando (§1.5 do BOOT-DEBUG) → log na
+partição FAT → erro de I/O. Ver `AGENTS.md` §3.38–3.43.
+
 ## S0 — Buildroot base — feito
 
 - `buildroot/external.desc`, `external.mk` (`GIOCHI_ARCH` por SoC), `Config.in`.

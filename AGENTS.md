@@ -21,15 +21,19 @@ em que ordem em [docs/roadmap.md](docs/roadmap.md); inventário de cada app
 |---|---|
 | Núcleo em C/C++ (supervisor, sockets, SHA-256, Ed25519, JSON, hotkey) | **pronto e testado** |
 | Buildroot `BR2_EXTERNAL`, 5 aparelhos, genimage A/B | **config validado** contra Buildroot 2024.02.13 real |
-| Imagem de cartão: `.img` 936 MB → **`.img.xz` 41 MB** | **gerada de ponta a ponta** (§3.25–3.28, entrada 16); nunca bootada |
-| U-Boot mainline na X55 (`powkiddy-x55-rk3566` + BL31/TPL do rkbin) | **config validado** |
+| Imagem de cartão: `.img` 936 MB → **`.img.xz` 41 MB** | **gerada de ponta a ponta** (§3.25–3.28, entrada 16) |
+| U-Boot mainline na X55 (`powkiddy-x55-rk3566` + BL31/TPL do rkbin) | **bootou na X55** (serial: DDR → U-Boot → `boot.scr` → kernel) |
+| Kernel, DTB e raiz na X55 | **bootou**: `Mounted root (squashfs) on device 179:2` por `root=PARTUUID` |
+| Painel do X35S/X35H | **bloqueado** por driver fora da árvore (GPL, licenciamento adiado — §3.43) |
+| Gravação do cartão | **verificada byte a byte** (`tools/verify-card.py`); SDXC de 116 GB falhou com `EIO` |
 | USB: gadget composto (MTP + rede/SSH + Mass Storage) | **pronto**, testado contra configfs falso |
 | Modo Desenvolvedor (§4.6.1): SSH via USB desligado por padrão | **pronto**, testado |
 | Launcher: motor de layout, tema, `settings.json`, overlay 2 níveis, biblioteca | **pronto** |
 | Launcher: **desenho dos widgets** no backend SDL2 | **esboço** (`TODO(v1.2)` em `render.cpp`) |
 | `giochi-musicd`: protocolo e socket | **pronto**; decodificação PCM/ALSA **pendente** |
 | Log de boot no cartão (`S00bootlog`) + modo `--debug` com fbcon | **pronto**, testado com mount/syslogd simulados |
-| Imagem gerada e bootada em hardware | **nunca** — ver [§4](#4-o-que-não-foi-verificado) |
+| Boot completo até o Launcher em hardware (X55) | **PROVADO**: `giochi-init pronto` + `launcher v1.2 pronto: 5 abas` em **3,9 s** (entrada 19) |
+| Vídeo na X55: bind do `dw-mipi-dsi` | **bloqueado**: `rockchip-drm: failed to bind fe060000.dsi: -22` → sem `/dev/dri/card0` → `render=null` (§3.44) |
 
 **Nunca repita (custou tempo de build ou passou silencioso):** leia
 [§3 Armadilhas](#3-armadilhas-já-resolvidas-não-repita) antes de qualquer coisa.
@@ -900,16 +904,131 @@ rk3326-generic painel: AUSENTE ... -> a tela fica preta
 - `rk3326-generic` (fallback `rg351v`) **não** tem painel: aquela imagem nunca
   acende. Descoberto pela guarda, não por tentativa.
 
+### 3.44 X55: o DRM não faz bind do DSI (`-22`) e o Launcher cai para `render=null`
+
+Boot completo na X55 (entrada 19) com a tela **apagada**. O Launcher sobe e
+escreve `render: SDL2 indisponivel; usando backend headless` — e essa mensagem
+é o **sintoma**, não a causa: sem DRM não existe `/dev/dri/card0`, e o SDL2 sem
+KMSDRM cai para o backend nulo. Quem falha é o kernel, antes:
+
+```
+dw-mipi-dsi-rockchip fe060000.dsi: [drm] *ERROR* Failed to bind: -22
+rockchip-drm display-subsystem: failed to bind fe060000.dsi: -22
+```
+
+Cadeia lida no fonte (linux 6.12 desta árvore), com os pontos que devolvem
+`-EINVAL`:
+
+| Arquivo | Função | O que devolve `-22` |
+|---|---|---|
+| `rockchip/dw-mipi-dsi-rockchip.c` | `dw_mipi_dsi_rockchip_bind` | só repassa o que `dw_mipi_dsi_bind` devolveu |
+| `synopsys/dw-mipi-dsi.c` | `dw_mipi_dsi_bind` | **é uma linha só**: `drm_bridge_attach(enc, &dsi->bridge, NULL, 0)` |
+| `drm/drm_bridge.c` | `drm_bridge_attach` | `!encoder \|\| !bridge`, ou `previous` sem `dev`/com outro encoder |
+| `synopsys/dw-mipi-dsi.c` | `dw_mipi_dsi_bridge_attach` | repassa `drm_bridge_attach(enc, dsi->panel_bridge, bridge, flags)` |
+| `drm/bridge/panel.c` | `panel_bridge_attach` | `drm_connector_init` (tipo de conector inválido) |
+
+O que **já foi descartado** com evidência: drivers misturados `=y`/`=m`
+(`CONFIG_DRM_ROCKCHIP=y`, `CONFIG_DRM_DW_MIPI_DSI=y`,
+`CONFIG_DRM_PANEL_HIMAX_HX8394=y`, `CONFIG_ROCKCHIP_VOP2=y` no `.config` do
+build) e DTS sem painel (o DTB da imagem tem `panel@0` com
+`himax,hx8394`, `backlight`, `reset-gpios`, `rotation=270`);
+`CONFIG_FEATURE_MOUNT_LABEL` e afins não têm relação.
+
+**O que falta:** dizer **qual** das chamadas devolveu `-22`. O `drm_bridge_attach`
+não tem log próprio, então `drm.debug=0x1e` sozinho não resolve — o próximo
+passo é uma instrumentação (patch de kernel) ou comparar com o DTS/patch da
+ROCKNIX, que roda esses mesmos aparelhos. Enquanto isso, o aparelho **não deve**
+ser dado como "sem vídeo por causa do painel": o painel é a etapa seguinte.
+
+- Guarda relacionada: `tools/check-dts-panel.py` (suíte `painel-do-dts`) olha o
+  DTS, não o bind. Ele **não** teria pego este defeito.
+- Não confunda com §3.43: lá falta **driver** para o painel do X35S/X35H; aqui o
+  driver existe e é mainline, e o bind falha.
+
+### 3.45 `"$script" start || "$script"` roda o serviço DUAS vezes
+
+O `rcS` chamava cada `S*` como `"$script" start || "$script"`, pensando em
+"scripts que não aceitam argumento". O efeito real, no boot da X55:
+
+```
+Usage: /etc/init.d/S10mdev {start|stop|restart}
+```
+
+O `start` do `S10mdev` sai `!= 0` (o script termina com `xargs modprobe` e
+**não existe modprobe** no rootfs), então o fallback chamava o script **de
+novo**, sem argumento, e o `*)` do `case` imprimia o uso. Ou seja: a mensagem
+escondia a falha de verdade e ainda executava tudo pela segunda vez.
+
+- `rcS` agora chama `start` uma vez e registra `rcS: <script> start retornou
+  erro` no `logger` e no stderr.
+- `S10mdev` **saiu da imagem** (`post-build.sh`): `/dev` é `devtmpfs` e os nós
+  que faltam vêm do `device_table.txt`; quem carrega módulo sob demanda é o
+  `giochi-dongle-hotplug`.
+- Guarda: suíte `primeiro-boot` (`tests/test_primeiro_boot.py`).
+
+### 3.46 Os diretórios de `/user` do SquashFS NÃO existem depois do mount
+
+`post-build.sh` cria `/user/{games,music,ports,.giochi,.cache}` no `TARGET_DIR`,
+mas `/user` é o ponto de montagem de `user.ext4`, que o `post-image.sh` cria
+**vazio**. Depois do `mount`, os diretórios do SquashFS ficam escondidos — e o
+Launcher registrou, no aparelho:
+
+```
+W: musica: diretorio '/user/music' inacessivel
+W: biblioteca: '/user/games' inacessivel
+I: biblioteca: 0 pacotes (0 validos)
+```
+
+- `S10storage` agora roda `seed_user_tree`: cria a árvore em `/user` (e
+  `~/.ssh` em 0700) a cada boot. É idempotente e cobre o caso de o usuário
+  formatar a partição depois.
+- O teste de escrita é um `: > arquivo`, **não** `mkdir -p`: `mkdir -p` de um
+  diretório que já existe no SquashFS devolve 0 mesmo com a partição fora do
+  ar, e o log diria "pronta" mentindo.
+- Guarda: suíte `primeiro-boot`.
+
+### 3.47 `device.conf` é a fonte da identidade; o `-D` do compilador se perde
+
+Dois sintomas do mesmo dono de dado, os dois silenciosos:
+
+1. `device_profile.json` na X55 saiu `(device=rk3326 soc=rk3326)` — os defines
+   `-DGIOCHI_DEVICE`/`-DGIOCHI_SOC` atravessam duas camadas de shell (recipe do
+   pacote e recipe do Makefile) e não chegaram na compilação. O código caiu no
+   `#ifndef` e usou o default do RK3326.
+2. `buttons.map: secao [efault] ausente` — o Launcher procurava
+   `"GIOCHI_BUTTONS_MAP="` e pulava **20** caracteres; a chave tem **19**
+   (`GIOCHI_` + `BUTTONS_` + `MAP` + `=`). Comia o `d` de `default` e o mapa do
+   usuário era descartado em silêncio.
+
+- Novo `src/common/giochi_deviceconf.{c,h}`: `giochi_deviceconf_get(path, key,
+  out, size)` casa a chave pelo `strlen` (nunca por número escrito à mão),
+  recusa truncar valor e é `extern "C"`.
+- `giochi-init` lê `GIOCHI_DEVICE`/`GIOCHI_SOC` de `/etc/giochi/device.conf`
+  (`GIOCHI_DEVICE_CONF` sobrescreve, para teste de host); o `-D` virou só
+  fallback. Medido: `(device=x55 soc=rk3566)` contra o `device.conf` real da
+  imagem.
+- O Launcher passou a usar o mesmo helper.
+- Guardas: `tests/test_deviceconf.cpp` (15 checagens) e suíte `primeiro-boot`.
+
+**Regra que fica:** dado que existe **dentro da imagem** (`/etc/giochi/*.conf`)
+não deve depender de macro de compilação. `devices/<id>.conf` já era a fonte
+única no build (§3.20); isto é a mesma regra em runtime.
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):
 
-- **Nenhuma imagem deste repositório foi gravada e bootada em hardware.** A
-  cadeia está validada no nível de configuração (kconfig, símbolos, artefatos),
-  não no aparelho.
+- **O userspace roda na X55, mas só foi visto por log.** Medido em hardware
+  (entrada 19): `giochi-init pronto`, `launcher v1.2 pronto: 5 abas` e
+  `primeiro frame` em 3,9 s. O que **não** está verificado é a *tela*: o DRM não
+  faz bind do DSI (§3.44), então o Launcher desenha no backend nulo. Também não
+  foi verificado nada de áudio, gamepad, Wi-Fi, `control.sock` pelo painel, nem
+  o overlay de verdade (só o headless).
 - **X35S e X35H** nunca foram testados por quem escreveu este código. Não têm
   DTS upstream nem defconfig de U-Boot; dependem de `--fallback-dts` (imagem de
-  teste) ou de DTS fornecido por você.
+  teste) ou de DTS fornecido por você. E, mesmo com o DTS certo, o **painel
+  deles não acende** sem o `panel-generic-dsi` fora da árvore (§3.43) — lacuna
+  adiada por decisão de licenciamento, não por falta de diagnóstico.
 - **X35S/X35H: USB não ancora** (`failed to enable ep0out`, F12 em
   [docs/hardware-e-drivers.md](docs/hardware-e-drivers.md)) — provável hardware.
 - **Gamepad** depende de `rocknix-joypad`, que **não está empacotado**. Sem ele
@@ -1837,3 +1956,76 @@ leitor (`docker ps`, `fuser /dev/ttyUSB0`).
 build `x35h --fallback-dts` estava em andamento. Se o novo cartão bootar, o
 próximo dado é o `giochi-boot.log` na partição FAT — ele existe independente de
 painel.
+
+### 2026-10-31 (19) — Copilot (PRIMEIRO BOOT COMPLETO na X55; tela ainda apagada)
+
+Cartão novo (29,7 GB, gravado e verificado byte a byte) na X55. **O sistema
+subiu inteiro pela primeira vez em hardware.** Log serial (`tools/serial-capture.py`):
+
+```
+GIOCHI: boot.scr em execucao (mmc=1 slot=2 root=PARTUUID=47494f43-02)
+GIOCHI: dtb dtbs/rockchip/rk3566-powkiddy-x55.dtb
+[    0.000000] Booting Linux on physical CPU 0x0000000000
+[    3.270510] rockchip-drm display-subsystem: bound fe040000.vop
+[    3.841] I: control.sock ativo em /run/giochi/control.sock
+[    3.842] I: Giochi Konsol OS v1.2 - giochi-init pronto (soc=rk3326)
+[    3.934] I: launcher v1.2 pronto: 5 abas, default 'home', render=null
+[    3.934] I: render: primeiro frame, aba 'home'
+```
+
+**3,9 s** do `Starting kernel` ao primeiro quadro. A cadeia toda (DDR → U-Boot →
+`boot.scr` → DTB em `dtbs/rockchip/` → kernel → SquashFS por `PARTUUID` →
+`rcS` → `giochi-init` → Launcher) está provada em aparelho.
+
+**A tela está apagada e a causa não é o painel nem o SDL2:**
+
+```
+dw-mipi-dsi-rockchip fe060000.dsi: [drm] *ERROR* Failed to bind: -22
+rockchip-drm display-subsystem: failed to bind fe060000.dsi: -22
+```
+
+Sem DRM não existe `/dev/dri/card0`, e o `render: SDL2 indisponivel` do log é
+**consequência** disso (o backend cai para `null`). Cadeia lida no fonte 6.12
+desta árvore, com os pontos que devolvem `-22`, em §3.44. Descartado com
+evidência: drivers `=y`/`=m` misturados (tudo `=y`) e DTS sem painel (o DTB da
+imagem tem `panel@0` `himax,hx8394`, backlight, reset-gpios, rotation 270). O
+patch da ROCKNIX para a X55 (`0012-...x55...patch`) **não toca** DSI/painel —
+ou seja, eles bootam com o mainline como nós, então a diferença está na nossa
+configuração de kernel, não no DTS.
+
+**Quatro defeitos silenciosos do mesmo log, corrigidos nesta entrada:**
+
+1. `device_profile.json` dizia `(device=rk3326 soc=rk3326)` na X55: os `-D` de
+   identidade não chegavam na compilação. Agora `device.conf` (que está na
+   imagem) manda, e o `-D` é só fallback. Medido com o `device.conf` real:
+   `(device=x55 soc=rk3566)`.
+2. `buttons.map: secao [efault] ausente` — a chave tem 19 caracteres e o código
+   pulava 20. Mapa do usuário descartado em silêncio. Novo
+   `src/common/giochi_deviceconf.c` (chave por `strlen`).
+3. `Usage: /etc/init.d/S10mdev {start|stop|restart}` — `rcS` chamava o serviço
+   duas vezes (`start || sem-argumento`). `S10mdev` saiu da imagem.
+4. `/user/music` e `/user/games` inacessíveis (0 pacotes) — os diretórios do
+   SquashFS ficam escondidos sob o `user.ext4` vazio. `S10storage` semeia a
+   árvore a cada boot.
+
+Armadilhas novas: §3.45, §3.46, §3.47; o bloqueio de vídeo em §3.44.
+
+**Verificação (tudo rodado nesta sessão):**
+- `make test` → **24/24** (duas suítes novas: `test_deviceconf`, 15 checagens;
+  `primeiro-boot`, 5 testes).
+- `make lint` → rc=0.
+- `tests/test_primeiro_boot.py` cobre, item por item, os quatro defeitos acima.
+- Identidade provada rodando o `giochi-init` de host com
+  `GIOCHI_DEVICE_CONF` apontando para o `device.conf` da imagem.
+
+**Aberto (não declarar feito):**
+- **Vídeo**: falta dizer qual chamada devolve `-22` no bind do DSI (§3.44). Não
+  é a mesma coisa que §3.43 (X35S/X35H sem driver).
+- `rtw8821cs: probe failed with error -22` — firmware `rtw88/rtw8821c_fw.bin`
+  não empacotado (Wi-Fi morto; BT tem só o `config.bin`).
+- `rk817-charger: Battery voltage 17070 below minimum` a cada 8 s (leitura de
+  ADC, polui o log) e ausência de `regulatory.db`.
+- Áudio, gamepad (`rocknix-joypad` não empacotado), `control.sock` pelo painel
+  e o overlay de verdade continuam não verificados.
+- Push para o GitHub continua bloqueado por credencial; estado em
+  `/home/charles/giochi-builder/pending.bundle`.

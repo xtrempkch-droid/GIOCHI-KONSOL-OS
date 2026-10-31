@@ -6,6 +6,21 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 ## [Não publicado]
 
 ### Adicionado
+- **Boot completo em hardware (X55)**: `rcS` → `giochi-init` → Launcher em
+  **3,9 s** desde `Starting kernel`. Bootloader, DTB, `root=PARTUUID`, SquashFS
+  e userspace provados no aparelho (log serial em
+  [docs/HANDOFF.md](docs/HANDOFF.md)). A tela continua apagada porque o DRM não
+  faz bind do DSI — bloqueio registrado em
+  [AGENTS.md](AGENTS.md) §3.44, não confundir com o painel do X35S/X35H (§3.43).
+- **`src/common/giochi_deviceconf.{c,h}`** + `tests/test_deviceconf.cpp`
+  (suíte `deviceconf`): leitura de `/etc/giochi/device.conf` com a chave casada
+  por `strlen` e valor que nunca é truncado. Corrige dois defeitos silenciosos
+  medidos no aparelho: `device_profile.json` dizia `(device=rk3326 soc=rk3326)`
+  numa X55 (os `-D` de identidade não chegavam ao compilador) e
+  `buttons.map: secao [efault]` (a chave tem 19 caracteres, o código pulava 20).
+- **`tests/test_primeiro_boot.py`** (suíte `primeiro-boot`): guarda os quatro
+  defeitos do primeiro boot real — chamada dupla de serviço no `rcS`, `S10mdev`
+  na imagem, árvore de `/user` inexistente e leitura de `device.conf`.
 - **`tools/check-dts-panel.py`** + suíte `painel-do-dts`: diz, antes de gastar
   um ciclo de flash, se o DTS escolhido tem painel utilizável. Segue
   `#include` (inclusive `DTS_PATH` out-of-tree) e reconhece o caso de driver
@@ -97,6 +112,18 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 - `tools/check-links.py` agora valida também as tags de imagem HTML.
 
 ### Corrigido
+- **`rcS` chamava cada serviço duas vezes** (`"$script" start || "$script"`):
+  o fallback rodava o script sem argumento e o `case` imprimia
+  `Usage: /etc/init.d/S10mdev {start|stop|restart}` no boot da X55, escondendo
+  a falha real. Agora é uma chamada só, com o erro registrado.
+- **`/user/music` e `/user/games` não existiam** na imagem: os diretórios do
+  SquashFS ficam escondidos sob o `user.ext4` vazio, e o Launcher abria com
+  `0 pacotes`. `S10storage` semeia a árvore a cada boot (com teste de escrita
+  real; `mkdir -p` de diretório existente devolve 0 mesmo com a partição fora
+  do ar).
+- **`S10mdev` saiu da imagem**: sem `modprobe` no rootfs ele só gerava erro;
+  `/dev` é `devtmpfs` e quem carrega módulo sob demanda é o
+  `giochi-dongle-hotplug`.
 - **A tela do X35S/X35H tem uma causa conhecida e ela não é o build.** O DTS
   oficial da ROCKNIX troca o painel para `compatible = "rocknix,generic-dsi"`,
   driver **fora da árvore** do mainline (fonte única, 724 linhas, GPL-2.0).

@@ -81,7 +81,14 @@ fi
 #     interfaces, sem checar o Modo Desenvolvedor. Isso anula o adendo 4.6.1
 #     (SSH desligado por padrao e so em 10.55.0.2) — o S62sshd e quem decide.
 #     Guarda: tools/check-image-contents.sh.
-for conflito in S01syslogd S02klogd S50dropbear; do
+#
+#   S10mdev (busybox.mk): o /dev desta imagem e devtmpfs (inittab) e os nos
+#     que faltam vem do device_table.txt; nao existe modprobe no rootfs. O
+#     script sobe um 'mdev -df' e depois roda 'xargs modprobe' — sem modprobe
+#     ele sai != 0, e o rcS antigo ainda o chamava SEM argumento, imprimindo
+#     "Usage: /etc/init.d/S10mdev {start|stop|restart}" no boot da X55. Quem
+#     carrega modulo sob demanda e o giochi-dongle-hotplug.
+for conflito in S01syslogd S02klogd S50dropbear S10mdev; do
     if [ -f "$TARGET_DIR/etc/init.d/$conflito" ]; then
         rm -f "$TARGET_DIR/etc/init.d/$conflito"
         echo "post-build: removido /etc/init.d/$conflito (conflita com o nosso)"

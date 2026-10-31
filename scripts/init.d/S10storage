@@ -26,7 +26,37 @@ fi
 log() { logger -t "$TAG" -- "$*" 2>/dev/null || echo "$TAG: $*" >&2; }
 
 mkdir -p /run/giochi 2>/dev/null || true
+
+# Arvore padrao da particao C. Sem isto /user/music e /user/games nao
+# existem: eles estao no SquashFS, mas /user e o ponto de montagem de
+# user.ext4, que e criado VAZIO (post-image.sh). No boot real da X55 o
+# Launcher registrou "musica: diretorio '/user/music' inacessivel" e
+# "biblioteca: '/user/games' inacessivel" — 0 pacotes, sem nenhum erro.
+#
+# /user e montado pelo 'mount -a' do inittab (fstab LABEL=GIOCHI_USER) ANTES
+# do rcS, entao aqui nao ha o que montar. Falha aqui nao derruba o boot: so
+# registra, e o Launcher segue com a biblioteca vazia.
+seed_user_tree() {
+    _u=${USER_DIR:-/user}
+    mkdir -p "$_u/music" "$_u/games" "$_u/ports" "$_u/saves" \
+             "$_u/.giochi" "$_u/.cache/meta" "$_u/.cache/thumbs" \
+             2>/dev/null || true
+    mkdir -p -m 700 "$_u/.ssh" 2>/dev/null || true
+    # Teste de escrita de verdade: 'mkdir -p' de um diretorio que ja existe
+    # DENTRO do SquashFS devolve 0 mesmo com a particao fora do ar, e o log
+    # diria "pronta" mentindo.
+    if : >"$_u/.giochi/boot-write-test" 2>/dev/null; then
+        rm -f "$_u/.giochi/boot-write-test"
+        log "arvore de /user pronta (music, games, ports, saves, .giochi)"
+    else
+        log "aviso: /user nao gravavel; biblioteca e musica ficam vazias"
+    fi
+}
 echo B > /run/giochi/slot2_mode 2>/dev/null || true   # default sem slot 2
+
+# /user vem do fstab (LABEL=GIOCHI_USER), montado pelo mount -a do inittab
+# antes do rcS. Aqui so garantimos a arvore de diretorios dentro dele.
+seed_user_tree
 
 # Slot 2 = cartao que NAO contem a raiz (secao 1.3). Sem ele, nada a fazer.
 if [ -z "${SLOT2_PART:-}" ]; then

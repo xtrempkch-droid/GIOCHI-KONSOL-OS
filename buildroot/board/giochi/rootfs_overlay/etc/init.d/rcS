@@ -17,7 +17,16 @@ run_scripts() {
         logger -t rcS -- "start $script" 2>/dev/null || true
         # Sem '2>/dev/null': o stderr dos servicos e exatamente o que se quer
         # no log quando algo falha no boot.
-        "$script" start || "$script"
+        #
+        # NAO existe fallback para chamar o script sem argumento: isso rodava o
+        # servico DUAS vezes e, como o primeiro rc != 0 vinha do proprio
+        # servico, a segunda chamada so imprimia "Usage: ... {start|stop}"
+        # (visto no boot real da X55, vindo do S10mdev). Falhou, fica no log.
+        if ! "$script" start; then
+            logger -t rcS -- "aviso: $script start retornou erro" 2>/dev/null \
+                || true
+            echo "rcS: $script start retornou erro" >&2
+        fi
     done
 }
 

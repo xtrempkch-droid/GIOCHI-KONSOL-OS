@@ -10,7 +10,8 @@ total=0
 export GIOCHI_LOG_LEVEL=error
 
 for t in test_json test_sha256 test_hotkey test_musicd test_transition \
-         test_layout test_metadata test_settings test_buttonsmap; do
+         test_layout test_metadata test_settings test_buttonsmap \
+         test_deviceconf; do
     total=$((total + 1))
     if [ ! -x "$BIN/$t" ]; then
         echo "FALTA  $t"
@@ -94,6 +95,19 @@ if command -v python3 >/dev/null 2>&1; then
         echo "OK     log-de-boot (python)"
     else
         echo "FALHA  log-de-boot (python)"
+        fail=$((fail + 1))
+    fi
+fi
+
+# Invariantes do primeiro boot sadio: rcS sem chamada dupla, S10mdev fora da
+# imagem, arvore de /user criada e leitura de device.conf pelo tamanho real da
+# chave. Todos vieram de um boot real da X55.
+if command -v python3 >/dev/null 2>&1; then
+    total=$((total + 1))
+    if (cd "$ROOT" && python3 -m unittest tests.test_primeiro_boot) >/dev/null 2>&1; then
+        echo "OK     primeiro-boot (python)"
+    else
+        echo "FALHA  primeiro-boot (python)"
         fail=$((fail + 1))
     fi
 fi

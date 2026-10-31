@@ -4,8 +4,10 @@
 #include "giochi_util.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
+#include "giochi_deviceconf.h"
 #include "giochi_json.h"
 
 #ifndef GIOCHI_SOC
@@ -40,6 +42,52 @@ typedef struct {
     const char *proton_reason;
 } giochi_device_values;
 
+/* Identidade em tempo de execucao: /etc/giochi/device.conf manda, e o valor
+ * compilado (-DGIOCHI_DEVICE) e so o fallback.
+ *
+ * Motivo medido: o -D atravessa duas camadas de shell (recipe do pacote e
+ * recipe do Makefile) e na X55 o log saiu "device=rk3326 soc=rk3326" — os
+ * defines nao chegaram. O device.conf e escrito pelo post-build.sh na propria
+ * imagem, entao nao tem como divergir do aparelho.
+ *
+ * GIOCHI_DEVICE_CONF permite apontar outro arquivo (testes de host).
+ */
+static struct {
+    int loaded;
+    char device[32];
+    char soc[32];
+} g_identity;
+
+static const char *giochi_device_soc_id(void);
+
+const char *giochi_device_id(void)
+{
+    if (!g_identity.loaded) {
+        const char *path = getenv("GIOCHI_DEVICE_CONF");
+
+        if (path == NULL || path[0] == '\0') {
+            path = GIOCHI_DEVICECONF_PATH;
+        }
+        if (giochi_deviceconf_get(path, "GIOCHI_DEVICE", g_identity.device,
+                                  sizeof(g_identity.device)) != 0) {
+            snprintf(g_identity.device, sizeof(g_identity.device), "%s",
+                     GIOCHI_DEVICE);
+        }
+        if (giochi_deviceconf_get(path, "GIOCHI_SOC", g_identity.soc,
+                                  sizeof(g_identity.soc)) != 0) {
+            snprintf(g_identity.soc, sizeof(g_identity.soc), "%s", GIOCHI_SOC);
+        }
+        g_identity.loaded = 1;
+    }
+    return g_identity.device;
+}
+
+static const char *giochi_device_soc_id(void)
+{
+    (void)giochi_device_id();
+    return g_identity.soc;
+}
+
 /* Valores de docs/hardware-e-drivers.md §1 e §3-§5. */
 static const giochi_device_values g_devices[] = {
     { "x55",   "rk3566", "Cortex-A55", 1800, "Mali-G52", 2048, 128, 720, 1280, 60, 1, 1,
@@ -57,23 +105,20 @@ static const giochi_device_values g_devices[] = {
 static giochi_device_values device_values(void)
 {
     size_t i;
+    const char *device = giochi_device_id();
+    const char *soc = giochi_device_soc_id();
 
     for (i = 0; i < sizeof(g_devices) / sizeof(g_devices[0]); i++) {
-        if (strcmp(g_devices[i].device, GIOCHI_DEVICE) == 0) {
+        if (strcmp(g_devices[i].device, device) == 0) {
             return g_devices[i];
         }
     }
-    return strcmp(GIOCHI_SOC, "rk3566") == 0 ? g_devices[3] : g_devices[4];
+    return strcmp(soc, "rk3566") == 0 ? g_devices[3] : g_devices[4];
 }
 
 const char *giochi_device_soc(void)
 {
     return device_values().soc;
-}
-
-const char *giochi_device_id(void)
-{
-    return GIOCHI_DEVICE;
 }
 
 /* Adendo 4.6.1: "developer": { "ssh_usb": <estado atual> }.

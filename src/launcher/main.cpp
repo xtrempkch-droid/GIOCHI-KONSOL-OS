@@ -16,6 +16,7 @@
 #include "settings.hpp"
 #include "theme.hpp"
 
+#include "giochi_deviceconf.h"
 #include "giochi_log.h"
 #include "giochi_transition.h"
 #include "giochi_util.h"
@@ -442,32 +443,21 @@ bool init(Launcher &app)
     giochi::input_reset(&app.input);
 
     /* Secao 2.2: mapa canonico em /etc/giochi/buttons.map. A secao usada
-     * (default|x35s) vem de /etc/giochi/device.conf, gerado no build. */
+     * (default|x35s) vem de /etc/giochi/device.conf, gerado no build.
+     *
+     * A leitura passa por giochi_deviceconf_get(): a versao anterior procurava
+     * "GIOCHI_BUTTONS_MAP=" e pulava 20 caracteres, mas a chave tem 19 — a
+     * secao virava "efault" e o mapa compilado entrava no lugar, em silencio
+     * (log real da X55: "buttons.map: secao [efault] ausente"). */
     if (const char *env_map = getenv("GIOCHI_BUTTONS_MAP")) {
         app.options.buttons_map = env_map;
     } else {
-        std::string device_conf = rooted("/etc/giochi/device.conf");
-        std::size_t len = 0;
-        char *text = giochi_read_file(device_conf.c_str(), &len);
+        std::string device_conf = rooted(GIOCHI_DEVICECONF_PATH);
+        char value[64];
 
-        if (text != nullptr) {
-            std::string content(text, len);
-            std::size_t pos = content.find("GIOCHI_BUTTONS_MAP=");
-
-            if (pos != std::string::npos) {
-                std::size_t start = pos + 20;
-                std::size_t end = content.find('\n', start);
-                std::string value = content.substr(start, end - start);
-
-                while (!value.empty() &&
-                       (value.back() == ' ' || value.back() == '\r')) {
-                    value.pop_back();
-                }
-                if (!value.empty()) {
-                    app.options.buttons_map = value;
-                }
-            }
-            free(text);
+        if (giochi_deviceconf_get(device_conf.c_str(), "GIOCHI_BUTTONS_MAP",
+                                  value, sizeof(value)) == 0) {
+            app.options.buttons_map = value;
         }
     }
     {
