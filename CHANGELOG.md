@@ -6,6 +6,18 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 ## [Não publicado]
 
 ### Adicionado
+- **Primeira imagem completa gerada neste repositório**:
+  `dist/x55/giochi-x55-sdcard.img`, 936 MB (147 MB de blocos reais), com U-Boot
+  mainline em 32 KiB, kernel 6.12, DTB do `rockchip`, SquashFS de 29 MB nos dois
+  slots A/B e `user.ext4` de 512 MB. Verificado com `fdisk -l`, comparação byte
+  a byte do `u-boot-rockchip.bin` e `mdir` no `boot.vfat`. **Não foi bootada.**
+- `tools/check-device-table.sh` (em `make lint`): valida o formato do
+  `device_table.txt` antes de qualquer compilação.
+- Três guardas novas em `tests/test_image_layout.py`: coerência entre
+  `partition-table-type` e o tipo de cada partição (nos **dois** cfgs), proibição
+  de `%PARTUUID%` literal e exigência de `exit 0` no fim do `post-image.sh`.
+- Quatro armadilhas novas no [AGENTS.md](AGENTS.md) (§3.25 a §3.28) e a entrada
+  (16) no registro de agentes.
 - **[docs/APPS.md](docs/APPS.md)**: inventário dos componentes da v1.2 separado
   por onde rodam (console × PC) e por tipo, com estado real de cada um e as
   lacunas — `giochi-store` e `portmaster` ainda não existem, `news.json` não tem
@@ -39,6 +51,40 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 - `tools/check-links.py` agora valida também as tags de imagem HTML.
 
 ### Corrigido
+- **Quatro defeitos que derrubavam o build no ÚLTIMO passo**, todos com mensagem
+  que não aponta o culpado, todos agora com guarda no lint:
+  - `device_table.txt` usava `g` (de "grupo") no campo de *tipo de arquivo*;
+    o tipo válido é `d`. O `makedevs` morria em
+    `Unsupported file type g` → `squashfs.mk`. Guarda:
+    `tools/check-device-table.sh`.
+  - Os dois `genimage*.cfg` declaram tabela MBR (`dos`) e as partições usavam
+    `partition-type-uuid`, que só existe em GPT: o `genimage` abortava com
+    `'partition-type-uuid' is only valid for gpt and hybrid`. Trocado pelo byte
+    hexadecimal (`0x0c` FAT32 LBA, `0x83` Linux) e removido o `gpt-location`,
+    que também só vale para GPT.
+  - O `extlinux.conf` saía com `root=PARTUUID=%PARTUUID%` **literal**: essa
+    expansão não existe no genimage nem em nenhum script do repositório, então
+    o kernel não montaria o rootfs. Agora usa o mesmo
+    `/dev/mmcblk<N>p2` do `boot.cmd`.
+  - O `post-image.sh` terminava num `[ -f "$f" ] && echo ...` dentro de um
+    `for`: o status 1 do `&&` que não executa virava o exit code do script e o
+    build acusava `target-post-image Error 1` **com a imagem pronta**. Agora
+    usa `if` e termina com `exit 0`.
+  Os três últimos são cobertos por `tests/test_image_layout.py` (12 checagens,
+  testadas ao contrário: reintroduzir cada bug faz a suíte falhar).
+- **`giochi-init` não compilava** (`'rk3566' undeclared`,
+  `%s expects char* but has double`): os defines de texto
+  (`-DGIOCHI_SOC='"rk3566"'`) estavam dentro de `EXTRA_CFLAGS="..."` e as aspas
+  atravessavam **duas** camadas de shell, então o compilador recebia o
+  *símbolo* em vez da string. As aspas passaram para o `Makefile` da raiz
+  (`DEFS += -DGIOCHI_SOC='"$(GIOCHI_SOC)"'`) e os `.mk` passam valores crus.
+  `tools/check-image-contents.sh` proíbe `-DGIOCHI_SOC=` nos `.mk`.
+- **`docker-build.sh` ignorava variáveis do host**: só `BUILDROOT_DIR`,
+  `BR2_DL_DIR` e `JOBS` chegavam ao container, então `GIOCHI_NO_COMPRESS=1` era
+  descartada em silêncio (o build comprimia mesmo assim). Agora `-e` para
+  `GIOCHI_NO_COMPRESS` e `GIOCHI_MIN_FREE_GB`.
+- **`giochi-games` falhava ao instalar** porque `install-games.sh` recebia o
+  manifesto com caminho relativo; o `.mk` agora passa `$(@D)/`.
 - **Cópia recursiva de 66 GB: a causa real de o build travar e o CI "morrer sem
   mensagem".** Os pacotes locais (`giochi-assets`, `giochi-init`,
   `giochi-launcher`, `giochi-musicd`, `giochi-tools`, `giochi-games`) usavam

@@ -21,7 +21,7 @@ em que ordem em [docs/roadmap.md](docs/roadmap.md); inventário de cada app
 |---|---|
 | Núcleo em C/C++ (supervisor, sockets, SHA-256, Ed25519, JSON, hotkey) | **pronto e testado** |
 | Buildroot `BR2_EXTERNAL`, 5 aparelhos, genimage A/B | **config validado** contra Buildroot 2024.02.13 real |
-| Imagem de cartão: `.img` 936 MB → **`.img.xz` 27,8 MB** | **medido** no layout real (§3.21); nunca bootada |
+| Imagem de cartão: `.img` 936 MB → **`.img.xz` 41 MB** | **gerada de ponta a ponta** (§3.25–3.28, entrada 16); nunca bootada |
 | U-Boot mainline na X55 (`powkiddy-x55-rk3566` + BL31/TPL do rkbin) | **config validado** |
 | USB: gadget composto (MTP + rede/SSH + Mass Storage) | **pronto**, testado contra configfs falso |
 | Modo Desenvolvedor (§4.6.1): SSH via USB desligado por padrão | **pronto**, testado |
@@ -460,6 +460,86 @@ no caso do `AGENTS.md`), escondendo a mudança real.
   (dash), onde o padrão vira o texto `\r` — uma versão anterior da guarda
   acusou 8 arquivos que estavam corretos. `git ls-files --eol` é portátil e
   reporta índice (`i/`) e cópia de trabalho (`w/`) separados.
+
+### 3.25 `device_table.txt`: um `g` de "grupo" derruba o build no ÚLTIMO passo
+
+O `makedevs` lê `buildroot/board/giochi/device_table.txt` depois de compilar
+toolchain, kernel, U-Boot, mesa3d e todos os pacotes — para montar o rootfs.
+A linha `/run	g	755	0	0	-	-	-	-	-` usava `g` (de "grupo") no campo
+de **tipo de arquivo**, e o tipo válido é `d` (diretório). A mensagem não
+aponta o arquivo:
+
+```
+makedevs: line 29: Unsupported file type g
+make: *** [fs/squashfs/squashfs.mk:56: .../rootfs.squashfs] Error 1
+```
+
+- Formato: `<nome> <tipo> <modo> <uid> <gid> <major> <minor> <início> <inc> <contagem>`
+  com tipo em `f d c b p l` (arquivo, diretório, char, block, fifo, symlink).
+- A "linha 29" é a linha do **arquivo concatenado**
+  (`system/device_table.txt` + o nosso), não do nosso arquivo — por isso não
+  bate com nenhum editor.
+- Guarda: `tools/check-device-table.sh` (em `make lint`) valida campos, tipo e
+  caminho absoluto em milissegundos.
+
+### 3.26 `partition-type-uuid` só existe em GPT; com MBR o genimage aborta
+
+Os dois `genimage*.cfg` declaram `partition-table-type = "dos"` e as partições
+usavam `partition-type-uuid = "U"` / `"L"`. O genimage aborta:
+
+```
+ERROR: hdimage(sdcard.img): part boot: 'partition-type-uuid' is only valid
+for gpt and hybrid partition-table-type
+```
+
+- Em MBR use o **byte hex**: `partition-type = 0x0c` (W95 FAT32 LBA, que é o
+  `mkfs.vfat -F 32` do `mkbootimg.sh`) e `0x83` (Linux).
+- `gpt-location` também só vale para gpt — estava no cfg de MBR e era ignorado
+  em silêncio (o `image-hd.c` só o lê no caminho GPT). Removido.
+- A partição raw do U-Boot (`in-partition-table = "no"`) não leva
+  `partition-type` nenhum.
+- Guarda: `tests/test_image_layout.py` confere a coerência tabela × tipo nos
+  **dois** cfgs. A guarda pegou o mesmo defeito no `genimage-no-uboot.cfg`,
+  que o build da X55 não exercita (o caminho sem U-Boot é de X35S/X35H).
+
+### 3.27 `%PARTUUID%` não é substituído por ninguém
+
+O `extlinux.conf` gerado pelo `post-image.sh` saía com o texto literal
+`root=PARTUUID=%PARTUUID%`. Essa expansão **não existe** no genimage 17 (não há
+`PARTUUID` no fonte; conferido em `image-hd.c`, `genimage.c` e `util.c`) nem em
+nenhum script do repositório — o kernel receberia uma string que não resolve e
+não montaria o rootfs. Ninguém notava porque o `boot.scr` (que é quem boota)
+usa `/dev/mmcblk${giochi_mmc}p2`; o `extlinux.conf` é fallback (F1).
+
+- Use o mesmo caminho de dispositivo do `boot.cmd`.
+- Guarda: `tests/test_image_layout.py` proíbe `%PARTUUID%` no código do
+  `post-image.sh`.
+
+### 3.28 `[ -f x ] && echo` como último comando = exit 1
+
+O `post-image.sh` terminava com:
+
+```sh
+for f in "$IMG.xz" "$IMG.zst" "$IMG.gz"; do
+    [ -f "$f" ] && echo "..."
+done
+```
+
+Quando o arquivo não existe, o `&&` não executa e o **status da lista é 1**.
+Sendo o último comando do script, esse 1 vira o exit code do `post-image.sh`
+inteiro — e o build acusava:
+
+```
+post-image: artefato: .../sdcard.img.xz (41M)
+make: *** [Makefile:820: target-post-image] Error 1
+```
+
+…com a imagem perfeitamente gerada. O `build-image.sh` até copiava o artefato
+(porque ele existia), mas o `make` saía com erro e o CI reprovava.
+
+- Use `if [ -f "$f" ]; then ...; fi` e termine o script com `exit 0` explícito.
+- Mesma classe da armadilha §3.4 (`set -e` + `$(teste && cmd)`).
+- Guarda: `tests/test_image_layout.py` exige `exit 0` como último comando.
 
 ## 4. O que NÃO foi verificado
 
@@ -1189,3 +1269,67 @@ sob o sandbox do Windows — não é bug do repositório.
 atlas gerado no build); desenho no `render.cpp`; `make-screenshots.py` continua
 com letterbox; `docs/screenshots/*.png` ainda são o render antigo. Sem `git`
 aqui, nada foi commitado.
+
+### 2026-10-31 (16) — Copilot (build REAL da X55: do zero ao `sdcard.img`)
+
+Primeira imagem completa gerada neste repositório: **`sdcard.img` de 936 MB
+(147 MB de blocos reais, esparso) com U-Boot mainline, kernel 6.12, DTB do
+`rockchip`, SquashFS de 29 MB em A e B, e `user.ext4`**. `make` saiu com
+**rc=0** e `make test` **19/19**. Nada disso foi bootado num aparelho.
+
+O caminho até aqui derrubou **quatro** defeitos, cada um no **último** passo do
+build (depois de compilar toolchain + kernel + U-Boot + mesa3d + todos os
+pacotes), e cada um com mensagem que não aponta o culpado. Todos agora têm
+guarda no lint:
+
+| # | Defeito | Onde aparecia | Guarda |
+|---|---|---|---|
+| §3.25 | `g` no campo de tipo do `device_table.txt` | `makedevs` → `squashfs.mk` | `tools/check-device-table.sh` |
+| §3.26 | `partition-type-uuid` com tabela MBR (nos **dois** cfgs) | `genimage` → `target-post-image` | `tests/test_image_layout.py` |
+| §3.27 | `%PARTUUID%` literal no `extlinux.conf` | kernel não montaria root | idem |
+| §3.28 | `&&` como último comando → exit 1 com a imagem pronta | `target-post-image Error 1` | idem |
+
+Antes disso, a armadilha §3.23 (cópia recursiva) e os dois erros de compilação
+do `giochi-init` (defines de texto com aspas atravessando duas camadas de shell)
+já haviam sido corrigidos: veja a entrada (15) e o `CHANGELOG.md`.
+
+**Como foi verificado (tudo medido, nada estimado):**
+
+- `fdisk -l` na imagem: MBR `dos`, p1 `0c` FAT32 LBA em 24 MiB / 80 MiB,
+  p2/p3 `83` 160 MiB cada, p4 `83` 512 MiB. Total 936 MiB.
+- `RKNS` (cabeçalho do boot ROM do Rockchip) em `0x8000`; os
+  **9 401 856 B** do `u-boot-rockchip.bin` em 32 KiB são **byte a byte iguais**
+  ao arquivo de origem (comparado em Python). O FIT (`d00dfeed`) do mainline
+  fica em `0x2b3f8` dentro do blob, **não** em 6 MiB como no BSP do vendor —
+  quem for gravar à mão precisa usar o arquivo inteiro, não só o `.itb`.
+- `mdir` no `boot.vfat` extraído: `Image` 47 516 160 B, `board.dtb` 59 420 B,
+  `dtbs/rk3566-powkiddy-x55.dtb`, `extlinux/extlinux.conf`, `splash.bmp`
+  2 764 854 B e `boot.scr` 2 270 B.
+- `xz -9 --lzma2=dict=192MiB`: **41 MB** para o `.img` de 936 MB (o mesmo xz do
+  §3.21; o número de 27,8 MB era com um SquashFS de 29 MB **e** kernel menor —
+  o kernel de 47 MB é hoje o que domina o `.xz`).
+
+**Armadilha de ambiente (nova):** o `tools/docker-build.sh` só passava
+`BUILDROOT_DIR`, `BR2_DL_DIR` e `JOBS` para dentro do container. Qualquer
+`GIOCHI_*` exportada no host (`GIOCHI_NO_COMPRESS=1`, `GIOCHI_MIN_FREE_GB`) era
+**silenciosamente ignorada** — o build comprimia mesmo com
+`GIOCHI_NO_COMPRESS=1`. Agora as duas são repassadas com `-e`. Regra: variável
+que só o `post-image.sh` lê precisa de `-e` explícito, senão o teste "com a
+variável" e "sem a variável" dão o mesmo resultado.
+
+**Para testar no aparelho:** grave `dist/x55/giochi-x55-sdcard.img` cru com
+`dd` (ou `balenaEtcher`). O `dist/` fica com ~15 GB de árvore de build;
+`dist/x55/pkg-src` (~9 MB) é recriado a cada build e pode ser apagado.
+
+**Correção de fato:** o comentário do `genimage.cfg` e o `docs/DEVICES.md`
+diziam que o `u-boot.itb` do mainline entra em 6 MiB. Isso vale para o BSP do
+vendor (Rockchip/ROCKNIX) e para o layout que o `genimage` reserva; o
+`u-boot-rockchip.bin` **mainline** monta idbloader + FIT **contíguos**
+(idbloader em 0, FIT em 0x2b3f8). Só o idbloader é lido pelo boot ROM em
+LBA 64; o resto é do SPL. Gravar o arquivo inteiro em 32 KiB funciona nos dois
+casos, que é o que este repositório faz.
+
+**Aberto:** a imagem nunca foi gravada nem bootou (é o próximo passo e depende
+do aparelho); o `rg351v`/`rg353v` usam o mesmo caminho de DTS upstream e devem
+gerar igual, mas só a X55 foi compilada; nada foi testado com U-Boot do vendor
+(`genimage-no-uboot.cfg`).

@@ -15,16 +15,18 @@ GIOCHI_INIT_DEPENDENCIES = host-pkgconf
 
 GIOCHI_INIT_SOC = $(call qstrip,$(BR2_PACKAGE_GIOCHI_INIT_SOC))
 GIOCHI_INIT_DEVICE = $(call qstrip,$(BR2_PACKAGE_GIOCHI_INIT_DEVICE))
+GIOCHI_INIT_OS_VERSION = 1.2
+GIOCHI_INIT_KERNEL_VERSION = 6.12
 GIOCHI_INIT_EXTRA_LDFLAGS = $(TARGET_LDFLAGS)
 GIOCHI_INIT_PROTON = $(if $(BR2_PACKAGE_GIOCHI_PROTON),1,0)
 
+# As aspas dos defines de texto NAO ficam aqui: este valor atravessa duas
+# camadas de shell (recipe do pacote e recipe do Makefile da raiz) e as aspas
+# eram comidas na primeira, deixando o compilador com o *simbolo* rk3566 em
+# vez da string "rk3566". O Makefile da raiz aplica as aspas (uma camada so);
+# aqui passamos apenas o valor cru.
 GIOCHI_INIT_EXTRA_CFLAGS = $(TARGET_CFLAGS) \
-	-march=$(GIOCHI_ARCH) -D_GNU_SOURCE \
-	-DGIOCHI_SOC='"$(GIOCHI_INIT_SOC)"' \
-	-DGIOCHI_DEVICE='"$(GIOCHI_INIT_DEVICE)"' \
-	-DGIOCHI_OS_VERSION='"1.2"' \
-	-DGIOCHI_KERNEL_VERSION='"6.12"' \
-	-DGIOCHI_ENABLE_PROTON=$(GIOCHI_INIT_PROTON)
+	-march=$(GIOCHI_ARCH) -D_GNU_SOURCE
 
 ifeq ($(BR2_PACKAGE_OPENSSL),y)
 GIOCHI_INIT_DEPENDENCIES += openssl
@@ -33,6 +35,8 @@ GIOCHI_INIT_EXTRA_LDFLAGS += -lcrypto
 endif
 
 # Um unico descritor de build (Makefile da raiz) evita divergencia de fontes.
+# GIOCHI_* entram como variaveis do make (sem aspas) e o Makefile da raiz
+# aplica as aspas dos defines de texto.
 define GIOCHI_INIT_BUILD_CMDS
 	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D) HOST_BUILD=0 \
 		BUILD_DIR=build OPT="-O2" \
@@ -40,6 +44,11 @@ define GIOCHI_INIT_BUILD_CMDS
 		PKG_CONFIG="$(PKG_CONFIG_HOST_BINARY)" \
 		PKG_CONFIG_SYSROOT_DIR="$(STAGING_DIR)" \
 		PKG_CONFIG_LIBDIR="$(STAGING_DIR)/usr/lib/pkgconfig:$(STAGING_DIR)/usr/share/pkgconfig" \
+		GIOCHI_SOC="$(GIOCHI_INIT_SOC)" \
+		GIOCHI_DEVICE="$(GIOCHI_INIT_DEVICE)" \
+		GIOCHI_OS_VERSION="$(GIOCHI_INIT_OS_VERSION)" \
+		GIOCHI_KERNEL_VERSION="$(GIOCHI_INIT_KERNEL_VERSION)" \
+		GIOCHI_PROTON="$(GIOCHI_INIT_PROTON)" \
 		EXTRA_CFLAGS="$(GIOCHI_INIT_EXTRA_CFLAGS)" \
 		EXTRA_LDFLAGS="$(GIOCHI_INIT_EXTRA_LDFLAGS)" \
 		build/target/bin/giochi-init

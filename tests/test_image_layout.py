@@ -191,6 +191,67 @@ class ImageLayoutTest(unittest.TestCase):
         self.assertIn("fits u-boot-rockchip.bin", text,
                       "post-image.sh nao confere o tamanho do u-boot")
 
+    # ------------------------------------------------------------------
+    # Os tres defeitos abaixo paravam o build no ULTIMO passo (depois de
+    # compilar toolchain, kernel, U-Boot e todos os pacotes), cada um com
+    # mensagem que nao aponta o culpado.
+    # ------------------------------------------------------------------
+    def test_tipo_de_particao_combina_com_a_tabela(self):
+        # genimage: 'partition-type-uuid' so vale para gpt/hybrid, e
+        # 'partition-type' (byte hex) so para dos. Misturar aborta com
+        #   part boot: 'partition-type-uuid' is only valid for gpt and hybrid
+        for name in CFGS:
+            path = os.path.join(BOARD, name)
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+            body = "\n".join(l.split("#", 1)[0] for l in text.splitlines())
+            m = re.search(r'partition-table-type\s*=\s*"([^"]+)"', body)
+            self.assertIsNotNone(m, "%s sem partition-table-type" % name)
+            table = m.group(1)
+            if table in ("gpt", "hybrid"):
+                self.assertNotRegex(body, r"partition-type\s*=",
+                                    "%s: tabela %s nao usa 'partition-type'"
+                                    % (name, table))
+            else:
+                self.assertNotIn("partition-type-uuid", body,
+                                 "%s: tabela '%s' nao aceita "
+                                 "'partition-type-uuid' (o genimage aborta)"
+                                 % (name, table))
+                for bloco in re.findall(r"partition\s+(\S+)\s*\{([^}]*)\}",
+                                        body, re.S):
+                    pname, pbody = bloco
+                    # A regiao raw do U-Boot fica FORA da tabela de particoes.
+                    if re.search(r'in-partition-table\s*=\s*"no"', pbody):
+                        continue
+                    self.assertRegex(
+                        pbody, r"partition-type\s*=",
+                        "%s: particao %s sem 'partition-type' (MBR exige)"
+                        % (name, pname))
+
+    def test_extlinux_nao_usa_partuuid_literal(self):
+        # O genimage NAO substitui %PARTUUID% (nao existe essa expansao no 17).
+        # O extlinux.conf saia com o texto literal e o kernel nao montava root.
+        path = os.path.join(BOARD, "post-image.sh")
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+        code = "\n".join(l for l in text.splitlines()
+                          if l.lstrip() and not l.lstrip().startswith("#"))
+        self.assertNotIn("%PARTUUID%", code,
+                         "post-image.sh emite %PARTUUID% literal: o genimage "
+                         "nao substitui isso; use /dev/mmcblk<N>p2")
+
+    def test_post_image_termina_com_sucesso(self):
+        # Um '[ -f x ] && cmd' como ultimo comando deixa status 1 quando o
+        # arquivo nao existe, e isso vira o exit code do script inteiro: o
+        # build acusava "target-post-image Error 1" com a imagem pronta.
+        path = os.path.join(BOARD, "post-image.sh")
+        with open(path, encoding="utf-8") as fh:
+            lines = [l.strip() for l in fh.read().splitlines()]
+        body = [l for l in lines if l and not l.startswith("#")]
+        self.assertEqual(body[-1], "exit 0",
+                         "post-image.sh precisa terminar com 'exit 0'; "
+                         "sem isso o status do ultimo '&&' vira o exit code")
+
 
 if __name__ == "__main__":
     unittest.main()

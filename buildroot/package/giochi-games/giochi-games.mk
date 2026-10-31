@@ -32,7 +32,7 @@ define GIOCHI_GAMES_INSTALL_TARGET_CMDS
 	$(INSTALL) -m 0644 $(@D)/$(GIOCHI_GAMES_MANIFEST) \
 		$(TARGET_DIR)/usr/share/giochi/default-games.json
 	sh $(GIOCHI_GAMES_INSTALLER) \
-		$(GIOCHI_GAMES_MANIFEST) \
+		$(@D)/$(GIOCHI_GAMES_MANIFEST) \
 		$(@D) \
 		$(TARGET_DIR)/usr/share/giochi/games
 endef

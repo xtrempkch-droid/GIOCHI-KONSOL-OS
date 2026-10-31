@@ -76,6 +76,8 @@ set -- docker run --rm --init \
     -e BUILDROOT_DIR=/opt/buildroot \
     -e BR2_DL_DIR=/dl \
     -e JOBS="$JOBS" \
+    -e GIOCHI_NO_COMPRESS="${GIOCHI_NO_COMPRESS:-}" \
+    -e GIOCHI_MIN_FREE_GB="${GIOCHI_MIN_FREE_GB:-15}" \
     -v "$ROOT:/work" \
     -v "$DL_DIR:/dl" \
     -w /work \

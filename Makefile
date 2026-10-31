@@ -40,6 +40,24 @@ EXTRA_CXXFLAGS ?=
 EXTRA_LDFLAGS  ?=
 
 DEFS := -D_GNU_SOURCE
+
+# Identidade do aparelho e da versao. Os valores chegam SEM aspas (o pacote
+# Buildroot passa GIOCHI_SOC=rk3566 na linha de comando do make); as aspas sao
+# aplicadas aqui, numa unica camada de shell. Fazer isso no .mk nao funcionava:
+# o EXTRA_CFLAGS atravessa duas camadas e o shell comia as aspas, deixando o
+# compilador com o simbolo rk3566 em vez da string "rk3566".
+GIOCHI_SOC            ?= desconhecido
+GIOCHI_DEVICE         ?= desconhecido
+GIOCHI_OS_VERSION     ?= 0.0
+GIOCHI_KERNEL_VERSION ?= 0.0
+GIOCHI_PROTON         ?= 0
+
+DEFS += -DGIOCHI_SOC='"$(GIOCHI_SOC)"' \
+        -DGIOCHI_DEVICE='"$(GIOCHI_DEVICE)"' \
+        -DGIOCHI_OS_VERSION='"$(GIOCHI_OS_VERSION)"' \
+        -DGIOCHI_KERNEL_VERSION='"$(GIOCHI_KERNEL_VERSION)"' \
+        -DGIOCHI_ENABLE_PROTON=$(GIOCHI_PROTON)
+
 INCS := -Isrc/common -Isrc/init -Isrc/launcher -Isrc/musicd
 
 CFLAGS_ALL   = $(CSTD) $(OPT) $(CWARN) $(DEFS) $(INCS) $(EXTRA_CFLAGS)
@@ -357,6 +375,8 @@ lint:
 	@tools/check-uboot.py
 	@echo "== conteudo da imagem =="
 	@sh tools/check-image-contents.sh
+	@echo "== tabela de dispositivos =="
+	@sh tools/check-device-table.sh
 	@echo "== layout do cartao =="
 	@python3 -m unittest tests.test_image_layout 2>&1 | tail -3
 	@echo "== proposta de layout =="

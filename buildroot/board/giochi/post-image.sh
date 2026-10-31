@@ -115,6 +115,19 @@ fi
 fits u-boot-rockchip.bin "$UB_BIN" u-boot || exit 1
 fits rootfs.squashfs "$BINARIES_DIR/rootfs.squashfs" system-a || exit 1
 
+# DTB de aparelho com DTS upstream: o linux.mk do Buildroot instala o blob
+# DIRETO em $BINARIES_DIR (sem subdiretorio). Nao existe
+# BR2_LINUX_KERNEL_INSTALL_DTBS no 2024.02 -- so DTB_KEEP_DIRNAME, que
+# prefixaria com 'rockchip/'. Sem esta normalizacao o dtbs/ do cartao so era
+# populado no caminho do DTB pre-compilado, e todo aparelho com DTS upstream
+# (X55, RG353V, RG351V) morria aqui, no ultimo passo do build.
+if [ ! -f "$BINARIES_DIR/dtbs/$DTB_FILE" ] && \
+   [ -f "$BINARIES_DIR/$DTB_FILE" ]; then
+    mkdir -p "$BINARIES_DIR/dtbs"
+    cp "$BINARIES_DIR/$DTB_FILE" "$BINARIES_DIR/dtbs/$DTB_FILE"
+    echo "post-image: dtb $DTB_FILE normalizado para dtbs/"
+fi
+
 # DTB pre-compilado (aparelho sem DTS no kernel): copiado pelo build-image.sh.
 if [ -n "${GIOCHI_PRECOMPILED_DTB:-}" ] && [ -f "$GIOCHI_PRECOMPILED_DTB" ]; then
     mkdir -p "$BINARIES_DIR/dtbs"
@@ -135,14 +148,21 @@ if [ ! -f "$BINARIES_DIR/dtbs/$DTB_FILE" ]; then
 fi
 
 # extlinux.conf (F1): o DTB escolhe o driver de painel — X55 != X35S.
+#
+# O root= usa o MESMO caminho de dispositivo que o boot.cmd
+# (/dev/mmcblk<giochi_mmc>p2), e nao PARTUUID: o genimage nao substitui
+# %PARTUUID% (nao existe essa expansao no 17) e o arquivo saia com o texto
+# literal "%PARTUUID%", que o kernel nao resolve. Quem muda de slot (A/B) e o
+# boot.scr; este extlinux.conf e fallback/documentacao (F1).
 if [ ! -f "$BINARIES_DIR/extlinux.conf" ]; then
     GIOCHI_DTB_NAME=${GIOCHI_DTB_NAME:-$DTB_FILE}
+    GIOCHI_BOOT_MMC=${GIOCHI_BOOT_MMC:-1}
     cat > "$BINARIES_DIR/extlinux.conf" <<CONF
 DEFAULT giochi
 LABEL giochi
     KERNEL /Image
     FDT /dtbs/$GIOCHI_DTB_NAME
-    APPEND console=ttyS2,1500000n8 earlycon=uart8250,mmio32,0xfe660000 root=PARTUUID=%PARTUUID% rootfstype=squashfs ro rootwait
+    APPEND console=ttyS2,1500000n8 earlycon=uart8250,mmio32,0xfe660000 root=/dev/mmcblk${GIOCHI_BOOT_MMC}p2 giochi.slot=2 giochi.bootcount=0 rootfstype=squashfs ro rootwait
 CONF
 fi
 
@@ -240,6 +260,14 @@ else
             ;;
     esac
     for f in "$IMG.xz" "$IMG.zst" "$IMG.gz"; do
-        [ -f "$f" ] && echo "post-image: artefato: $f ($(du -h "$f" | cut -f1))"
+        # 'if' e nao '[ -f ] && echo': o status de um '&&' que nao executa e 1,
+        # e sendo o ULTIMO comando do script ele virava o exit code do
+        # post-image.sh. O build terminava com "target-post-image Error 1"
+        # mesmo com o sdcard.img e o .xz gerados e corretos.
+        if [ -f "$f" ]; then
+            echo "post-image: artefato: $f ($(du -h "$f" | cut -f1))"
+        fi
     done
 fi
+
+exit 0

@@ -108,6 +108,35 @@ if [ -f tools/build-image.sh ]; then
     fi
 fi
 
+# --- 5. define de TEXTO: aspas so no Makefile da raiz -------------------
+# Os .mk passam flags em EXTRA_CFLAGS="...", que atravessa DUAS camadas de
+# shell (recipe do pacote e recipe do Makefile da raiz). Aspas dentro desse
+# valor eram comidas na primeira camada: o compilador recebia
+# -DGIOCHI_SOC=rk3566, o *simbolo*, em vez da string "rk3566". O erro aparece
+# longe da causa (%s recebendo double e "control reaches end of non-void
+# function"). Por isso os defines de texto moram no Makefile da raiz, que os
+# aplica numa camada so, e os .mk passam apenas o valor cru.
+for mk in buildroot/package/giochi-*/*.mk buildroot/external.mk; do
+    [ -f "$mk" ] || continue
+    if grep -qE -- '-DGIOCHI_(SOC|DEVICE|OS_VERSION|KERNEL_VERSION)=' "$mk"; then
+        echo "  ERRO $mk: define de texto fora do Makefile da raiz" >&2
+        grep -nE -- '-DGIOCHI_(SOC|DEVICE|OS_VERSION|KERNEL_VERSION)=' "$mk" |
+            sed 's/^/       /' >&2
+        echo "       passe GIOCHI_SOC=... como variavel; o Makefile poe as aspas" >&2
+        fail=$((fail + 1))
+    fi
+done
+
+if [ -f Makefile ]; then
+    for var in GIOCHI_SOC GIOCHI_DEVICE GIOCHI_OS_VERSION GIOCHI_KERNEL_VERSION; do
+        if ! grep -q -- "-D$var='\"" Makefile; then
+            echo "  ERRO Makefile: -D$var sem aspas aplicadas no DEFS" >&2
+            echo "       esperado: -D$var='\"\$(...)\"'" >&2
+            fail=$((fail + 1))
+        fi
+    done
+fi
+
 if [ "$fail" -ne 0 ]; then
     echo "check-image-contents: $fail problema(s) de conteudo da imagem" >&2
     exit 1
