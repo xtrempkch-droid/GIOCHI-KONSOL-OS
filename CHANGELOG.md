@@ -39,6 +39,22 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 - `tools/check-links.py` agora valida também as tags de imagem HTML.
 
 ### Corrigido
+- **Cópia recursiva de 66 GB: a causa real de o build travar e o CI "morrer sem
+  mensagem".** Os pacotes locais (`giochi-assets`, `giochi-init`,
+  `giochi-launcher`, `giochi-musicd`, `giochi-tools`, `giochi-games`) usavam
+  `SITE = $(BR2_EXTERNAL_GIOCHI_PATH)/..` com `SITE_METHOD = local`. O rsync do
+  Buildroot copiava a raiz do repositório — que contém `dist/`, onde o próprio
+  build está sendo escrito — para dentro de si mesma, recursivamente (medido:
+  **66 GB** em `giochi-assets-1.2`). O build travava em `Syncing from source
+  dir` e o disco acabava sem mensagem útil.
+  Agora `tools/build-image.sh` monta um snapshot só das fontes (~9 MB) em
+  `dist/<id>/pkg-src` e exporta `GIOCHI_PKGSRC`; todo `.mk` de pacote local usa
+  `SITE = $(if $(GIOCHI_PKGSRC),$(GIOCHI_PKGSRC),<raiz>)`.
+  `tools/check-image-contents.sh` (em `make lint`) recusa `SITE_METHOD = local`
+  sem `GIOCHI_PKGSRC` e exige o `export` no `build-image.sh`.
+- `tools/docker-build.sh` não exportava `BUILDROOT_DIR` para dentro do
+  container, então falhava antes de compilar; e o Dockerfile não tinha
+  `xz-utils`, que o `post-image.sh` usa para comprimir o `.img`.
 - **A imagem não cabia no GitHub**: o `sdcard.img` tinha **968 MB** e era
   publicado cru. Agora o `post-image.sh` gera o artefato comprimido com
   **`xz -9` e janela de 192 MiB**, e o `images.yml` publica só o `.xz` +

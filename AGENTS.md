@@ -413,6 +413,40 @@ O `post-build.sh` remove `usr/share/{locale,i18n,help,gtk-doc}` e loga quantos
 KB saíram. `GIOCHI_KEEP_LOCALE=1` mantém (para investigar tradução de
 ferramenta).
 
+### 3.23 Pacote local com SITE na raiz do repo = cópia recursiva de 66 GB
+
+Os pacotes `giochi-*` compilam código deste repositório e usavam
+`SITE = $(BR2_EXTERNAL_GIOCHI_PATH)/..` com `SITE_METHOD = local`. O Buildroot
+sincroniza isso com `rsync`, e **não exclui nada além de `.git`/`.svn`/…**.
+Como `dist/` fica dentro da raiz, o rsync copiava o **build em andamento para
+dentro de si mesmo**:
+
+```
+dist/x55/build/build/giochi-assets-1.2/
+  └── dist/x55/build/build/giochi-assets-1.2/
+        └── dist/x55/build/build/giochi-assets-1.2/  ... (recursivo)
+```
+
+Medido: **66 GB** num único diretório de pacote. Sintomas, na ordem em que
+apareceram:
+
+1. o build **trava** no `>>> giochi-assets 1.2 Syncing from source dir` e não
+   sai mais (a cada nível copiado o diretório cresce);
+2. o log do CI **termina no meio de uma linha**, sem `No space left` (o próprio
+   log já não pode ser gravado);
+3. `rm -rf` do diretório leva **muitos minutos** por causa da profundidade;
+   `rsync -a --delete` de um diretório vazio é bem mais rápido.
+
+- **Correção**: `build-image.sh` monta um snapshot só das fontes
+  (`Makefile src tools assets schemas scripts Jogos` → ~9 MB) em
+  `dist/<id>/pkg-src` e exporta `GIOCHI_PKGSRC`. Todo `.mk` de pacote local usa
+  `SITE = $(if $(GIOCHI_PKGSRC),$(GIOCHI_PKGSRC),<raiz>)`.
+- Guarda: `tools/check-image-contents.sh` (em `make lint`) recusa
+  `SITE_METHOD = local` cujo `SITE` não passe por `GIOCHI_PKGSRC`, e exige que o
+  `build-image.sh` exporte a variável.
+- **Regra geral**: nunca aponte `SITE_METHOD = local` para um diretório que
+  contém a saída do build. Se precisar da árvore, copie só o que é fonte.
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):
@@ -525,6 +559,30 @@ uma suíte, registre-a lá **e** no respectivo alvo do `Makefile`.
 ---
 
 ## Registro de agentes
+
+### 2026-10-31 (12) — Copilot (cópia recursiva: a causa real do CI morrer)
+
+- Build local em container (Docker, 12 CPUs / 60 GB) chegou **além de onde o CI
+  parou**: Mesa3D compilou (o ponto que morria por memória), e o build travou
+  em `>>> giochi-assets 1.2 Syncing from source dir`.
+- Causa raiz — **não era disco do runner**: os pacotes locais usavam
+  `SITE = $(BR2_EXTERNAL_GIOCHI_PATH)/..` (raiz do repo) com
+  `SITE_METHOD = local`, e o rsync do Buildroot copiava `dist/` para dentro de
+  `dist/`, recursivamente. Medido: **66 GB** em `giochi-assets-1.2`, com
+  `.../giochi-assets-1.2/dist/x55/build/build/giochi-assets-1.2/...` até o
+  limite de caminho. Isso explica os três sintomas do CI: build travado, log
+  truncado no meio de uma linha, e passos de limpeza que nunca rodaram.
+- Correção: `build-image.sh` monta um snapshot só das fontes (~9 MB) em
+  `dist/<id>/pkg-src`, exporta `GIOCHI_PKGSRC`, e todos os `.mk` de pacote
+  local usam `SITE = $(if $(GIOCHI_PKGSRC),$(GIOCHI_PKGSRC),<raiz>)`.
+- Guarda: `check-image-contents.sh` recusa `SITE_METHOD = local` sem
+  `GIOCHI_PKGSRC` e exige o `export` no `build-image.sh`. Testada ao contrário
+  (reintroduzi o SITE na raiz → rc=1).
+- Também: `docker-build.sh` passou a exportar `BUILDROOT_DIR=/opt/buildroot`
+  dentro do container (sem isso o wrapper falhava antes de compilar), e o
+  Dockerfile ganhou `xz-utils` (o `post-image.sh` comprime o `.img`).
+- Nota de operação: remover a árvore recursiva com `rm -rf` leva minutos.
+  `rsync -a --delete <dir-vazio>/ <alvo>/` é bem mais rápido.
 
 ### 2026-10-27 (1) — Copilot (núcleo, buildroot, CI, USB)
 

@@ -75,6 +75,39 @@ if [ -f Makefile ]; then
     done
 fi
 
+# --- 4. pacote local NAO pode usar a raiz do repositorio como SITE --------
+# Os pacotes giochi-* compilam codigo deste repositorio. Se o SITE for a raiz,
+# o rsync do Buildroot copia TUDO que estiver la -- inclusive dist/, que e onde
+# o proprio build esta sendo escrito. O resultado e uma copia recursiva: um
+# giochi-assets-1.2 de 66 GB (medido), build travado e disco cheio. Por isso o
+# SITE tem de passar por GIOCHI_PKGSRC (snapshot so das fontes, feito pelo
+# build-image.sh).
+for mk in buildroot/package/giochi-*/*.mk; do
+    [ -f "$mk" ] || continue
+    grep -q '_SITE_METHOD *= *local' "$mk" || continue
+    site=$(sed -n 's/^[A-Z0-9_]*_SITE *= *//p' "$mk" | head -n1)
+    case "$site" in
+        *GIOCHI_PKGSRC*) ;;
+        *)
+            echo "  ERRO $mk: SITE local sem GIOCHI_PKGSRC ($site)" >&2
+            echo "       SITE na raiz do repo copia dist/ recursivamente (66 GB)" >&2
+            fail=$((fail + 1))
+            ;;
+    esac
+done
+
+# build-image.sh precisa exportar o snapshot.
+if [ -f tools/build-image.sh ]; then
+    if ! grep -q 'GIOCHI_PKGSRC' tools/build-image.sh; then
+        echo "  ERRO tools/build-image.sh nao exporta GIOCHI_PKGSRC" >&2
+        fail=$((fail + 1))
+    fi
+    if ! grep -q 'export GIOCHI_PKGSRC' tools/build-image.sh; then
+        echo "  ERRO tools/build-image.sh nao faz 'export GIOCHI_PKGSRC'" >&2
+        fail=$((fail + 1))
+    fi
+fi
+
 if [ "$fail" -ne 0 ]; then
     echo "check-image-contents: $fail problema(s) de conteudo da imagem" >&2
     exit 1

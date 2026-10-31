@@ -5,7 +5,10 @@
 ################################################################################
 
 GIOCHI_ASSETS_VERSION = 1.2
-GIOCHI_ASSETS_SITE = $(BR2_EXTERNAL_GIOCHI_PATH)/..
+# Fontes: build-image.sh exporta GIOCHI_PKGSRC com um snapshot so do que e
+# fonte (~9 MB). Sem ele o SITE caia na raiz do repositorio, e o rsync do
+# Buildroot copiava dist/ (o build em andamento) para dentro de si mesmo.
+GIOCHI_ASSETS_SITE = $(if $(GIOCHI_PKGSRC),$(GIOCHI_PKGSRC),$(BR2_EXTERNAL_GIOCHI_PATH)/..)
 GIOCHI_ASSETS_SITE_METHOD = local
 GIOCHI_ASSETS_LICENSE = Proprietary
 

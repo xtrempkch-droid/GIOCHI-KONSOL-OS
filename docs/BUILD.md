@@ -120,6 +120,34 @@ não `root`.
 >
 > Use `JOBS=n` para limitar o paralelismo — Mesa3D e o kernel comem memória.
 
+### Os pacotes locais compilam a partir de um snapshot
+
+`giochi-assets`, `giochi-init`, `giochi-launcher`, `giochi-musicd`,
+`giochi-tools` e `giochi-games` compilam código **deste repositório**. O
+Buildroot sincroniza `SITE_METHOD = local` com `rsync`, e não exclui nada além
+de `.git`/`.svn`/`…`. Se o `SITE` for a raiz do repositório, ele copia `dist/` —
+que é onde o próprio build está escrevendo — **para dentro de si mesmo**.
+
+Medido: `giochi-assets-1.2` chegou a **66 GB**, com a árvore recursiva
+
+```
+dist/x55/build/build/giochi-assets-1.2/dist/x55/build/build/giochi-assets-1.2/...
+```
+
+O build trava em `>>> giochi-assets 1.2 Syncing from source dir` e não sai mais.
+
+Por isso o `build-image.sh` monta antes um **snapshot só das fontes**
+(`Makefile src tools assets schemas scripts Jogos`, ~9 MB) em
+`dist/<id>/pkg-src` e exporta `GIOCHI_PKGSRC`; cada `.mk` usa
+`SITE = $(if $(GIOCHI_PKGSRC),$(GIOCHI_PKGSRC),<raiz>)`. O fallback existe para
+`make` dentro do Buildroot, que não passa pelo `build-image.sh`.
+
+> Para apagar uma árvore recursiva dessas, `rm -rf` leva **minutos**.
+> `rsync -a --delete <dir-vazio>/ <alvo>/` é bem mais rápido.
+
+`tools/check-image-contents.sh` (em `make lint`) recusa `SITE_METHOD = local`
+cujo `SITE` não passe por `GIOCHI_PKGSRC`.
+
 ### Espaço em disco (causa de build que "morre sem erro")
 
 Um build completo da X55 usa **~16–18 GB**. Medição real de um build parcial

@@ -225,6 +225,27 @@ build_device() {
     fi
     echo "  espaco livre: ${free_gb:-?} GB (minimo ${need_gb} GB)"
 
+    # --- snapshot das fontes dos pacotes giochi-* --------------------------
+    # Os pacotes usam SITE_METHOD=local apontando para a RAIZ do repositorio, e
+    # o Buildroot sincroniza isso com rsync. Como dist/ fica dentro da raiz, o
+    # rsync copiava o proprio build em andamento (14 GB) para dentro de si
+    # mesmo, recursivamente -- o build travava e o disco acabava sem nenhuma
+    # mensagem util. Aqui montamos um diretorio so com o que e fonte (~9 MB) e
+    # os .mk o usam via GIOCHI_PKGSRC.
+    pkg_src="$out/pkg-src"
+    rm -rf "$pkg_src"
+    mkdir -p "$pkg_src"
+    for item in Makefile src tools assets schemas scripts Jogos; do
+        [ -e "$ROOT/$item" ] || continue
+        cp -a "$ROOT/$item" "$pkg_src/" 2>/dev/null || {
+            echo "ERRO $id: falha ao copiar $item para o snapshot" >&2
+            return 1
+        }
+    done
+    GIOCHI_PKGSRC="$pkg_src"
+    export GIOCHI_PKGSRC
+    echo "  fontes: snapshot em $pkg_src ($(du -sh "$pkg_src" 2>/dev/null | cut -f1))"
+
     # Kconfig descarta simbolos inexistentes em silencio e aborta em
     # BR2_LEGACY sem apontar o culpado. Falhar aqui evita descobrir isso
     # depois de horas de build (ver tools/check-buildroot-symbols.py).

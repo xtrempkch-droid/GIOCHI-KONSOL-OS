@@ -73,6 +73,7 @@ mkdir -p "$DL_DIR" "$ROOT/dist"
 set -- docker run --rm --init \
     -u "$(id -u):$(id -g)" \
     -e HOME=/tmp \
+    -e BUILDROOT_DIR=/opt/buildroot \
     -e BR2_DL_DIR=/dl \
     -e JOBS="$JOBS" \
     -v "$ROOT:/work" \

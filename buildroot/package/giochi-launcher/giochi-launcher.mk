@@ -5,7 +5,10 @@
 ################################################################################
 
 GIOCHI_LAUNCHER_VERSION = 1.2
-GIOCHI_LAUNCHER_SITE = $(BR2_EXTERNAL_GIOCHI_PATH)/..
+# Fontes: build-image.sh exporta GIOCHI_PKGSRC com um snapshot so do que e
+# fonte (~9 MB). Sem ele o SITE caia na raiz do repositorio, e o rsync do
+# Buildroot copiava dist/ (o build em andamento) para dentro de si mesmo.
+GIOCHI_LAUNCHER_SITE = $(if $(GIOCHI_PKGSRC),$(GIOCHI_PKGSRC),$(BR2_EXTERNAL_GIOCHI_PATH)/..)
 GIOCHI_LAUNCHER_SITE_METHOD = local
 GIOCHI_LAUNCHER_LICENSE = Proprietary
 GIOCHI_LAUNCHER_DEPENDENCIES = sdl2 host-pkgconf

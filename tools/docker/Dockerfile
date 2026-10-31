@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential git wget curl ca-certificates cpio unzip rsync bc \
         file libncurses-dev python3 python3-setuptools python3-pip \
         dosfstools mtools e2fsprogs device-tree-compiler bison flex \
-        libssl-dev libelf-dev python3-pil \
+        libssl-dev libelf-dev python3-pil xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Buildroot LTS. O Buildroot compila o proprio host-cmake quando precisa, entao

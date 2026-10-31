@@ -15,7 +15,10 @@
 ################################################################################
 
 GIOCHI_GAMES_VERSION = 1.0
-GIOCHI_GAMES_SITE = $(BR2_EXTERNAL_GIOCHI_PATH)/..
+# Fontes: build-image.sh exporta GIOCHI_PKGSRC com um snapshot so do que e
+# fonte (~9 MB). Sem ele o SITE caia na raiz do repositorio, e o rsync do
+# Buildroot copiava dist/ (o build em andamento) para dentro de si mesmo.
+GIOCHI_GAMES_SITE = $(if $(GIOCHI_PKGSRC),$(GIOCHI_PKGSRC),$(BR2_EXTERNAL_GIOCHI_PATH)/..)
 GIOCHI_GAMES_SITE_METHOD = local
 GIOCHI_GAMES_LICENSE = Public Domain / permissao dos autores / codigo proprio
 GIOCHI_GAMES_LICENSE_FILES = assets/default-games.json
