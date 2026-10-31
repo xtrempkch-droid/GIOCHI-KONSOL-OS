@@ -146,6 +146,24 @@ BR2_PACKAGE_BLUEZ5_UTILS_CLIENT=y
 # standalone foi REMOVIDO e BR2_PACKAGE_RFKILL agora e um simbolo
 # legacy que liga BR2_LEGACY (o build aborta em Makefile.legacy).
 BR2_PACKAGE_UTIL_LINUX_RFKILL=y
+# regulatory.db: sem ele o cfg80211 imprime
+# "Direct firmware load for regulatory.db failed" e o Wi-Fi fica sem
+# tabela de canais (medido no boot da X55). Pacote pequeno, sem deps.
+BR2_PACKAGE_WIRELESS_REGDB=y
+# Firmware do RTL8821CS (Wi-Fi SDIO da X55). Sem este blob o driver
+# imprime "failed to load firmware", depois "failed to setup chip
+# information" e o probe termina em -22 -- que nao parece falta de
+# firmware na primeira leitura (AGENTS.md §3.50). A sub-opcao RTW88
+# instala rtw88/rtw*.bin inteiro; o custo medido no SquashFS esta no
+# §3.50 (pequeno, e nao vale podar: poda silenciosa quebraria outro chip).
+BR2_PACKAGE_LINUX_FIRMWARE=y
+BR2_PACKAGE_LINUX_FIRMWARE_RTL_RTW88=y
+# Bluetooth do mesmo chip (UART/H5): rtl_bt/rtl8821c_{fw,config}.bin.
+# Atencao: o btrtl procura rtl8821cs_fw.bin, que NAO existe upstream --
+# ver §3.50 (fica documentado, nao "consertado" com chute).
+BR2_PACKAGE_LINUX_FIRMWARE_RTL_88XX_BT=y
+# Firmware dos dongles USB (ADR-14), que no rk3566 também são suportados.
+BR2_PACKAGE_LINUX_FIRMWARE_RTL_81XX=y
 
 # --- USB com o PC: MTP (userspace) + rede/SSH via USB -------------------
 BR2_PACKAGE_GIOCHI_MTPD=y

@@ -1,0 +1,71 @@
+#!/bin/sh
+# Giochi Konsol OS v1.2 — S05modules: carrega os modulos do kernel no boot.
+#
+# POR QUE ESTE SCRIPT EXISTE (medido, nao suposto)
+# ------------------------------------------------
+# Neste sistema NAO ha udev nem systemd-udevd: quem carrega modulo e o
+# proprio kernel (request_module -> /sbin/modprobe) ou o mdev com a regra
+# $MODALIAS de /etc/mdev.conf.
+#
+# O request_module do kernel so funciona DEPOIS que o rootfs existe — e os
+# dispositivos de plataforma (DSI, PHY, audio, SDIO do Wi-Fi) ja foram
+# criados muito antes disso (~0,5 s, o rootfs monta em ~1,2 s). Aqueles
+# pedidos falham com -ENOENT, o dispositivo fica sem driver e o
+# "deferred probe" NAO re-tenta: e preciso um coldplug do espaco de
+# usuario.
+#
+# Sem este script, o boot #3 da X55 mostrou:
+#
+#   dw-mipi-dsi-rockchip fe060000.dsi: failed to get mipi dphy: -517
+#   platform fe060000.dsi: deferred probe pending: (reason unknown)
+#   ALSA: No soundcards found.
+#   (nenhum rtw88, nenhum hci_uart, nenhum phy_rockchip)
+#
+# ...ou seja: `/lib/modules/6.12.0/` cheio de .ko e NADA carregado. A tela
+# fica apagada porque o PHY do DSI nunca aparece (AGENTS.md §3.50).
+#
+# O QUE FAZ
+#   mdev -s  -> percorre /sys e dispara as regras de /etc/mdev.conf. A regra
+#               "$MODALIAS=.* ... @modprobe -b $MODALIAS" faz o modprobe de
+#               cada driver que o hardware pedir. E o equivalente ao
+#               "mdev -s" do Buildroot que este projeto substituiu.
+#
+# NAO escreve em /etc (raiz SquashFS, somente leitura).
+set -u
+
+TAG=S05modules
+
+log() {
+    echo "$TAG: $*" >&2
+    logger -t "$TAG" -- "$*" 2>/dev/null || true
+}
+
+if command -v modprobe >/dev/null 2>&1; then
+    :
+else
+    log "aviso: modprobe ausente; nenhum modulo sera carregado e varios drivers falham"
+fi
+
+if [ ! -f /etc/mdev.conf ]; then
+    log "aviso: /etc/mdev.conf ausente; o coldplug nao casa $MODALIAS"
+fi
+
+if command -v mdev >/dev/null 2>&1; then
+    # -s: varre /sys uma vez (coldplug). O mdev do BusyBox respeita o
+    # mdev.conf e sai logo; nao fica residente (quem cuida de hotplug e o
+    # giochi-dongle-hotplug, via regra de usb no mesmo arquivo).
+    mdev -s 2>/dev/null || log "aviso: 'mdev -s' falhou"
+else
+    log "aviso: mdev ausente no busybox; coldplug impossivel"
+fi
+
+# Modulos que nenhum modalias cobre (nao sao driver de dispositivo) e sem os
+# quais uma funcao do sistema fica muda. Lista curta de proposito: cada linha
+# aqui e um custo de boot medido, nao um "vai que precisa".
+for mod in zram; do
+    command -v modprobe >/dev/null 2>&1 || break
+    modprobe "$mod" 2>/dev/null || true
+done
+
+log "coldplug concluido ($(wc -l </proc/modules 2>/dev/null || echo 0) modulo(s) carregado(s))"
+exit 0

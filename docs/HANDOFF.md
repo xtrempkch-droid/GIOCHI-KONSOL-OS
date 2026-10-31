@@ -12,6 +12,38 @@ decisões tomadas (`# DECISÃO`) que afetam a sessão seguinte.
 Legenda: **feito** (compila e/ou roda), **esqueleto** (interface + stub com
 TODO), **doc** (apenas especificação/script).
 
+## 2026-10-31 — o patch do DSI entrou, mas nenhum módulo do kernel carregava
+
+Boot com o patch do §3.48 (cartão verificado byte a byte). A tela continuou
+apagada por um bloqueio **anterior ao DSI**:
+
+```
+[   10.998616] dw-mipi-dsi-rockchip fe060000.dsi: failed to get mipi dphy: -517
+[   11.009544] platform fe060000.dsi: deferred probe pending: (reason unknown)
+[    0.985407] ALSA device list: No soundcards found.
+```
+
+`-517` é `-EPROBE_DEFER`. `/lib/modules/6.12.0/` estava cheio de `.ko` e
+**nenhum** havia sido carregado: o sistema não tem udev, o `request_module()`
+do kernel só funciona depois do rootfs, e o `mdev.conf` do projeto não tinha
+regra `$MODALIAS`. Sem PHY do DSI o agregado do DRM nunca completa.
+
+Três defeitos corrigidos (detalhe em AGENTS.md §3.50–§3.52):
+
+| Defeito | Correção |
+|---|---|
+| nenhum módulo carregado no boot | `scripts/init.d/S05modules` faz `mdev -s`; regra `$MODALIAS` no `mdev.conf` |
+| PHY do DSI era `=m` e nunca subia | `CONFIG_PHY_ROCKCHIP_INNO_DSIDPHY=y` |
+| pacote local com binário VELHO na imagem | `build-image.sh` apaga `build/giochi-*/.stamp_*` |
+| `make` falho anunciado como sucesso | cada `make` agora tem `\|\| { ...; return 1; }` |
+
+Também: o Wi-Fi ganhou `rtw88/rtw8821c_fw.bin` + `regulatory.db` (o probe do
+`rtw_8821cs` falhava com `-22`) e o `S20graphics` deixou de ler `powkiddy` como
+SoC.
+
+**Imagem regravada e verificada** (`sha256` `3530bb1b…`, kernel `#4`,
+`Image` `e60baa04…`). **Não bootada ainda.**
+
 ## 2026-10-31 — vídeo da X55: a causa do `-22` era o bind feito dentro do probe
 
 O log do cartão (`/boot/giochi-boot.log`, 1 141 linhas) mostrou duas coisas

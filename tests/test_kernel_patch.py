@@ -51,9 +51,21 @@ def patch_files():
 
 
 def kernel_trees():
-    """Árvores de kernel já extraídas por algum build local (pode não haver)."""
-    return sorted(glob.glob(os.path.join(ROOT, "dist", "*", "build", "build",
-                                         "linux-*")))
+    """Árvores de kernel já extraídas por algum build local (pode não haver).
+
+    O glob tem de excluir `linux-firmware-*`, `linux-headers-*` e afins, que
+    também começam por "linux-" em build/build/ e não têm os arquivos do kernel.
+    """
+    arvores = []
+    for caminho in sorted(glob.glob(os.path.join(ROOT, "dist", "*", "build",
+                                                 "build", "linux-*"))):
+        nome = os.path.basename(caminho)
+        if nome.startswith(("linux-firmware", "linux-headers")):
+            continue
+        if not os.path.isdir(os.path.join(caminho, "drivers")):
+            continue
+        arvores.append(caminho)
+    return arvores
 
 
 class FormatoDoPatch(unittest.TestCase):

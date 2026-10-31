@@ -10,13 +10,25 @@ if [ -r /etc/giochi/lib.sh ]; then
 fi
 
 TAG=S20graphics
-SOC=$(tr -d '\0' </proc/device-tree/compatible 2>/dev/null | tr ',' '\n' | head -n1)
+# A identidade vem de /etc/giochi/device.conf, NAO do /proc/device-tree.
+# O compatible do RK3566 comeca por "powkiddy" (fabricante), entao ler o
+# primeiro campo dava 'SoC powkiddy nao reconhecido' e o Mesa ficava sem
+# override — medido no boot #3 da X55. O device-tree so e' fallback, e o
+# -DGIOCHI_SOC compilado e' o ultimo recurso.
+DEVICE_CONF=/etc/giochi/device.conf
+SOC=""
+if [ -r "$DEVICE_CONF" ]; then
+    SOC=$(sed -n 's/^GIOCHI_SOC=//p' "$DEVICE_CONF" | head -n1)
+fi
+if [ -z "${SOC:-}" ]; then
+    SOC=$(tr -d '\0' </proc/device-tree/compatible 2>/dev/null | tr ',' '\n' \
+          | grep -m1 '^rk[0-9]' || true)
+fi
 [ -n "${SOC:-}" ] || SOC=${GIOCHI_SOC:-rk3326}
 
 log() { logger -t "$TAG" -- "$*" 2>/dev/null || echo "$TAG: $*" >&2; }
 
 # Painel/rotacao do aparelho (gerado por post-build.sh).
-DEVICE_CONF=/etc/giochi/device.conf
 PANEL=640x480
 ROTATION=0
 if [ -f "$DEVICE_CONF" ]; then

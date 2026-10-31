@@ -53,8 +53,8 @@ fi
 # um skip silencioso (foi assim que um .gitignore errado passou despercebido).
 install -d "$TARGET_DIR/etc/init.d"
 missing_init=""
-for s in S00bootlog S05update S10storage S20graphics S30swap S40dongle \
-         S50usb S55usbnet S62sshd S99launcher; do
+for s in S00bootlog S05modules S05update S10storage S20graphics S30swap \
+         S40dongle S50usb S55usbnet S62sshd S99launcher; do
     if [ -f "$SCRIPTS_DIR/$s" ]; then
         install -m 0755 "$SCRIPTS_DIR/$s" "$TARGET_DIR/etc/init.d/$s"
     else

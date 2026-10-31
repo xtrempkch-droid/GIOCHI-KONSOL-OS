@@ -33,7 +33,7 @@ em que ordem em [docs/roadmap.md](docs/roadmap.md); inventário de cada app
 | `giochi-musicd`: protocolo e socket | **pronto**; decodificação PCM/ALSA **pendente** |
 | Log de boot no cartão (`S00bootlog`) + modo `--debug` com fbcon | **pronto**, testado com mount/syslogd simulados |
 | Boot completo até o Launcher em hardware (X55) | **PROVADO**: `giochi-init pronto` + `launcher v1.2 pronto: 5 abas` em **3,9 s** (entrada 19) |
-| Vídeo na X55: bind do `dw-mipi-dsi` | **causa encontrada e corrigida** por patch de kernel (§3.48); imagem regravada e verificada, **boot pendente** |
+| Vídeo na X55: bind do `dw-mipi-dsi` | **corrigido** por patch de kernel (§3.48); PHY do DSI e coldplug de módulos corrigidos (§3.50); imagem regravada e verificada, **boot pendente** |
 
 **Nunca repita (custou tempo de build ou passou silencioso):** leia
 [§3 Armadilhas](#3-armadilhas-já-resolvidas-não-repita) antes de qualquer coisa.
@@ -1101,6 +1101,129 @@ justo o tipo de defeito que este arquivo cataloga. E a conclusão errada
   acreditar no total.
 - Vale para qualquer inventário remoto: se a resposta tem limite de página,
   "não achei" só vale depois de esgotar as páginas.
+
+### 3.50 O kernel não carregava NENHUM módulo: faltava coldplug no userspace
+
+Boot #3 da X55 (imagem com o patch do §3.48, cartão verificado byte a byte):
+a tela continuou apagada, mas por um motivo **diferente** e anterior:
+
+```
+[   10.998616] dw-mipi-dsi-rockchip fe060000.dsi: failed to get mipi dphy: -517
+[   11.009544] platform fe060000.dsi: deferred probe pending: (reason unknown)
+[    0.985407] ALSA device list: No soundcards found.
+```
+
+`-517` é `-EPROBE_DEFER`: o controlador DSI pediu o PHY, o PHY não existia e o
+kernel pediu para tentar depois. Como `/lib/modules/6.12.0/` estava cheio de
+`.ko` e **nenhum** havia sido carregado (`/proc/modules` vazio), o PHY
+(`phy_rockchip_inno_dsidphy.ko`), o `rtw88` e o `hci_uart` nunca apareceram —
+e o `deferred probe` **não re-tenta sozinho**.
+
+Duas causas somadas:
+
+1. **Não existe udev neste sistema.** Quem carrega módulo é o `request_module()`
+   do kernel (que executa `/sbin/modprobe`) ou o `mdev` com uma regra de
+   `$MODALIAS`. O `mdev.conf` do projeto tinha regras de permissão mas **nenhuma
+   de modalias** — nenhum `modprobe` era disparado.
+2. O `request_module()` do kernel só funciona **depois** que o rootfs existe, e
+   os dispositivos de plataforma (DSI, PHY, áudio, SDIO) nascem por volta de
+   0,5 s — antes do `Mounted root` (~1,2 s). Aqueles pedidos morrem com
+   `-ENOENT` e nada os repete.
+
+- Correção: `scripts/init.d/S05modules` roda `mdev -s` (coldplug) no início do
+  `rcS`, e `buildroot/board/giochi/mdev.conf` ganhou a regra
+  `$MODALIAS=.* root:root 660 @modprobe -b $MODALIAS`.
+- `CONFIG_PHY_ROCKCHIP_INNO_DSIDPHY=y` (era `=m`): o PHY do DSI é pré-requisito
+  do primeiro componente de vídeo; não faz sentido depender de carregar módulo
+  para acender a tela.
+- Guarda: suíte `primeiro-boot` (`test_coldplug_de_modulos_no_boot` e
+  `test_phy_do_dsi_e_embutido`), testadas ao contrário.
+
+**Regra que fica:** `-517` + `/proc/modules` vazio = o sistema não tem coldplug.
+Antes de investigar o driver, olhe se algum `.ko` foi carregado.
+
+### 3.51 Pacote local NÃO re-sincroniza: a imagem fica com o binário velho
+
+Este é o defeito mais caro desta sessão, porque **o build termina verde**.
+
+Depois do commit `39d17b1` (que corrigiu `device_profile.c` e o mapa de botões),
+a imagem foi gerada, gravada, verificada byte a byte — e o aparelho continuou
+registrando:
+
+```
+I: device_profile.json gravado ... (device=rk3326 soc=rk3326)
+W: buttons.map: secao [efault] ausente
+```
+
+O código corrigido estava no repositório; o binário na imagem era o antigo. O
+`SITE_METHOD = local` do Buildroot só roda o `rsync` do pacote quando ele é
+**reconstruído**, e a versão (1.2) não muda — então o `.stamp_rsynced` de
+`build/giochi-launcher-1.2/` nunca expirava.
+
+- `tools/build-image.sh` agora apaga `build/giochi-*/.stamp_*` antes de cada
+  build: força rsync + build + install. São segundos, contra um rebuild de
+  kernel.
+- Guarda: `test_build_ressincroniza_pacote_local` (suíte `primeiro-boot`).
+- **Como detectar em 5 segundos**: `strings target/usr/bin/giochi-launcher |
+  grep giochi_deviceconf`. Se o símbolo novo não estiver lá, a imagem é velha.
+
+### 3.52 Falha de build anunciada como sucesso (`if !` desliga o `set -e`)
+
+Junto com o §3.51, o log do build dizia:
+
+```
+Error: duplicate filename '0001-drm-rockchip-...patch'
+make: *** [package/pkg-generic.mk:242: .../.stamp_patched] Error 1
+----
+imagens geradas:
+  x55: .../giochi-x55-sdcard.img (148M)
+EXIT=0
+```
+
+O `make` falhou **no kernel** e o script seguiu: encontrou o `sdcard.img`
+**da execução anterior** em `images/`, copiou e anunciou "imagens geradas" com
+`rc=0`. A imagem entregue ao aparelho era a de antes.
+
+Causa: a função é chamada como `if ! build_device "$id"; then`, e **um comando
+em contexto de teste desliga o `set -e`** dentro da função. Sem `||` explícito,
+o `make` que falha não interrompe nada.
+
+- As duas invocações de `make` (defconfig e build) agora têm `|| { ...; return 1; }`.
+- Guarda: `test_build_nao_anuncia_imagem_quando_make_falha`.
+
+### 3.53 `BR2_LINUX_KERNEL_PATCH` conta como "já aplicado" ao re-extrair
+
+Depois de apagar `build/linux-6.12` para forçar re-extração, o build morreu em:
+
+```
+Error: duplicate filename '0001-...patch'
+  already applied: /work/buildroot/board/giochi/patches/linux/0001-...patch
+  to be applied  : /work/buildroot/board/giochi/patches/linux/0001-...patch
+```
+
+O `apply-patches.sh` do Buildroot registra no diretório `.patches/` o que já
+aplicou, e esse diretório **não** é recriado do zero quando só o fonte é
+removido. Use `make linux-dirclean` (ou apague `build/linux-*` inteiro,
+incluindo `build/.patches`), não apenas a árvore do kernel.
+
+### 3.54 `compatible` do RK3566 começa por `powkiddy` (fabricante), não por `rk`
+
+`S20graphics` lia o primeiro campo de `/proc/device-tree/compatible` para
+descobrir o SoC e registrava:
+
+```
+S20graphics: SoC 'powkiddy' nao reconhecido; usando defaults do Mesa
+```
+
+O `compatible` da X55 é `powkiddy,x55`, `rockchip,rk3566` — o primeiro campo é o
+**fabricante**. Consequência: `MESA_LOADER_DRIVER_OVERRIDE` não era exportado
+(na prática o panfrost é escolhido pelo próprio Mesa, então era ruído, mas o log
+mentia sobre o aparelho).
+
+- A identidade agora vem de `/etc/giochi/device.conf` (`GIOCHI_SOC=rk3566`); o
+  device-tree é fallback, filtrando por `^rk[0-9]`.
+- Guarda: `test_s20graphics_le_soc_do_device_conf`.
+
 
 ## 4. O que NÃO foi verificado
 
@@ -2219,3 +2342,50 @@ versão lidas do `supertux.mk`/`Config.in` do Buildroot 2024.02.x; passo lógico
 lido do `screen_manager.cpp`/`constants.hpp` no tag `v0.6.3`. **Não rodou:**
 build do SuperTux, e **nada em aparelho** — o fps real no Mali-G52/G31 continua
 desconhecido.
+
+### 2026-10-31 (21) — Copilot (o patch entrou, mas nenhum módulo carregava)
+
+Boot #4 da X55 com o patch do DSI (cartão verificado byte a byte). A tela
+continuou apagada, e o log mostrou um bloqueio **diferente e anterior**:
+
+```
+[   10.998616] dw-mipi-dsi-rockchip fe060000.dsi: failed to get mipi dphy: -517
+[   11.009544] platform fe060000.dsi: deferred probe pending: (reason unknown)
+[    0.985407] ALSA device list: No soundcards found.
+```
+
+`-517` = `-EPROBE_DEFER`. Medido: `/lib/modules/6.12.0/` cheio de `.ko` e
+**nenhum** carregado. Três defeitos independentes, todos silenciosos:
+
+1. **Não havia coldplug (§3.50).** Sem udev, quem carrega módulo é
+   `request_module()` do kernel (que só funciona depois do rootfs) ou o `mdev`
+   com regra `$MODALIAS` — e o `mdev.conf` do projeto não tinha essa regra.
+   Novo `scripts/init.d/S05modules` faz `mdev -s`; a regra entrou no
+   `mdev.conf`. `CONFIG_PHY_ROCKCHIP_INNO_DSIDPHY` passou a `=y` (o PHY do DSI
+   é pré-requisito do primeiro componente de vídeo).
+2. **Pacote local não re-sincronizava (§3.51).** Era por isso que o aparelho
+   continuava dizendo `(device=rk3326 soc=rk3326)` e `secao [efault]` mesmo
+   depois do commit `39d17b1`: o `.stamp_rsynced` do Buildroot nunca expirava.
+   `tools/build-image.sh` agora apaga os stamps de `build/giochi-*`.
+3. **Build falho anunciado como sucesso (§3.52).** O `make` morreu no kernel
+   (`duplicate filename` do patch) e o script seguiu, achou o `sdcard.img`
+   anterior e imprimiu "imagens geradas" com `rc=0`. Contexto `if !` desliga o
+   `set -e`; agora cada `make` tem `||`.
+
+Também: `S20graphics` lia `powkiddy` como SoC (§3.54) e o Wi-Fi ganhou
+`rtw88/rtw8821c_fw.bin` + `regulatory.db` (antes: `probe with driver rtw_8821cs
+failed with error -22`).
+
+**Verificação (tudo rodado):**
+- `make test` → **25/25**; `make lint` → rc=0. Guardas novas em
+  `primeiro-boot` (coldplug, PHY embutido, resync do pacote, `make` com `||`,
+  SoC do `device.conf`), testadas ao contrário.
+- Imagem: launcher **com** `giochi_deviceconf` (`strings | grep`), `S05modules`
+  instalado, `mdev.conf` com a regra, `rtw88/rtw8821c_fw.bin` presente,
+  `phy-rockchip-inno-dsidphy.ko` **ausente** (agora `=y`).
+- `dd conv=fsync` + `verify-card.py` → *"idêntico à imagem, byte a byte"*
+  (`sha256` `3530bb1b…`). Kernel `#4` (`Image` `e60baa04…`).
+
+**Aberto:** o boot com o coldplug ainda não aconteceu. Se o DSI reclamar de novo,
+o `-517` deve desaparecer; se aparecer outro erro, agora ele é **de driver**, não
+de módulo faltando.

@@ -40,12 +40,13 @@ Especificação normativa: [architecture-v1.2.md](./architecture-v1.2.md).
       depois de `Starting kernel`. (O cartão de 116 GB dava `I/O error`; o
       defeito era mídia, não build — [BOOT-DEBUG.md](./BOOT-DEBUG.md) §7.)
 - [x] Registrar o log em [HANDOFF.md](./HANDOFF.md).
-- [ ] **A tela acender.** O DRM não faz bind do DSI:
-      `rockchip-drm: failed to bind fe060000.dsi: -22` → sem `/dev/dri/card0`
-      → `render=null`. **Causa encontrada** (§3.48): o `component_add()` do DSI
-      bindava o DRM de dentro do probe do próprio DSI, com `dsi->dmd` NULL →
-      `drm_bridge_attach(NULL)` → `-EINVAL` silencioso. Corrigido por patch de
-      kernel; imagem regravada e verificada, **aguardando boot**.
+- [ ] **A tela acender.** Dois bloqueios empilhados, os dois com causa
+      medida: (a) `component_add()` do DSI bindava o DRM de dentro do probe do
+      próprio DSI com `dsi->dmd` NULL → `-EINVAL` silencioso (§3.48, patch de
+      kernel); (b) **nenhum módulo carregava** — sem udev e sem regra
+      `$MODALIAS` no `mdev`, o PHY do DSI nunca subia e o DSI ficava em
+      `-EPROBE_DEFER` para sempre (§3.50). Os dois corrigidos; imagem regravada
+      e verificada, **aguardando boot**.
 - [ ] Ver o splash e responder ao `control.sock` **pela tela**.
 
 **Aceite:** a X55 liga, mostra o splash, chega ao Launcher e responde ao

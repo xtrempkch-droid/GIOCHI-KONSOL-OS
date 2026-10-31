@@ -171,6 +171,23 @@ if [ -f "$PB" ]; then
     done
 fi
 
+# --- 7) firmware que o driver do aparelho PEDE pelo nome ------------------
+# Medido no boot da X55: sem rtw88/rtw8821c_fw.bin o probe termina com
+# "probe with driver rtw_8821cs failed with error -22" -- que nao parece falta
+# de firmware. Sem regulatory.db o cfg80211 fica sem tabela de canais. Nenhum
+# dos dois quebra o build: o sintoma aparece so no aparelho (AGENTS.md §3.49).
+DEFCONFIG_CHK=buildroot/configs/giochi_x55_defconfig
+if [ -f "$DEFCONFIG_CHK" ]; then
+    for simbolo in BR2_PACKAGE_LINUX_FIRMWARE_RTL_RTW88 \
+                   BR2_PACKAGE_WIRELESS_REGDB; do
+        if ! grep -q "^$simbolo=y" "$DEFCONFIG_CHK"; then
+            echo "  ERRO $DEFCONFIG_CHK sem $simbolo=y" >&2
+            echo "       sem ele o Wi-Fi da X55 falha no probe com -22" >&2
+            fail=$((fail + 1))
+        fi
+    done
+fi
+
 if [ "$fail" -ne 0 ]; then
     echo "check-image-contents: $fail problema(s) de conteudo da imagem" >&2
     exit 1

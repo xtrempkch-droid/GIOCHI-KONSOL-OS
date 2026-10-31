@@ -16,6 +16,12 @@ CONFIG_DRM_ROCKCHIP=y
 CONFIG_DRM_DW_MIPI_DSI=y
 CONFIG_DRM_PANEL_HIMAX_HX8394=y
 CONFIG_DRM_PANEL_GENERIC_DSI=y
+# O PHY DSI tem de estar DISPONIVEL antes do controlador DSI, senao
+# dw_mipi_dsi_rockchip_probe devolve -EPROBE_DEFER (-517) e o DRM nunca
+# completa o agregado -- sem /dev/dri/card0 e com a tela apagada. Medido no
+# boot #3 da X55: o PHY era =m e nenhum modulo era carregado no boot.
+# =y remove a dependencia de carregar modulo so para acender a tela.
+CONFIG_PHY_ROCKCHIP_INNO_DSIDPHY=y
 CONFIG_BACKLIGHT_CLASS_DEVICE=y
 CONFIG_BACKLIGHT_PWM=y
 CONFIG_PWM=y

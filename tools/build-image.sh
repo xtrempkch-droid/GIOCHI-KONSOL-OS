@@ -359,15 +359,45 @@ build_device() {
     export TARGET_MAKE_ENV
 
     make -C "$buildroot" O="$out/build" BR2_EXTERNAL="$ROOT/buildroot" \
-        -j"$JOBS" defconfig BR2_DEFCONFIG="$effective"
+        -j"$JOBS" defconfig BR2_DEFCONFIG="$effective" || {
+        echo "ERRO $id: 'make defconfig' falhou" >&2
+        return 1
+    }
+
+    # Pacote local do Buildroot NAO re-sincroniza sozinho.
+    #
+    # Medido neste projeto: depois de corrigir src/init/device_profile.c e
+    # src/launcher/main.cpp, o build terminou "verde" e a imagem continuou com
+    # os binarios ANTIGOS — o log do aparelho ainda dizia
+    # "(device=rk3326 soc=rk3326)" e "buttons.map: secao [efault]". Causa: o
+    # Buildroot cria build/giochi-*/  com .stamp_rsynced e so roda o rsync do
+    # SITE_METHOD = local quando o pacote e' reconstruido, o que nao acontece
+    # porque a versao do pacote (1.2) nao muda. Ou seja: codigo C/C++ novo
+    # nunca chegava na imagem, sem nenhum aviso.
+    #
+    # Apagar os stamps forca rsync + build + install do pacote. Sao ~4 MB de
+    # codigo; o custo e' de segundos contra um rebuild de kernel.
+    for pkg in "$out"/build/build/giochi-*; do
+        [ -d "$pkg" ] || continue
+        rm -f "$pkg"/.stamp_*
+    done
 
     TARGET_MAKE_ENV="GIOCHI_DEVICE=$id"
     [ -n "${GIOCHI_UBOOT_BIN_EXPORT:-}" ] && \
         TARGET_MAKE_ENV="$TARGET_MAKE_ENV GIOCHI_UBOOT_BIN=$GIOCHI_UBOOT_BIN_EXPORT"
     export TARGET_MAKE_ENV
 
+    # ATENCAO ao 'if ! build_device': quando a funcao e' chamada num teste, o
+    # 'set -e' do shell fica DESLIGADO dentro dela. Sem o '||' abaixo, um
+    # 'make' que falha (ex.: patch de kernel duplicado) nao interrompe nada, o
+    # script segue, encontra o sdcard.img VELHO em images/ e imprime
+    # "imagens geradas" com rc=0. Aconteceu aqui: a build falhou no kernel e a
+    # imagem foi anunciada como pronta.
     make -C "$buildroot" O="$out/build" BR2_EXTERNAL="$ROOT/buildroot" \
-        -j"$JOBS"
+        -j"$JOBS" || {
+        echo "ERRO $id: build falhou (veja o log acima)" >&2
+        return 1
+    }
 
     images="$out/build/images"
     if [ -f "$images/sdcard.img" ]; then

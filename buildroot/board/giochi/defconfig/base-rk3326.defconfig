@@ -124,6 +124,14 @@ BR2_PACKAGE_BLUEZ5_UTILS_CLIENT=y
 # standalone foi REMOVIDO e BR2_PACKAGE_RFKILL agora e um simbolo
 # legacy que liga BR2_LEGACY (o build aborta em Makefile.legacy).
 BR2_PACKAGE_UTIL_LINUX_RFKILL=y
+# regulatory.db: sem ele o cfg80211 imprime
+# "Direct firmware load for regulatory.db failed" e o Wi-Fi fica sem
+# tabela de canais (medido no boot da X55).
+BR2_PACKAGE_WIRELESS_REGDB=y
+# Firmware dos dongles USB (ADR-14): RTL8192CU/RTL8XXXU sem o
+# rtlwifi/rtl8192cufw.bin falham no probe com -2 e o dongle "nao existe".
+BR2_PACKAGE_LINUX_FIRMWARE=y
+BR2_PACKAGE_LINUX_FIRMWARE_RTL_81XX=y
 
 # --- USB com o PC: MTP (userspace) + rede/SSH via USB -------------------
 BR2_PACKAGE_GIOCHI_MTPD=y
