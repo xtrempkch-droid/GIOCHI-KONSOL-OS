@@ -4093,3 +4093,74 @@ pkexec /usr/bin/python3 tools/verify-card.py <abs>/...img /dev/sdd
 do próximo boot: `i18n: idioma '...' carregado`, `render: SDL2 driver=...` e o
 texto legível na tela. O push para o GitHub continua bloqueado por credencial;
 `~/giochi-builder/pending.bundle` foi recriado com os dois commits desta sessão.
+
+### 2026-11-01 (34) — Copilot (temas escolhíveis, `device/` e `apps/`)
+
+Pedido do mantenedor: *"crie mais opções de layout (em anexo 5 exemplos)"* e
+*"organize toda a pasta separando as configurações por dispositivos
+(`device/**`) e apps (como o app loja para o PC)"*. Os cinco anexos eram
+mockups HTML (`/home/charles/Músicas/layout/layout{1..5}.md`) da mesma UI de 5
+abas, variando paleta, raio, densidade e o que a barra de dicas anuncia.
+
+**1. Tema virou cor + métrica.** Antes `giochi_theme` só carregava 8 cores e o
+`metrics` do JSON era ignorado — trocar de tema mudava a cor e nada mais. Agora
+o tema diz raio do canto, borda de todo tile, anel de foco, densidade, altura
+das barras, escala da capa e escala de fonte, tudo em px do painel base (640×480)
+e escalado como os demais tokens.
+
+- `schemas/theme.schema.json` (novo), `assets/themes/` com `index.json` e seis
+  temas: `dark_default` (o original, preservado), `neon_rose`, `ember_dark`,
+  `mono_minimal`, `mono_gamepad`, `ios_glass`.
+- `giochi_theme_catalog_load` / `_find` / `_device_default` / `_resolve` no
+  `theme.cpp`; `UiThemeMetrics` + `ui_geometry_apply_theme` +
+  `ui_theme_metrics_from` no módulo **puro**, para o preview chegar aos mesmos
+  números (o `dump-geometry` publica o resultado).
+- Troca a quente no menu **Sistema → Tema**; `--theme` e `GIOCHI_THEME` para
+  teste.
+
+**2. A densidade só existe se a grade mudar.** Primeira medição: com o tile
+fixo (228×128 na X55), os três valores de densidade davam **5 colunas nos dois
+painéis** — a opção seria decorativa, só o nome mudava. Corrigido escalando o
+tile junto (88/100/115 %):
+
+| Densidade | 1280×720 | 640×480 |
+|---|---|---|
+| compacta | 6×4 (24) | 4×4 (16) |
+| normal | 5×3 (15) | 4×3 (12) |
+| espaçosa | 4×3 (12) | 3×3 (9) |
+
+Guarda: `tests/test_themes.py::test_densidade_muda_a_grade_de_verdade` exige
+três contagens distintas nos **dois** painéis.
+
+**3. `device/` e `apps/`.** Ver §3.75 para o que a movimentação quebrou.
+`device/<id>/` reúne `device.conf`, `theme.json` e `layout/`; `apps/` reúne o
+`forge` (movido) e o **`store`** novo, que produz `store.json` + `news.json` e
+instala no cartão conferindo o sha256 **no destino**. O `news.json` fecha o
+buraco do `docs/APPS.md`: o Launcher lia `/user/.cache/news.json` com fallback
+de dicas compiladas porque ninguém escrevia o arquivo. Agora a Home mostra a
+novidade (`carregar_novidade` em `main.cpp`).
+
+**4. Três defeitos meus, todos pegos por instrumento e não por leitura:**
+
+- `ui.news_title` (`std::string`) num parâmetro `const char*`. O `make` do host
+  **passou**: sem SDL2 no host o bloco de desenho de `render.cpp` não é
+  compilado. Só apareceu no build da imagem (§3.74). Guarda nova:
+  `tools/check-sdl2-compile.sh` no `make lint`, testada ao contrário.
+- Com `settings.json` **ausente**, o `theme_id` do default compilado vencia o
+  tema de fábrica do aparelho: a X55 subia em `dark_default` com `neon_rose` na
+  imagem. Medido apontando o launcher de host para o `/usr/share/giochi`
+  extraído do `.img`. Corrigido com `tem_settings`; teste de precedência cobre
+  os quatro casos (CLI, settings, aparelho, padrão).
+- `theme.json` morto continuava no SquashFS porque o `TARGET_DIR` sobrevive
+  entre builds. `post-build.sh` remove (mesma classe do §3.39).
+
+**Verificação (tudo rodado):** `make test` **31/31** (suítes novas `temas`, 23
+testes, e `loja-do-pc`, 16); `make lint` rc=0 (inclui contraste WCAG dos seis
+temas — primário ≥ 4,5:1, secundário ≥ 3:1); `make tema-galeria` gera 13
+imagens; imagem X55 gerada e conferida **por dentro** (`themes/` com os 6 +
+`index.json`, `device-theme.json` = `neon_rose`, `theme.json` ausente).
+
+**Aberto:** nenhuma das seis telas foi vista no aparelho — a imagem foi
+regerada e conferida, o boot com ela ainda não aconteceu. O preview continua
+sendo rasterização da geometria publicada, **não** captura de tela. Push segue
+bloqueado por credencial.
