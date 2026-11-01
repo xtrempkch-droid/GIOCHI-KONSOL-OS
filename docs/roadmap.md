@@ -40,13 +40,15 @@ Especificação normativa: [architecture-v1.2.md](./architecture-v1.2.md).
       depois de `Starting kernel`. (O cartão de 116 GB dava `I/O error`; o
       defeito era mídia, não build — [BOOT-DEBUG.md](./BOOT-DEBUG.md) §7.)
 - [x] Registrar o log em [HANDOFF.md](./HANDOFF.md).
-- [ ] **A tela acender.** Dois bloqueios empilhados, os dois com causa
-      medida: (a) `component_add()` do DSI bindava o DRM de dentro do probe do
-      próprio DSI com `dsi->dmd` NULL → `-EINVAL` silencioso (§3.48, patch de
-      kernel); (b) **nenhum módulo carregava** — sem udev e sem regra
-      `$MODALIAS` no `mdev`, o PHY do DSI nunca subia e o DSI ficava em
-      `-EPROBE_DEFER` para sempre (§3.50). Os dois corrigidos; imagem regravada
-      e verificada, **aguardando boot**.
+- [x] **A tela acender** — três bloqueios empilhados, os três com causa
+      medida e corrigida: (a) `component_add()` do DSI bindava o DRM de dentro
+      do probe do próprio DSI com `dsi->dmd` NULL → `-EINVAL` silencioso
+      (§3.48); (b) **nenhum módulo carregava** e o PHY do DSI ficava em
+      `-EPROBE_DEFER` para sempre (§3.50); (c) o SDL2 era compilado **sem
+      KMSDRM** porque o Kconfig descartou o símbolo em silêncio (§3.56).
+      **PROVADO em hardware**: `[drm] fb0: rockchipdrmfb frame buffer device`
+      e `Console: switching to colour frame buffer device 90x80`.
+- [ ] O Launcher desenhar na tela (o SDL2 com KMSDRM já está na imagem).
 - [ ] Ver o splash e responder ao `control.sock` **pela tela**.
 
 **Aceite:** a X55 liga, mostra o splash, chega ao Launcher e responde ao

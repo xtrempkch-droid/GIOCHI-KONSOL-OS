@@ -311,10 +311,20 @@ static Renderer *open_sdl(const giochi_layout &layout, std::string *err)
 
 Renderer *render_open(const giochi_layout &layout, std::string *err)
 {
-    Renderer *renderer = open_sdl(layout, err);
+    std::string motivo;
+    Renderer *renderer = open_sdl(layout, &motivo);
 
     if (renderer == nullptr) {
-        GLOG_WARN("render: SDL2 indisponivel; usando backend headless");
+        /* O motivo PRECISA aparecer: sem ele o log do aparelho só dizia
+         * "SDL2 indisponivel" e a investigação foi parar em /dev/dri (que
+         * estava certo) em vez de na compilação do SDL2 — que saiu sem o
+         * backend KMSDRM porque o Kconfig descartou o símbolo em silêncio
+         * (AGENTS.md §3.55). */
+        GLOG_WARN("render: SDL2 indisponivel (%s); usando backend headless",
+                  motivo.empty() ? "motivo desconhecido" : motivo.c_str());
+        if (err != nullptr) {
+            *err = motivo;
+        }
         return render_open_null(layout);
     }
     return renderer;

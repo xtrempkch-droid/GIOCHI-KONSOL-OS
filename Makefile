@@ -391,6 +391,8 @@ lint:
 	@python3 -m unittest tests.test_verify_card 2>&1 | tail -3
 	@echo "== painel do DTS por aparelho =="
 	@tools/check-dts-panel.py
+	@echo "== config pedida x aplicada =="
+	@python3 -m unittest tests.test_config_aplicada 2>&1 | tail -3
 	@echo "== patches locais de kernel =="
 	@python3 -m unittest tests.test_kernel_patch 2>&1 | tail -3
 	@echo "== proposta de layout =="

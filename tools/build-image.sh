@@ -364,6 +364,21 @@ build_device() {
         return 1
     }
 
+    # Simbolo pedido e descartado em silencio pelo Kconfig.
+    #
+    # Medido: `BR2_PACKAGE_SDL2_KMSDRM=y` sem `SDL2_OPENGLES=y` -> o SDL2 foi
+    # compilado SEM nenhum driver de video. O aparelho tinha /dev/dri/card0,
+    # DSI bindado e tela acesa, e o Launcher dizia "SDL2 indisponivel". Tres
+    # horas de build e um ciclo de flash para descobrir com
+    # `grep SDL2 build/.config`. Falha aqui, antes de compilar.
+    if ! python3 "$ROOT/tools/check-config-applied.py" \
+            --defconfig "$effective" \
+            --dotconfig "$out/build/.config"; then
+        echo "ERRO $id: o Kconfig descartou simbolo(s) do defconfig" >&2
+        echo "     satisfaca o 'depends on' em package/*/Config.in" >&2
+        return 1
+    fi
+
     # Pacote local do Buildroot NAO re-sincroniza sozinho.
     #
     # Medido neste projeto: depois de corrigir src/init/device_profile.c e
@@ -382,6 +397,41 @@ build_device() {
         rm -f "$pkg"/.stamp_*
     done
 
+    # O Buildroot NAO reconstroi pacote quando a configuracao dele muda: os
+    # stamps continuam validos e a imagem sai com o binario antigo, sem erro.
+    # Medido: depois de ligar SDL2_OPENGLES (destrava SDL2_KMSDRM) o build
+    # rodou inteiro e o SDL2 da imagem continuava sem nenhum driver de video
+    # (stamps de 6 h antes) — no aparelho, "SDL2 indisponivel" com
+    # /dev/dri/card0 funcionando (AGENTS.md §3.56).
+    #
+    # Comparamos o .config aplicado com o da execucao anterior e apagamos os
+    # stamps dos pacotes cujos simbolos mudaram. E' barato: o pacote
+    # reconfigura e recompila, sem baixar nada.
+    config_cache="$out/.config.aplicado"
+    if [ -f "$config_cache" ] && [ -f "$out/build/.config" ]; then
+        afetados=$(python3 "$ROOT/tools/config-delta.py" --packages \
+                       --buildroot "$buildroot" \
+                       "$config_cache" "$out/build/.config" 2>/dev/null || true)
+        if [ -n "$afetados" ]; then
+            echo "  config mudou: reconstruindo $afetados"
+            for pkg in $afetados; do
+                # <pkg>-dirclean e' obrigatorio, nao apenas apagar os stamps:
+                # o configure novo muda SDL_config.h e os .o antigos ficam
+                # apontando para backends que nao existem mais. Medido: apagar
+                # so os stamps levou a "undefined reference to DUMMY_bootstrap"
+                # e "undefined reference to SDL_EGL_CreateContext" no link do
+                # SDL2. dirclean apaga build/<pkg>-<ver>/ e preserva o tarball
+                # em DL_DIR (nada e' baixado de novo).
+                make -C "$buildroot" O="$out/build" \
+                     BR2_EXTERNAL="$ROOT/buildroot" "$pkg-dirclean" \
+                     >/dev/null 2>&1 || true
+            done
+        fi
+    fi
+    cp "$out/build/.config" "$config_cache" 2>/dev/null || true
+
+    # TARGET_MAKE_ENV tem de ser re-exportado para a segunda chamada de make:
+    # o giochi_init.mk le GIOCHI_DEVICE/GIOCHI_UBOOT_BIN daqui.
     TARGET_MAKE_ENV="GIOCHI_DEVICE=$id"
     [ -n "${GIOCHI_UBOOT_BIN_EXPORT:-}" ] && \
         TARGET_MAKE_ENV="$TARGET_MAKE_ENV GIOCHI_UBOOT_BIN=$GIOCHI_UBOOT_BIN_EXPORT"
@@ -391,8 +441,7 @@ build_device() {
     # 'set -e' do shell fica DESLIGADO dentro dela. Sem o '||' abaixo, um
     # 'make' que falha (ex.: patch de kernel duplicado) nao interrompe nada, o
     # script segue, encontra o sdcard.img VELHO em images/ e imprime
-    # "imagens geradas" com rc=0. Aconteceu aqui: a build falhou no kernel e a
-    # imagem foi anunciada como pronta.
+    # "imagens geradas" com rc=0 (AGENTS.md §3.52).
     make -C "$buildroot" O="$out/build" BR2_EXTERNAL="$ROOT/buildroot" \
         -j"$JOBS" || {
         echo "ERRO $id: build falhou (veja o log acima)" >&2

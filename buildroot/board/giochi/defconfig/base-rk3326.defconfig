@@ -93,6 +93,12 @@ BR2_PACKAGE_MESA3D_OPENGL_ES=y
 BR2_PACKAGE_MESA3D_OPENGL_EGL=y
 BR2_PACKAGE_LIBDRM=y
 BR2_PACKAGE_SDL2=y
+# KMSDRM depende de SDL2_OPENGL || SDL2_OPENGLES alem de libdrm,
+# libgbm e libegl. Sem o OPENGLES o Kconfig DESCARTA o KMSDRM em
+# silencio (armadilha 3.2) e o SDL2 sai sem nenhum driver de video:
+# na X55 isso deu 'render: SDL2 indisponivel' com /dev/dri/card0
+# perfeitamente funcional. tools/check-config-applied.py guarda isso.
+BR2_PACKAGE_SDL2_OPENGLES=y
 BR2_PACKAGE_SDL2_KMSDRM=y
 BR2_PACKAGE_SDL2_IMAGE=y
 
@@ -104,6 +110,13 @@ BR2_PACKAGE_FLAC=y
 BR2_PACKAGE_LIBVORBIS=y
 
 # --- utilitarios base --------------------------------------------------
+# KMOD_TOOLS depende de BUSYBOX_SHOW_OTHERS; sem ele o Kconfig
+# descarta as ferramentas de modulo em silencio e sobra o modprobe do
+# BusyBox. O modprobe do kmod resolve modules.dep.bin, softdeps e
+# blacklist corretamente — e carregar modulo e' caminho critico de
+# boot desde que o coldplug passou a existir (S05modules, armadilha
+# 3.50). tools/check-config-applied.py falha se isto for descartado.
+BR2_PACKAGE_BUSYBOX_SHOW_OTHERS=y
 BR2_PACKAGE_KMOD=y
 BR2_PACKAGE_KMOD_TOOLS=y
 BR2_PACKAGE_ZSTD=y

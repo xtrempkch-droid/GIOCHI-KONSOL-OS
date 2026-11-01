@@ -33,7 +33,8 @@ em que ordem em [docs/roadmap.md](docs/roadmap.md); inventário de cada app
 | `giochi-musicd`: protocolo e socket | **pronto**; decodificação PCM/ALSA **pendente** |
 | Log de boot no cartão (`S00bootlog`) + modo `--debug` com fbcon | **pronto**, testado com mount/syslogd simulados |
 | Boot completo até o Launcher em hardware (X55) | **PROVADO**: `giochi-init pronto` + `launcher v1.2 pronto: 5 abas` em **3,9 s** (entrada 19) |
-| Vídeo na X55: bind do `dw-mipi-dsi` | **corrigido** por patch de kernel (§3.48); PHY do DSI e coldplug de módulos corrigidos (§3.50); imagem regravada e verificada, **boot pendente** |
+| Vídeo na X55 | **DSI faz bind e `/dev/dri/card0` existe** (provado em hardware); SDL2 estava sendo compilado sem KMSDRM (§3.56) — corrigido, imagem regravada e verificada, **boot pendente** |
+| Coldplug de módulos (`S05modules` + regra `$MODALIAS`) | **funcionando** no aparelho (`coldplug concluido`); PHY do DSI é `=y` (§3.50) |
 
 **Nunca repita (custou tempo de build ou passou silencioso):** leia
 [§3 Armadilhas](#3-armadilhas-já-resolvidas-não-repita) antes de qualquer coisa.
@@ -1244,6 +1245,94 @@ omissão), com o sinal trocado.
   `curl -o /dev/null -w '%{http_code}'` responde "tudo certo" para esta API.
 - Vale para o desenho do `giochi-store`: se ele reportar "0 jogos" sem erro, o
   usuário não distingue catálogo vazio de chave inválida.
+
+### 3.56 `SDL2_KMSDRM` foi descartado em silêncio: SDL2 sem driver de vídeo
+
+**Este é o defeito mais caro da série em horas perdidas**, porque todos os
+sinais apontavam para o lado errado.
+
+Estado medido no aparelho: DSI bindado, `/dev/dri/card0` presente, `fb0`
+funcionando, tela acesa mostrando o console — e o Launcher dizendo
+
+```
+W: render: SDL2 indisponivel; usando backend headless
+I: render: backend headless 1280x720
+```
+
+Ou seja: **o kernel estava certo**. A causa estava na compilação do SDL2:
+
+```sh
+grep SDL2 build/.config      # 8 horas depois do primeiro "não acende"
+BR2_PACKAGE_SDL2=y
+BR2_PACKAGE_SDL2_IMAGE=y
+# BR2_PACKAGE_SDL2_KMSDRM is not set      <-- pedido no defconfig!
+```
+
+O defconfig pedia `BR2_PACKAGE_SDL2_KMSDRM=y` desde o início. O `Config.in` do
+Buildroot exige **cinco** dependências, e uma delas não estava satisfeita:
+
+```
+depends on BR2_TOOLCHAIN_HAS_THREADS
+depends on BR2_PACKAGE_HAS_LIBGBM
+depends on BR2_PACKAGE_HAS_LIBEGL
+depends on BR2_PACKAGE_SDL2_OPENGL || BR2_PACKAGE_SDL2_OPENGLES   <-- faltava
+```
+
+Sem `SDL2_OPENGLES` (ou `SDL2_OPENGL`) o Kconfig **descarta** o símbolo sem
+uma linha de aviso — a armadilha §3.2, agora com consequência de tela apagada.
+O `sdl2.mk` então roda `--disable-video-kmsdrm` e a biblioteca fica sem
+**nenhum** driver de vídeo (X11, Wayland, dummy e offscreen também estão
+desligados neste build).
+
+- Correção: `BR2_PACKAGE_SDL2_OPENGLES=y` nos dois templates.
+- Guarda nova: `tools/check-config-applied.py` compara o defconfig pedido com
+  o `.config` aplicado e **o build falha antes de compilar**. Chamado por
+  `tools/build-image.sh`; suíte `config-aplicada`.
+- `render.cpp` passou a **imprimir o motivo** da queda para headless
+  (`SDL_Init: ...`, `SDL_CreateWindow: ...`). Antes o log só dizia
+  "indisponivel" e a mensagem era jogada fora, o que mandou a investigação
+  para o kernel quando o problema era o usuário.
+
+**Regra que fica:** `render=null` com `/dev/dri/card0` existe = o SDL2 da
+imagem não tem KMSDRM. Confira com
+`strings /usr/lib/libSDL2-2.0.so.0 | grep -c kmsdrm` — se der 0, é build, não
+é driver.
+
+### 3.57 Mudar o `.config` NÃO reconstrói o pacote afetado (`<pkg>-dirclean`)
+
+Consequência direta do §3.56 depois de corrigir o símbolo: o build rodou
+inteiro, gerou imagem, foi gravado e verificado byte a byte — e o SDL2 da
+imagem continuava **sem KMSDRM**, com stamps de 6 horas antes. O Buildroot não
+invalida um pacote quando a configuração dele muda; os `.stamp_*` continuam
+válidos.
+
+- `tools/config-delta.py` compara o `.config` aplicado com o da execução
+  anterior e lista os pacotes cujos símbolos mudaram (mapeia
+  `BR2_PACKAGE_<PKG>_*` → `package/<pkg>`, filtrando pelo que existe na
+  árvore).
+- `tools/build-image.sh` roda `<pkg>-dirclean` neles antes do `make`.
+- **Tem de ser `dirclean`, não apagar os stamps.** Medido: só apagar
+  `.stamp_*` reconfigura o pacote mas mantém os `.o` antigos, e o link morre em
+  `undefined reference to 'DUMMY_bootstrap'` e `'SDL_EGL_CreateContext'`
+  (objetos de backends que o novo configure não compila mais).
+- Guarda: `test_build_reconstroi_pacote_quando_a_config_muda` e
+  `test_config_delta_mapeia_simbolo_para_pacote` (suíte `config-aplicada`).
+
+### 3.58 `mdev.conf`: `modprobe -b` não existe no BusyBox sem a feature
+
+A primeira versão da regra de modalias (§3.50) usava `@modprobe -b $MODALIAS`,
+copiada de receitas antigas. O `modprobe` do BusyBox só aceita `-b` com
+`CONFIG_FEATURE_MODPROBE_BLACKLIST`, que **não** está ligado no Buildroot
+2024.02 — o comando falharia com "unrecognized option" e nada seria carregado,
+recriando o defeito. A linha correta é a que o próprio Buildroot instala:
+
+```
+$MODALIAS=.*	root:root 660 @modprobe "$MODALIAS"
+```
+
+- Guarda: `test_coldplug_de_modulos_no_boot` recusa `modprobe -b` sem a feature
+  no `busybox.fragment`, e exige `FEATURE_MDEV_CONF`/`MDEV`.
+
 
 ## 4. O que NÃO foi verificado
 
@@ -2469,3 +2558,55 @@ conclui que está autenticado.
 `butler` releases v15.32.0, ToS em `itch.io/docs/legal/terms`, busca e amostra
 do catálogo. **Não rodou:** nenhum build de loja, e o `giochi-store` continua
 não existindo (a aba Loja segue com `ERR launch_failed`).
+
+### 2026-10-31 (22) — Copilot (a tela ACENDEU; o `render=null` era o SDL2 sem KMSDRM)
+
+O mantenedor relatou **"apareceu imagem na tela"** com a imagem que estava no
+aparelho. Sim: com o coldplug (§3.50) e o PHY do DSI `=y`, o bind aconteceu:
+
+```
+[drm] Initialized rockchip 1.0.0 for display-subsystem on minor 0
+Console: switching to colour frame buffer device 90x80
+rockchip-drm display-subsystem: [drm] fb0: rockchipdrmfb frame buffer device
+```
+
+`fe060000.dsi` está na lista de `bound`. O kernel **está resolvido** — os
+`-22` e `-517` acabaram. O que sobrou é do userspace:
+
+```
+W: render: SDL2 indisponivel; usando backend headless
+```
+
+E a causa estava no `.config` desde o primeiro build: `BR2_PACKAGE_SDL2_KMSDRM`
+foi **descartado em silêncio** pelo Kconfig porque falta `SDL2_OPENGLES` (§3.56).
+O SDL2 da imagem não tinha **nenhum** driver de vídeo.
+
+Três correções + duas ferramentas novas:
+
+| O quê | Onde |
+|---|---|
+| `BR2_PACKAGE_SDL2_OPENGLES=y` (destrava o KMSDRM) | dois templates |
+| `BR2_PACKAGE_BUSYBOX_SHOW_OTHERS=y` (destrava `KMOD_TOOLS`) | dois templates |
+| `render.cpp` imprime **o motivo** da queda para headless | `src/launcher/render.cpp` |
+| `tools/check-config-applied.py` — pedido × aplicado, falha o build | novo |
+| `tools/config-delta.py` — quais pacotes a mudança de config afeta | novo |
+
+**Armadilha do caminho (a que mais custou):** corrigir o símbolo não bastou. O
+Buildroot não reconstrói o pacote quando a config muda, e apagar só os stamps
+leva a `undefined reference to 'DUMMY_bootstrap'` (os `.o` antigos ficam). Tem
+de ser `<pkg>-dirclean` (§3.57). Depois disso o `libSDL2` foi de 0 para 6
+ocorrências de `kmsdrm`, com `drmModeAddFB` e `gbm_create_device`.
+
+**Verificação (tudo rodado):**
+- `make test` → **26/26** (suíte nova `config-aplicada`, 7 testes, incluindo o
+  par defconfig/.config sintético que prova a detecção).
+- `make lint` → rc=0.
+- `tools/check-config-applied.py` contra o `.config` real: falhava com
+  `SDL2_KMSDRM AUSENTE` e `KMOD_TOOLS AUSENTE`; agora `ok`.
+- `strings target/usr/lib/libSDL2-2.0.so.0 | grep -c kmsdrm` → **6** (era 0).
+- Imagem regravada (`dd conv=fsync`) + `verify-card.py` → *"idêntico à imagem,
+  byte a byte"* (`sha256` `19a7f5bd…`).
+
+**Aberto:** o boot com o SDL2 correto ainda não aconteceu. Se a tela mostrar o
+Launcher, o próximo item é o desenho dos widgets (`TODO(v1.2)` em
+`render.cpp`). Se cair para headless de novo, agora o log diz **por quê**.

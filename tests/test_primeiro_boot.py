@@ -23,6 +23,7 @@ DEVICECONF_C = os.path.join(ROOT, "src/common/giochi_deviceconf.c")
 BUILD_IMAGE = os.path.join(ROOT, "tools/build-image.sh")
 S05MODULES = os.path.join(ROOT, "scripts/init.d/S05modules")
 MDEV_CONF = os.path.join(ROOT, "buildroot/board/giochi/mdev.conf")
+BUSYBOX_FRAGMENT = os.path.join(ROOT, "buildroot/board/giochi/busybox.fragment")
 LINUX_POWKIDDY = os.path.join(ROOT, "buildroot/board/giochi/linux-powkiddy.fragment")
 S20GRAPHICS = os.path.join(ROOT, "scripts/init.d/S20graphics")
 
@@ -130,9 +131,22 @@ class PrimeiroBootTest(unittest.TestCase):
         self.assertIn("S05modules", read(POST_BUILD),
                       "post-build.sh não instala o S05modules")
         # A regra do modalias é o que transforma o evento em modprobe.
-        self.assertRegex(mdev, r"(?m)^\$MODALIAS=\.\*\s+root:root\s+\S+\s+"
-                               r"@modprobe -b \$MODALIAS",
+        self.assertRegex(mdev, r'(?m)^\$MODALIAS=\.\*\s+root:root\s+\S+\s+'
+                               r'@modprobe "?\$MODALIAS"?\s*$',
                          "mdev.conf sem a regra $MODALIAS -> modprobe")
+
+        # 'modprobe -b' (blacklist) exige CONFIG_FEATURE_MODPROBE_BLACKLIST, que
+        # NAO esta ligado no BusyBox desta imagem: o modprobe recusaria a opcao
+        # e nada seria carregado — o mesmo defeito, com um erro a mais.
+        bb = read(BUSYBOX_FRAGMENT)
+        if re.search(r"modprobe\s+-b\b", mdev):
+            self.assertIn("CONFIG_FEATURE_MODPROBE_BLACKLIST=y", bb,
+                          "mdev.conf usa 'modprobe -b' sem a feature no BusyBox")
+
+        # Sem FEATURE_MDEV_CONF o mdev ignora o mdev.conf por completo.
+        self.assertIn("CONFIG_FEATURE_MDEV_CONF=y", bb,
+                      "sem FEATURE_MDEV_CONF o mdev.conf e' ignorado")
+        self.assertIn("CONFIG_MDEV=y", bb, "sem MDEV nao ha coldplug")
 
     def test_phy_do_dsi_e_embutido(self):
         """PHY DSI como módulo deixava o DSI esperando (-517) para sempre.

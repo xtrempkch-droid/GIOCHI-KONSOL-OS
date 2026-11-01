@@ -12,6 +12,33 @@ decisões tomadas (`# DECISÃO`) que afetam a sessão seguinte.
 Legenda: **feito** (compila e/ou roda), **esqueleto** (interface + stub com
 TODO), **doc** (apenas especificação/script).
 
+## 2026-10-31 — A TELA ACENDEU: o kernel está resolvido, faltava o SDL2
+
+Com o coldplug de módulos (§3.50) e o PHY do DSI `=y`, o bind aconteceu:
+
+```
+[drm] Initialized rockchip 1.0.0 for display-subsystem on minor 0
+Console: switching to colour frame buffer device 90x80
+rockchip-drm display-subsystem: [drm] fb0: rockchipdrmfb frame buffer device
+```
+
+`fe060000.dsi` está entre os componentes `bound`. Os erros `-22` e `-517`
+acabaram. A tela acende e mostra o console/tty. O que falta é o userspace:
+
+```
+W: render: SDL2 indisponivel; usando backend headless
+```
+
+Causa: `BR2_PACKAGE_SDL2_KMSDRM` foi **descartado em silêncio** pelo Kconfig
+(faltava `SDL2_OPENGLES`), então o SDL2 da imagem não tinha nenhum driver de
+vídeo. Correções: `SDL2_OPENGLES=y`, `BUSYBOX_SHOW_OTHERS=y`, e o Launcher
+passou a imprimir o motivo da queda. Ferramentas novas:
+`tools/check-config-applied.py` (falha o build) e `tools/config-delta.py`
+(`<pkg>-dirclean` do que a mudança de config afeta).
+
+Verificado: `make test` 26/26, `make lint` rc=0, `libSDL2` com 6 ocorrências de
+`kmsdrm` (era 0). **Imagem regravada e verificada, boot pendente.**
+
 ## 2026-10-31 — o patch do DSI entrou, mas nenhum módulo do kernel carregava
 
 Boot com o patch do §3.48 (cartão verificado byte a byte). A tela continuou

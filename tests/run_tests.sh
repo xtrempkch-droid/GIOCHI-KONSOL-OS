@@ -137,6 +137,18 @@ if command -v python3 >/dev/null 2>&1; then
     fi
 fi
 
+# Simbolo pedido e descartado em silencio pelo Kconfig: foi assim que o
+# SDL2_KMSDRM sumiu e o SDL2 saiu sem driver de video (AGENTS.md §3.55).
+if command -v python3 >/dev/null 2>&1; then
+    total=$((total + 1))
+    if (cd "$ROOT" && python3 -m unittest tests.test_config_aplicada) >/dev/null 2>&1; then
+        echo "OK     config-aplicada (python)"
+    else
+        echo "FALHA  config-aplicada (python)"
+        fail=$((fail + 1))
+    fi
+fi
+
 # Patches locais de kernel: um patch que nao entra no build nao avisa nada --
 # a imagem sai com o defeito de volta. Foi assim que o bind do DSI (-22) ficou
 # escondido atras de um build "verde" (AGENTS.md §3.48).
