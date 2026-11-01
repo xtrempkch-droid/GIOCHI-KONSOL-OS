@@ -453,3 +453,59 @@ Ordem de diagnóstico (do mais barato ao mais caro):
 Caso fechado na X55 (patch em `buildroot/board/giochi/patches/linux/`): o
 `render=null` **não** é bug do Launcher, e o `-22` **não** era o painel — o
 driver do painel (`himax,hx8394`) existe e é mainline.
+
+## 9. O console sobe mas o PC não vê nada no USB
+
+Sintoma: a tela funciona, o sistema está vivo, e `lsusb` no PC não mostra nada
+novo ao plugar o cabo. Três ferramentas respondem, do mais barato ao mais caro.
+
+### Primeiro: o que o aparelho diz de si mesmo (log do cartão)
+
+O `S50usb` grava três linhas no `giochi-boot.log` a cada boot. Elas separam as
+causas que exigem ações opostas:
+
+| Linha no log | Significado | Onde olhar |
+|---|---|---|
+| `sonda: /sys/class/udc VAZIO` | o controlador **não** entrou em modo dispositivo | DT (`dr_mode`, `extcon`) ou PHY — não é script |
+| `sonda: dr_mode USB-C = otg` | o DT ainda está em OTG | AGENTS.md §3.88 |
+| `gadget anexado ao UDC '<nome>'` | o bind foi aceito | problema é no PC (cabo/porta) ou na função |
+| `gadget NAO anexado` | o configfs não recebeu controlador | veja o `dmesg` do kernel |
+
+**`HOST MAC` no log não é sucesso.** Essa mensagem vem de `u_ether.c` e só diz
+que a função ECM foi criada. Quem diz se o gadget ancorou é o arquivo
+`/sys/kernel/config/usb_gadget/giochi/UDC` — por isso a sonda o lê.
+
+### Segundo: o que o kernel reclamou
+
+```sh
+grep -iE "dwc3|udc|gadget|ep0" /boot/giochi-boot.dmesg
+```
+
+| Mensagem | Causa |
+|---|---|
+| `failed to enable ep0out` | o UDC **existe** e o bind foi tentado; o comando `SETEPCONFIG` do ep0 foi recusado (§3.88) |
+| `failed to initialize peripheral` | `dwc3_gadget_init()` falhou — não chegou a registrar UDC |
+| `no UDC available` / nada | modo ou PHY: veja a sonda acima |
+
+### Terceiro: o PC
+
+```sh
+tools/giochi-usb-diag.sh --esperar 30
+```
+
+Ele responde qual das quatro causas é (cabo, boot incompleto, imagem, PC) e
+aponta o próximo passo. Cabo **só de carga** não tem D+/D- ligados: nenhum
+software no console resolve isso.
+
+### O que fazer depois de corrigir
+
+Gravar a imagem nova **não** basta para saber se funcionou: o `dr_mode` vem do
+DTB, que só muda com patch de kernel recompilado. Confira o DTB que está no
+cartão, não o fonte:
+
+```sh
+python3 - <<'PY'
+d = open("/mnt/boot/dtbs/rockchip/rk3566-powkiddy-x55.dtb","rb").read()
+print("peripheral:", d.count(b"peripheral\x00"), " otg:", d.count(b"otg\x00"))
+PY
+```
