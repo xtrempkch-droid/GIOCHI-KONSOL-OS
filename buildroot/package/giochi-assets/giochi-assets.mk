@@ -15,6 +15,9 @@ GIOCHI_ASSETS_LICENSE = Proprietary
 define GIOCHI_ASSETS_INSTALL_TARGET_CMDS
 	mkdir -p $(TARGET_DIR)/usr/share/giochi
 	$(INSTALL) -m 0644 $(@D)/assets/*.json $(TARGET_DIR)/usr/share/giochi/
+	# Atlas da fonte embutida (gerado por tools/make-font.py). Sem ele o
+	# Launcher desenha as caixas sem rotulo: diagnostico, nao tela preta.
+	$(INSTALL) -m 0644 $(@D)/assets/font.a8 $(TARGET_DIR)/usr/share/giochi/font.a8
 endef
 
 $(eval $(generic-package))

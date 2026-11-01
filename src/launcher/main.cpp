@@ -56,6 +56,7 @@ struct Launcher {
     int current_tab = 0;
     int focus_index = 0;
     std::vector<giochi::LibraryEntry> library;
+    std::vector<giochi::UiItem> ui_items;
     int library_focus = 0;
     bool library_loaded = false;
 
@@ -504,6 +505,17 @@ bool init(Launcher &app)
         }
         GLOG_INFO("biblioteca: %zu pacotes (%zu validos)", app.library.size(),
                   valid);
+
+        /* O renderer recebe so o que precisa desenhar: titulo + validade. */
+        app.ui_items.clear();
+        app.ui_items.reserve(app.library.size());
+        for (const auto &entry : app.library) {
+            giochi::UiItem item;
+
+            item.title = entry.title.empty() ? entry.package_path : entry.title;
+            item.valid = entry.valid;
+            app.ui_items.push_back(std::move(item));
+        }
     }
 
     set_hint(app);
@@ -561,6 +573,8 @@ int main(int argc, char **argv)
         app.ui.settings_open = app.overlay.open != 0;
         app.ui.settings_index = app.overlay.index;
         app.ui.focus_index = app.library_focus;
+        app.ui.items = app.ui_items.empty() ? nullptr : app.ui_items.data();
+        app.ui.item_count = static_cast<int>(app.ui_items.size());
         set_hint(app);
 
         if (app.renderer != nullptr) {

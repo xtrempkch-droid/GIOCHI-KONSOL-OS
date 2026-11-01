@@ -13,6 +13,14 @@
 
 namespace giochi {
 
+/* Item desenhavel da grade. O renderer NAO conhece LibraryEntry: copiar o
+ * struct inteiro obrigaria render.hpp a incluir library.hpp, e o
+ * render_null.cpp (usado nos testes de host) passaria a depender de metadata. */
+struct UiItem {
+    std::string title;
+    bool valid = false;
+};
+
 struct UiState {
     const giochi_layout *layout = nullptr;
     const giochi_theme *theme = nullptr;
@@ -22,6 +30,10 @@ struct UiState {
     int settings_index = 0;
     bool music_playing = false;
     std::string hint;
+
+    /* Grade da Biblioteca (vazio nas outras abas). */
+    const UiItem *items = nullptr;
+    int item_count = 0;
 };
 
 class Renderer {

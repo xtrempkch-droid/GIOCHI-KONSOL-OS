@@ -162,6 +162,8 @@ LAUNCHER_SRC := \
 	src/launcher/ipc_client.cpp \
 	src/launcher/metadata.cpp \
 	src/launcher/library.cpp \
+	src/launcher/ui_geometry.cpp \
+	src/launcher/font.cpp \
 	src/launcher/render.cpp \
 	src/launcher/render_null.cpp
 
@@ -193,13 +195,15 @@ TESTS_CXX := \
 	tests/test_metadata.cpp \
 	tests/test_settings.cpp \
 	tests/test_buttonsmap.cpp \
-	tests/test_deviceconf.cpp
+	tests/test_deviceconf.cpp \
+	tests/test_ui_geometry.cpp
 
 TEST_BINS := $(patsubst tests/%.c,$(BIN)/%,$(TESTS_C)) \
              $(patsubst tests/%.cpp,$(BIN)/%,$(TESTS_CXX))
 
 .PHONY: all clean test install info check-config defconfigs lint images \
-        bootlogo screenshots proposta
+        bootlogo screenshots proposta font ui-preview \
+        $(BIN)/dump-geometry
 
 all: $(TARGETS)
 
@@ -225,6 +229,10 @@ $(OBJ)/%.o: src/%.cpp
 $(OBJ)/tools/%.o: tools/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS_ALL) -MMD -MP -c $< -o $@
+
+$(OBJ)/tools/%.o: tools/%.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS_ALL) -MMD -MP -c $< -o $@
 
 $(OBJ)/tests/%.o: tests/%.c
 	@mkdir -p $(dir $@)
@@ -294,6 +302,14 @@ $(BIN)/test_settings: $(OBJ)/tests/test_settings.o $(OBJ)/launcher/settings.o $(
 	@mkdir -p $(BIN)
 	$(CXX) $^ -o $@ $(LDFLAGS) $(EXTRA_LDFLAGS) $(CRYPTO_LIBS)
 
+$(BIN)/dump-geometry: $(OBJ)/tools/dump-geometry.o $(OBJ)/launcher/ui_geometry.o $(OBJ)/launcher/layout.o $(COMMON_OBJ)
+	@mkdir -p $(BIN)
+	$(CXX) $^ -o $@ $(LDFLAGS) $(EXTRA_LDFLAGS) $(CRYPTO_LIBS)
+
+$(BIN)/test_ui_geometry: $(OBJ)/tests/test_ui_geometry.o $(OBJ)/launcher/ui_geometry.o $(OBJ)/launcher/layout.o $(COMMON_OBJ)
+	@mkdir -p $(BIN)
+	$(CXX) $^ -o $@ $(LDFLAGS) $(EXTRA_LDFLAGS) $(CRYPTO_LIBS)
+
 $(BIN)/test_deviceconf: $(OBJ)/tests/test_deviceconf.o $(COMMON_OBJ)
 	@mkdir -p $(BIN)
 	$(CXX) $^ -o $@ $(LDFLAGS) $(EXTRA_LDFLAGS) $(CRYPTO_LIBS)
@@ -326,6 +342,23 @@ bootlogo:
 			exit $$rc; \
 		fi; \
 	}
+
+font:
+	@python3 tools/make-font.py || { \
+		rc=$$?; \
+		if [ $$rc -eq 3 ]; then \
+			echo "font: pulado (instale python3-pil)"; \
+		else \
+			exit $$rc; \
+		fi; \
+	}
+
+# Preview do que o Launcher desenha: a geometria vem do ui_geometry.cpp (via
+# dump-geometry, sem SDL) e o texto do MESMO atlas que vai para a imagem.
+# Nao ha segundo conjunto de numeros de layout neste caminho.
+ui-preview: $(BIN)/dump-geometry
+	@python3 tools/preview-ui.py --size 1280x720 --tab 1 --items 15 --focus 3
+	@python3 tools/preview-ui.py --size 640x480 --tab 1 --items 6 --focus 1
 
 images:
 	@if [ "$(BUILD)" = "1" ]; then \
@@ -405,13 +438,16 @@ lint:
 	@python3 -m unittest tests.test_layout_proposal 2>&1 | tail -3
 	@echo "== escala do override por aparelho =="
 	@python3 -m unittest tests.test_device_scale 2>&1 | tail -3
+	@echo "== fonte embutida (atlas gerado) =="
+	@python3 tests/test_font.py
 	@echo "== ferramentas python =="
 	@python3 -m py_compile tools/make-screenshots.py \
 	           tools/make-layout-proposal.py \
 	           tools/check-buildroot-symbols.py tools/check-uboot.py \
 	           tools/check-links.py tools/make-bootlogo.py \
 	           tools/serial-capture.py tools/verify-card.py \
-	           tools/check-dts-panel.py && echo "ok"
+	           tools/check-dts-panel.py tools/make-font.py \
+	           tools/preview-ui.py && echo "ok"
 
 # 'all' antes dos testes: a suite de integracao roda o giochi-init REAL, e num
 # clone limpo 'make test' sozinho nao o teria compilado.

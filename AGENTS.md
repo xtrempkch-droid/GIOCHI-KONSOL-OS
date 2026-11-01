@@ -1641,6 +1641,52 @@ phandle) fica em `deferred probe pending` sem motivo, verifique se o nó
 referenciado tem driver **embutido**. `=m` sem coldplug é o mesmo que ausente.
 
 
+### 3.67 UI sem fonte e sem geometria: tela lisa parece "não subiu"
+
+O `frame()` do backend SDL2 fazia `SDL_RenderClear` e nada mais: mesmo com
+KMSDRM funcionando (o que custou as §§3.44–3.61), a tela sai **lisa** — e tela
+lisa é indistinguível de "o Launcher não subiu", que foi o diagnóstico errado
+por quatro sessões.
+
+Dois bloqueios reais, os dois resolvidos sem inflar o rootfs:
+
+1. **Não existe fonte no repositório** e `theme.json` pede `builtin_sans`.
+   Levar `SDL2_ttf` + freetype custaria ~1,4 MB de biblioteca por ~60 rótulos
+   curtos, além de mais um símbolo de Kconfig para ser descartado em silêncio
+   (§3.2). O atlas é **gerado no PC** por `tools/make-font.py` (Pillow + um TTF
+   do host) em `assets/font.a8` (cobertura 8 bpp, 102 KB) + `assets/font.json`,
+   versionado como `assets/bootlogo/*` e `docs/screenshots/*`. O console só lê
+   bytes; o renderizador expande para ARGB8888 uma vez (~380 KB de RAM, dentro
+   do teto de 4 MB da §4.1.6) e tinge com `SDL_SetTextureColorMod`, então um
+   atlas serve para `text_primary`, `text_secondary` e `accent`.
+   - Os tamanhos são 12/14/18/21 px porque são **exatamente** os tokens de
+     `docs/LAYOUT-PROPOSTA.md` §3 (aba 14/21, título 12/18).
+   - `tests/test_font.py` cobra o contrato: `len(font.a8) == width*height`,
+     os quatro tamanhos presentes, 95 glifos ASCII por tamanho, célula dentro
+     da imagem, code point de substituição e **cobertura desenhada** (um atlas
+     todo zero passaria em todo o resto).
+
+2. **Os números do layout estavam só na proposta.** Agora vivem em
+   `src/launcher/ui_geometry.cpp`, um módulo **puro** (sem SDL) —
+   `tests/test_ui_geometry.cpp` reproduz a tabela medida pelos dois lados:
+   4 colunas em 640 (grade 632 px) e 5 em 1280, `tile_h` 85→**128** (127,5
+   arredonda para cima, é o valor declarado em `library.json`) e a grade
+   terminando em **383**/480p e **576**/720p.
+
+**A armadilha de método**: como ver o desenho sem o aparelho? SDL2 da imagem só
+tem o driver `kmsdrm` (`--disable-video-dummy`/`offscreen`), que exige
+`/dev/dri`; o host não tem SDL2. A saída foi `tools/dump-geometry.cpp` (ligado
+ao **mesmo** `ui_geometry.cpp`) + `tools/preview-ui.py`, que rasteriza o JSON
+com o **mesmo** atlas. `make ui-preview` gera `docs/proposta/ui-{640,480}.png`.
+O preview não tem um único número de layout: se ele sai errado, o `render.cpp`
+sai errado.
+
+**E o que o preview não prova**: ele não exercita SDL2, KMSDRM nem o `/dev/dri`.
+Compilar `render.cpp`/`font.cpp` com `-Wall -Wextra` contra os headers SDL2
+**da imagem** (toolchain do `dist/x55/build/host`) pega erro de tipo e de
+assinatura, e foi assim que os dois passaram limpos — mas "compilou" continua não
+sendo "desenhou". Quem fecha isso é o aparelho.
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):
@@ -3477,3 +3523,53 @@ Nenhuma dessas provas fecha o caso — a sonda fecha.
 serve** — `mmc1: tuning execution failed: -5` no SDR104 e o U-Boot trava lendo o
 `Image` de 47 MB (§3.42). Se a sonda passar nos cinco passos, o próximo item é o
 desenho dos widgets (`TODO(v1.2)` em `render.cpp`).
+
+### 2026-10-31 (29) — Copilot (a UI desenha: geometria pura + atlas gerado)
+
+A tela acendeu (§3.48) e o Launcher subiu, mas o `frame()` só fazia
+`SDL_RenderClear`: tela lisa. Pedido do mantenedor: **implementar a sugestão de
+layout** — `docs/LAYOUT-PROPOSTA.md` — e depois voltar ao vídeo se ainda houver
+erro.
+
+**O que foi implementado (sem inflar o rootfs):**
+
+- `src/launcher/ui_geometry.{hpp,cpp}` — tokens da proposta §3, grade com
+  colunas derivadas da largura, paginação pelo foco, abas medidas, anel de foco.
+  **Módulo puro, sem SDL**, testado no host: `tests/test_ui_geometry.cpp`,
+  **298 checagens**, incluindo os números medidos da proposta (grade termina em
+  383 em 480p e 576 em 720p; 4 colunas em 640 e 5 em 1280; `tile_h` 85→128).
+- `tools/make-font.py` → `assets/font.a8` (102 KB, cobertura 8 bpp) +
+  `assets/font.json`. Tamanhos 12/14/18/21 = os tokens das fontes. Sem
+  `SDL2_ttf`/freetype: o atlas é gerado no PC e versionado.
+- `src/launcher/font.cpp` — atlas → uma textura ARGB8888, tingida por
+  `SDL_SetTextureColorMod`; UTF-8 decodificado com code point de substituição;
+  recorte `...` medido em PIXELS (o defeito que a §5.2 da proposta aponta no
+  `tip[:72]` antigo).
+- `render.cpp` — topbar com abas medidas e sublinhado de acento, grade 4×3/5×3
+  com anel de foco por fora, hint bar, painel de Configurações e painel por aba
+  (Loja/Ports dizem que o app não existe; Home/Música dizem a origem do dado —
+  tela vazia é diagnóstico ruim).
+- `UiState` ganhou `items`/`item_count` com um `UiItem` mínimo: `render.hpp` não
+  inclui `library.hpp`, senão o `render_null.cpp` (usado nos testes de host)
+  passaria a depender de `metadata`.
+
+**Verificação (tudo rodado):**
+
+- `make test` → **28/28** (nova suíte `fonte-embutida`).
+- `make lint` componentes: `check-links` ok (28 arquivos), `check-tracked` ok,
+  `test_font.py` **1173 checagens**.
+- `render.cpp` e `font.cpp` compilados com `-Wall -Wextra -Wshadow` contra os
+  headers SDL2 **da imagem** (`aarch64-buildroot-linux-musl-g++` do
+  `dist/x55/build/host`): sem warning.
+- `make ui-preview` → `docs/proposta/ui-{640x480,1280x720}.png`, gerados do
+  **mesmo** `ui_geometry.cpp` (via `tools/dump-geometry`) e do **mesmo** atlas.
+  Medido no PNG de 720p: 5×3 = 15 tiles, grade termina em 576, hint bar em 675,
+  5 abas entre 18 e 475 px (nenhuma descartada), anel de 3 px por fora do tile.
+  Contagem de pixel por cor: texto no topbar 53 px `E5E5E5`, sublinhado 213 px
+  `E50914`, anel 964 px, títulos 152 px, hint 158 px, **0 pixel branco puro**
+  (a armadilha do Pillow ≥ 11 não apareceu aqui).
+
+**Aberto:** nada disso foi visto em aparelho. O preview não exercita SDL2 nem
+KMSDRM — "compilou" não é "desenhou". Pendências da proposta, registradas na §11
+do documento: hint bar por par (botão, ação) com chip, indicadores da topbar,
+conteúdo de Home/Música e capas (`thumbgen`).

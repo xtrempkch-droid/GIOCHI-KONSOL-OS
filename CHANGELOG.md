@@ -6,6 +6,27 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 ## [Não publicado]
 
 ### Adicionado
+- **A UI do Launcher desenha** (antes o `frame()` só limpava a tela, o que fazia
+  "tela lisa" se confundir com "não subiu"):
+  - `src/launcher/ui_geometry.{hpp,cpp}` — tokens de
+    [docs/LAYOUT-PROPOSTA.md](docs/LAYOUT-PROPOSTA.md) §3, grade com colunas
+    derivadas da largura (4 em 640×480, 5 em 1280×720), paginação pelo foco,
+    abas medidas e anel de foco. **Módulo puro, sem SDL**, coberto por
+    `tests/test_ui_geometry.cpp` (suíte `ui_geometry`, 298 checagens) que
+    reproduz os números medidos da proposta (grade termina em 383 e 576).
+  - `assets/font.a8` + `assets/font.json`, gerados por
+    [tools/make-font.py](tools/make-font.py): atlas 8 bpp de 102 KB com os
+    tamanhos 12/14/18/21 px. Sem `SDL2_ttf`/freetype no rootfs. Contrato cobrado
+    por `tests/test_font.py` (suíte `fonte-embutida`, 1173 checagens).
+  - `src/launcher/font.{hpp,cpp}` — atlas em uma textura ARGB8888 tingida por
+    `SDL_SetTextureColorMod`, UTF-8 com code point de substituição e recorte
+    `...` medido em pixels.
+  - `src/launcher/render.cpp` — topbar com sublinhado de acento, grade com anel
+    de foco por fora do tile, hint bar, painel de Configurações e painel por aba
+    (Loja/Ports avisam que o app não existe; Home/Música dizem a origem do dado).
+  - `make ui-preview` (`tools/dump-geometry` + `tools/preview-ui.py`) gera
+    `docs/proposta/ui-{640x480,1280x720}.png` a partir do **mesmo**
+    `ui_geometry.cpp` e do **mesmo** atlas — sem um segundo conjunto de números.
 - **Boot completo em hardware (X55)**: `rcS` → `giochi-init` → Launcher em
   **3,9 s** desde `Starting kernel`. Bootloader, DTB, `root=PARTUUID`, SquashFS
   e userspace provados no aparelho (log serial em

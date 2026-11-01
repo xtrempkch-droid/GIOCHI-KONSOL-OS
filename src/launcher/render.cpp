@@ -11,9 +11,11 @@
  */
 #include "render.hpp"
 
+#include "font.hpp"
 #include "giochi_json.h"
 #include "giochi_log.h"
 #include "giochi_util.h"
+#include "ui_geometry.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -165,6 +167,328 @@ int splash_frames_from_env(int fallback)
     return value >= 0 ? value : fallback;
 }
 
+/* --- Desenho da UI ----------------------------------------------------
+ *
+ * Toda a geometria vem de ui_geometry (modulo puro, testado no host) e todo o
+ * texto do atlas gerado por tools/make-font.py. Aqui so existe "pintar", sem
+ * numero de layout e sem metrica de fonte — foi o que a proposta §4 pediu e o
+ * que faltava desde a v1.1 (o frame() so limpava a tela).
+ *
+ * A secao de cada aba segue docs/LAYOUT-PROPOSTA.md §5. As abas sem asset de
+ * layout (Loja e Ports apontam para APP:giochi-store e APP:portmaster) mostram
+ * um painel explicito, em vez de tela vazia: "0 pacotes" e diagnostico, tela
+ * preta nao e.
+ */
+
+void set_color(SDL_Renderer *sdl, unsigned rgb)
+{
+    (void)SDL_SetRenderDrawColor(sdl, static_cast<Uint8>((rgb >> 16) & 0xFFU),
+                                 static_cast<Uint8>((rgb >> 8) & 0xFFU),
+                                 static_cast<Uint8>(rgb & 0xFFU), 0xFFU);
+}
+
+void fill_rect(SDL_Renderer *sdl, unsigned rgb, int x, int y, int w, int h)
+{
+    if (w <= 0 || h <= 0) {
+        return;
+    }
+    set_color(sdl, rgb);
+    SDL_Rect r{x, y, w, h};
+    (void)SDL_RenderFillRect(sdl, &r);
+}
+
+int corner_inset(int radius, int dy)
+{
+    const int ry = radius - dy - 1;
+    int dx = 0;
+
+    while (dx < radius &&
+           (radius - dx - 1) * (radius - dx - 1) + ry * ry > radius * radius) {
+        dx++;
+    }
+    return dx;
+}
+
+void fill_rounded(SDL_Renderer *sdl, unsigned rgb, const UiRect &box, int radius)
+{
+    if (box.w <= 0 || box.h <= 0) {
+        return;
+    }
+    if (radius <= 0 || radius * 2 > box.h || radius * 2 > box.w) {
+        fill_rect(sdl, rgb, box.x, box.y, box.w, box.h);
+        return;
+    }
+
+    set_color(sdl, rgb);
+
+    for (int dy = 0; dy < box.h; dy++) {
+        int inset = 0;
+
+        if (dy < radius) {
+            inset = corner_inset(radius, dy);
+        } else if (dy >= box.h - radius) {
+            inset = corner_inset(radius, box.h - dy - 1);
+        }
+
+        SDL_Rect r{box.x + inset, box.y + dy, box.w - 2 * inset, 1};
+
+        if (r.w > 0) {
+            (void)SDL_RenderFillRect(sdl, &r);
+        }
+    }
+}
+
+/* Anel de foco: quatro tiras, para nao comer o tile (§5.2). */
+void draw_ring(SDL_Renderer *sdl, unsigned rgb, const UiRect &box, int thickness)
+{
+    if (thickness <= 0 || box.w <= 0 || box.h <= 0) {
+        return;
+    }
+    fill_rect(sdl, rgb, box.x, box.y, box.w, thickness);
+    fill_rect(sdl, rgb, box.x, box.y + box.h - thickness, box.w, thickness);
+    fill_rect(sdl, rgb, box.x, box.y, thickness, box.h);
+    fill_rect(sdl, rgb, box.x + box.w - thickness, box.y, thickness, box.h);
+}
+
+/* Rotulo da aba. O id vem do layout.json; o texto e o que o usuario le. */
+const char *tab_label(const char *id)
+{
+    if (std::strcmp(id, "music") == 0) {
+        return "Musica";
+    }
+    if (std::strcmp(id, "library") == 0) {
+        return "Biblioteca";
+    }
+    if (std::strcmp(id, "home") == 0) {
+        return "Home";
+    }
+    if (std::strcmp(id, "store") == 0) {
+        return "Loja";
+    }
+    if (std::strcmp(id, "ports") == 0) {
+        return "Ports";
+    }
+    return id;
+}
+
+void text_centered(SDL_Renderer *sdl, const Font &font, const std::string &text,
+                   const UiRect &box, int px, unsigned rgb)
+{
+    const int w = font.measure(text, px);
+    const int baseline = box.y + (box.h + font.ascent(px)) / 2 - px / 4;
+
+    (void)font.draw(sdl, text, box.x + (box.w - w) / 2, baseline, px, rgb, box.w);
+}
+
+void paint_topbar(SDL_Renderer *sdl, const Font &font, const UiGeometry &geo,
+                  const UiState &ui)
+{
+    const unsigned surface = giochi_theme_rgb(ui.theme->surface, 0x1E1E1E);
+    const unsigned divider = giochi_theme_rgb(ui.theme->divider, 0x333333);
+    const unsigned accent = giochi_theme_rgb(ui.theme->accent, 0xE50914);
+    const unsigned primary =
+        giochi_theme_rgb(ui.theme->text_primary, 0xE5E5E5);
+    const unsigned secondary =
+        giochi_theme_rgb(ui.theme->text_secondary, 0xA0A0A0);
+
+    fill_rect(sdl, surface, 0, 0, geo.topbar.w, geo.topbar.h);
+    fill_rect(sdl, divider, 0, geo.topbar.h - geo.scale_pct / 50, geo.topbar.w,
+              geo.scale_pct / 50);
+
+    /* Baseline das abas: centralizado verticalmente na barra. */
+    const int baseline = (geo.topbar.h + font.ascent(geo.font_tab)) / 2;
+
+    for (int i = 0; i < geo.tab_count && i < GIOCHI_MAX_TABS; i++) {
+        const UiRect &t = geo.tab[i];
+
+        if (t.w <= 0) {
+            continue;
+        }
+        const bool active = i == geo.tab_active;
+        const char *label = tab_label(giochi_layout_tab_id(ui.layout, i));
+
+        (void)font.draw(sdl, label, t.x, baseline, geo.font_tab,
+                        active ? primary : secondary, t.w);
+
+        if (active) {
+            /* Sublinhado alinhado ao TEXTO, nao ao padding (§4.1). */
+            const int w = font.measure(label, geo.font_tab);
+
+            fill_rect(sdl, accent, t.x, t.y + t.h - geo.accent_h - 1, w,
+                      geo.accent_h);
+        }
+    }
+}
+
+void paint_empty_grid(SDL_Renderer *sdl, const Font &font, const UiGeometry &geo,
+                      const UiState &ui, const std::string &text)
+{
+    const unsigned secondary =
+        giochi_theme_rgb(ui.theme->text_secondary, 0xA0A0A0);
+    const UiRect box{geo.inset, geo.topbar.h, geo.screen_w - 2 * geo.inset,
+                     geo.content.h};
+
+    text_centered(sdl, font, text, box, geo.font_body, secondary);
+}
+
+void paint_grid(SDL_Renderer *sdl, const Font &font, const UiGeometry &geo,
+                const UiState &ui)
+{
+    const unsigned elevated =
+        giochi_theme_rgb(ui.theme->surface_elevated, 0x2A2A2A);
+    const unsigned surface = giochi_theme_rgb(ui.theme->surface, 0x1E1E1E);
+    const unsigned accent = giochi_theme_rgb(ui.theme->accent, 0xE50914);
+    const unsigned primary =
+        giochi_theme_rgb(ui.theme->text_primary, 0xE5E5E5);
+    const unsigned secondary =
+        giochi_theme_rgb(ui.theme->text_secondary, 0xA0A0A0);
+
+    for (int i = 0; i < geo.tile_count; i++) {
+        const UiRect &t = geo.tile[i];
+        const int index = geo.first_index + i;
+        const bool valid =
+            ui.items != nullptr && index < ui.item_count && ui.items[index].valid;
+
+        /* Placeholder da capa: o thumb .rgba so existe depois que o
+         * thumbgen rodar; um bloco em `surface` ja comunica "tile vazio"
+         * (a proposta §5.2 pede o mesmo para o hero sem capa). */
+        fill_rounded(sdl, elevated, t, geo.corner);
+        if (!valid) {
+            const UiRect inner{t.x + geo.corner, t.y + geo.corner,
+                               t.w - 2 * geo.corner, t.h - 2 * geo.corner};
+
+            fill_rounded(sdl, surface, inner, geo.corner);
+        }
+
+        if (ui.items != nullptr && index < ui.item_count) {
+            const int baseline = t.y + t.h + font.ascent(geo.font_title) +
+                                 geo.gap / 2;
+
+            (void)font.draw(sdl, ui.items[index].title, t.x, baseline,
+                            geo.font_title, valid ? primary : secondary, t.w);
+        }
+    }
+
+    if (geo.focus_slot >= 0) {
+        draw_ring(sdl, accent, ui_geometry_focus_ring(geo, geo.focus_slot),
+                  geo.focus_ring);
+    }
+}
+
+void paint_placeholder_tab(SDL_Renderer *sdl, const Font &font,
+                           const UiGeometry &geo, const UiState &ui,
+                           const char *text)
+{
+    const unsigned elevated =
+        giochi_theme_rgb(ui.theme->surface_elevated, 0x2A2A2A);
+    const unsigned primary =
+        giochi_theme_rgb(ui.theme->text_primary, 0xE5E5E5);
+    const unsigned secondary =
+        giochi_theme_rgb(ui.theme->text_secondary, 0xA0A0A0);
+    const int pad = geo.margin;
+
+    const UiRect panel{geo.margin, geo.topbar.h + geo.margin,
+                       geo.screen_w - 2 * geo.margin,
+                       geo.content.h - 2 * geo.margin};
+
+    fill_rounded(sdl, elevated, panel, geo.corner);
+
+    const int baseline = panel.y + pad + font.ascent(geo.font_tab);
+    const int id = geo.tab_active;
+
+    (void)font.draw(sdl, tab_label(giochi_layout_tab_id(ui.layout, id)),
+                    panel.x + pad, baseline, geo.font_tab, primary,
+                    panel.w - 2 * pad);
+    (void)font.draw(sdl, text, panel.x + pad,
+                    baseline + font.line_height(geo.font_body) + geo.gap / 2,
+                    geo.font_body, secondary, panel.w - 2 * pad);
+}
+
+void paint_hint_bar(SDL_Renderer *sdl, const Font &font, const UiGeometry &geo,
+                    const UiState &ui)
+{
+    const unsigned bg = giochi_theme_rgb(ui.theme->hint_bar_bg, 0x181818);
+    const unsigned divider = giochi_theme_rgb(ui.theme->divider, 0x333333);
+    const unsigned secondary =
+        giochi_theme_rgb(ui.theme->text_secondary, 0xA0A0A0);
+
+    fill_rect(sdl, bg, geo.hint_bar.x, geo.hint_bar.y, geo.hint_bar.w,
+              geo.hint_bar.h);
+    fill_rect(sdl, divider, geo.hint_bar.x, geo.hint_bar.y, geo.hint_bar.w,
+              geo.scale_pct / 50);
+
+    if (ui.hint.empty()) {
+        return;
+    }
+
+    const int baseline =
+        geo.hint_bar.y + (geo.hint_bar.h + font.ascent(geo.font_body)) / 2;
+
+    (void)font.draw(sdl, ui.hint, geo.hint_bar.x + geo.margin, baseline,
+                    geo.font_body, secondary,
+                    geo.hint_bar.w - 2 * geo.margin);
+}
+
+void paint_settings(SDL_Renderer *sdl, const Font &font, const UiGeometry &geo,
+                    const UiState &ui)
+{
+    const unsigned elevated =
+        giochi_theme_rgb(ui.theme->surface_elevated, 0x2A2A2A);
+    const unsigned accent = giochi_theme_rgb(ui.theme->accent, 0xE50914);
+    const unsigned primary =
+        giochi_theme_rgb(ui.theme->text_primary, 0xE5E5E5);
+
+    const int pad = geo.margin;
+    const UiRect panel{geo.margin * 2, geo.topbar.h + geo.margin,
+                       geo.screen_w / 2, geo.content.h - 2 * geo.margin};
+
+    fill_rounded(sdl, elevated, panel, geo.corner);
+    draw_ring(sdl, accent, panel, geo.focus_ring);
+
+    (void)font.draw(sdl, "Configuracoes", panel.x + pad,
+                    panel.y + pad + font.ascent(geo.font_tab), geo.font_tab,
+                    primary, panel.w - 2 * pad);
+    (void)font.draw(sdl,
+                    "Item " + std::to_string(ui.settings_index + 1) +
+                        " (overlay)",
+                    panel.x + pad,
+                    panel.y + pad + font.ascent(geo.font_tab) +
+                        font.line_height(geo.font_body) + geo.gap,
+                    geo.font_body, primary, panel.w - 2 * pad);
+}
+
+void paint_ui(SDL_Renderer *sdl, const Font &font, const UiGeometry &geo,
+              const UiState &ui)
+{
+    const char *tab_id = giochi_layout_tab_id(ui.layout, geo.tab_active);
+
+    if (std::strcmp(tab_id, "library") == 0) {
+        if (ui.item_count <= 0) {
+            paint_empty_grid(sdl, font, geo, ui,
+                             "Copie um pacote .giochi via USB");
+        } else {
+            paint_grid(sdl, font, geo, ui);
+        }
+    } else if (std::strcmp(tab_id, "music") == 0) {
+        paint_placeholder_tab(sdl, font, geo, ui,
+                              "giochi-musicd: biblioteca em /user/music");
+    } else if (std::strcmp(tab_id, "home") == 0) {
+        paint_placeholder_tab(
+            sdl, font, geo, ui,
+            "Continuar / Novidades / Recentes (assets/devices/home.json)");
+    } else {
+        paint_placeholder_tab(sdl, font, geo, ui,
+                              "app externo (layout.json \"layouts\")");
+    }
+
+    paint_topbar(sdl, font, geo, ui);
+    paint_hint_bar(sdl, font, geo, ui);
+
+    if (ui.settings_open) {
+        paint_settings(sdl, font, geo, ui);
+    }
+}
+
 class SdlRenderer final : public Renderer {
 public:
     SdlRenderer(SDL_Window *window, SDL_Renderer *sdl)
@@ -216,7 +540,7 @@ public:
         if (splash_frames_ > 0) {
             splash_.draw(sdl_);
         } else if (ui.layout != nullptr) {
-            /* TODO(v1.2): topbar/tab_bar/grid/hint_bar. */
+            paint(sdl_, ui);
         }
 
         SDL_RenderPresent(sdl_);
@@ -232,6 +556,15 @@ public:
 
     bool should_quit() const override { return quit_; }
     const char *name() const override { return "sdl2"; }
+
+    /* Carrega o atlas de fonte. Sem ele a UI ainda desenha as caixas: e
+     * diagnostico, nao tela preta. */
+    void load_font(const char *base_dir)
+    {
+        if (!font_.load(sdl_, base_dir)) {
+            GLOG_WARN("render: fonte ausente; a UI sai sem rotulo");
+        }
+    }
 
     void load_splash(const char *base_dir)
     {
@@ -254,9 +587,51 @@ public:
     }
 
 private:
+    /* Recalcula a geometria so quando o tamanho muda (a UI e estatica dentro
+     * de uma aba; o que varia por quadro e o foco, que e so um indice). */
+    void paint(SDL_Renderer *sdl, const UiState &ui)
+    {
+        int out_w = 0;
+        int out_h = 0;
+
+        if (SDL_GetRendererOutputSize(sdl, &out_w, &out_h) != 0 || out_h <= 0) {
+            out_w = ui.layout->width;
+            out_h = ui.layout->height;
+        }
+        if (out_w != geo_.screen_w || out_h != geo_.screen_h) {
+            ui_geometry_base(&geo_, out_w, out_h);
+            measure_tabs(ui);
+        }
+
+        if (ui.theme == nullptr) {
+            return;
+        }
+
+        ui_geometry_grid(&geo_, ui.item_count, ui.focus_index);
+
+        if (geo_.tab_active != ui.current_tab) {
+            geo_.tab_active = ui.current_tab;
+        }
+
+        paint_ui(sdl, font_, geo_, ui);
+    }
+
+    void measure_tabs(const UiState &ui)
+    {
+        int widths[GIOCHI_MAX_TABS] = {0};
+
+        for (int i = 0; i < ui.layout->tab_count && i < GIOCHI_MAX_TABS; i++) {
+            widths[i] = font_.measure(
+                tab_label(giochi_layout_tab_id(ui.layout, i)), geo_.font_tab);
+        }
+        ui_geometry_tabs(&geo_, widths, ui.layout->tab_count, ui.current_tab);
+    }
+
     SDL_Window *window_ = nullptr;
     SDL_Renderer *sdl_ = nullptr;
     SplashImage splash_;
+    Font font_;
+    UiGeometry geo_;
     int splash_frames_ = 0;
     bool quit_ = false;
 };
@@ -306,6 +681,11 @@ static Renderer *open_sdl(const giochi_layout &layout, std::string *err)
         const char *base = std::getenv("GIOCHI_BOOTLOGO_DIR");
         renderer->load_splash(base);
     }
+
+    /* Fonte: idem, com GIOCHI_FONT_DIR para apontar outro atlas. */
+    const char *font_dir = std::getenv("GIOCHI_FONT_DIR");
+
+    renderer->load_font(font_dir);
     return renderer;
 }
 

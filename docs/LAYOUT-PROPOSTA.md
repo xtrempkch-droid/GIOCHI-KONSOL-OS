@@ -366,7 +366,7 @@ tile para desenhar, só retângulos.
 |---|---|---|
 | `assets/devices/x55/*.json` | perfil ×1,5 no lugar dos 7 fatores implícitos, `columns: 5` | **feito** em 2026-10-30, com `tests/test_device_scale.py` |
 | `tools/make-layout-proposal.py` | lê os assets do aparelho em vez de multiplicar o base | **feito** (10 PNGs byte a byte idênticos) |
-| `src/launcher/render.cpp` | topbar, hint bar por itens, grade com anel de foco e `ellipsize` medido; nenhuma string fixa | **pendente** — bloqueado por D5 |
+| `src/launcher/render.cpp` | topbar, hint bar, grade com anel de foco e `ellipsize` medido em pixels | **feito** em 2026-10-31 (§11): geometria em `ui_geometry.cpp`, texto pelo atlas gerado |
 | `src/launcher/layout.cpp` + schema | tipo de aba (`layout`/`app`) com texto de fallback, em vez do prefixo `APP:` implícito (schema 1.7) | pendente |
 | `tools/make-screenshots.py` | render nativo por painel em vez de letterbox; scrollbar na sarjeta | pendente |
 | `docs/screenshots/*.png` | substituídos por captura do aparelho quando houver hardware | pendente |
@@ -409,3 +409,40 @@ falha com mensagem clara se não achar).
   `xz` no Windows): a validação foi o próprio gerador mais as suítes Python
   (`tests/test_layout_proposal.py` e `tests/test_device_scale.py`). O CI é quem
   fecha o resto.
+
+## 11. Estado da implementação (2026-10-31)
+
+O desenho saiu do papel e foi para o aparelho. O que existe hoje:
+
+| Peça | Onde | Por quê |
+|---|---|---|
+| tokens + grade + paginação + anel de foco | `src/launcher/ui_geometry.{hpp,cpp}` | **módulo puro**, sem SDL: dá para testar no host (`tests/test_ui_geometry.cpp`, 298 checagens) e impede que os números desta proposta virem constante espalhada no `render.cpp` |
+| fonte | `assets/font.a8` + `assets/font.json`, gerados por `tools/make-font.py` | não existe TTF no repositório e `SDL2_ttf` custaria ~1,4 MB no rootfs por 60 rótulos; atlas versionado, como `bootlogo` e `screenshots`. Tamanhos 12/14/18/21 px, exatamente os desta tabela |
+| desenho | `src/launcher/render.cpp` + `src/launcher/font.cpp` | topbar com abas medidas, sublinhado de acento, grade 4×3 / 5×3, anel de foco por fora, hint bar e painel de Configurações |
+| inspeção no PC | `make ui-preview` → `docs/proposta/ui-{640x480,1280x720}.png` | a geometria vem do **mesmo** `ui_geometry.cpp` (via `tools/dump-geometry`) e o texto do **mesmo** atlas: o preview não tem um segundo conjunto de números |
+
+O desenho real, gerado da geometria que vai para o aparelho (não é o render do
+layout declarado: é o preview do `render.cpp`):
+
+![UI implementada 1280×720](./proposta/ui-1280x720.png)
+
+![UI implementada 640×480](./proposta/ui-640x480.png)
+
+O que o preview de 1280×720 confere, medido: 5 colunas × 3 linhas = 15 tiles,
+grade termina em **576** e o hint bar começa em **675** (os números desta
+proposta); 5 abas medidas ocupam 18→475 px, nenhuma descartada; o anel de foco
+tem 3 px e fica **fora** do tile (228+2·3 = 234).
+
+Continua pendente, e não é detalhe:
+
+- **dica por par `(botão, ação)`** com chip em `surface_elevated` (§4.2): hoje a
+  hint bar desenha uma frase só, o que resolve o "botão morto" mas não a
+  anatomia pedida;
+- **indicadores da topbar** (rede, bateria, relógio) — §4.1 pede os quatro à
+  direita; não há fonte de dado para eles ainda;
+- **abas Loja e Ports**: os apps `giochi-store` e `portmaster` não existem
+  (`docs/APPS.md`), então a aba mostra um painel dizendo isso;
+- **Home** (hero/novidades/recentes) e **Música**: a aba desenha o painel com o
+  nome da seção e a origem do dado, não o conteúdo;
+- **capas**: `thumb.rgba` só existe depois que o `thumbgen` rodar; o tile é um
+  retângulo em `surface_elevated`.
