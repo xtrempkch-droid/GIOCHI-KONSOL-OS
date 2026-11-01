@@ -76,6 +76,35 @@ depender de memória:
 | SuperTux | **não adicionado** (2026-10-31) | 40 fps é jogável (o motor tem passo lógico fixo), mas o `data/` ocupa ≈160 MB comprimido — não cabe na partição de 160 MB —, a licença é GPL-3.0+ com assets CC-BY-SA, e é binário nativo (o contrato de jogo padrão hoje é Godot). O pacote do **Alpine aarch64** confirma: `supertux-data` = 244 MB instalados para 5 MB de binário. Ver [LOJA.md](LOJA.md). |
 | itch.io (catálogo) | **não adotado** (2026-10-31) | o modelo de dados não tem ARM (`all`/`386`/`amd64`) — não há como filtrar o que roda em aarch64. Ver [LOJA.md](LOJA.md). |
 
+## Outras engines
+
+O `runtime` aceito em `metadata.json` é `godot` | `retroarch` | `proton`
+(ADR-07, ADR-13). Engine nova só entra com ADR própria — e as duas perguntadas
+não passam:
+
+| Engine | Veredito | Por quê |
+|---|---|---|
+| **RAGE** (Rockstar — GTA IV/V, RDR2) | **impossível** | proprietária, nunca licenciada, sem fonte; binários só x86; exige D3D ou **Vulkan** — `device_profile.json` declara `vulkan: false` e o RK3326 não tem (ADR-06); e GTA V pede 4–8 GB de RAM, contra 1–2 GB |
+| **id Tech 5** (codinome "RAGE", jogo *Rage* de 2011) | **impossível** | a id Software liberou até o **id Tech 4**: a lista oficial de repositórios dela termina em `DOOM-3-BFG` (GPL-3.0). O id Tech 5 **nunca** foi liberado |
+| **Construct 3** (Scirra) | **não cabe** | o runtime **não é aberto** (os 14 repositórios da Scirra são SDK de addon, plugins e exemplos). O export é **HTML5**, então rodar exige motor de navegador: `webkit2gtk` = **114,9 MB** instalado no aarch64 + `gtk+3.0` 11,5 MB, contra um rootfs de **28 MB** numa partição de **160 MB** |
+
+> **Atenção à ambiguidade do nome:** "RAGE" designa duas coisas diferentes — a
+> engine da Rockstar e o codinome da id Tech 5. As duas são fechadas; não vale
+> a pena discutir qual foi pedida.
+
+### O que **é** viável na mesma família
+
+**id Tech 4** — `DOOM-3-BFG` é **GPL-3.0** (repositório oficial da id Software) e
+o porte canônico, [dhewm3](https://github.com/dhewm/dhewm3), também é GPL-3.0.
+O PortMaster **já tem** `ports/doom3` compilado para ARM (`dhewm3` 37,8 MB,
+`base.so` 33,2 MB, `d3xp.so` 35,0 MB — builds sem strip). É a engine "grande"
+que de fato cabe: os **dados** são do jogo comercial, então o usuário fornece,
+como em qualquer port legal.
+
+Fora isso, o que já está na mesa: **Godot** (ADR-07, os três jogos padrão),
+**Solarus** e **Minetest** (pacotes já no Buildroot) e o **TIC-80** (engine MIT de
+4,9 MB). Ver [LOJA.md](LOJA.md).
+
 ## Benchmark
 
 O mesmo comando funciona no PC e no aparelho:

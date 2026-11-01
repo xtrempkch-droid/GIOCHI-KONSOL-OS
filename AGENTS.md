@@ -2990,3 +2990,58 @@ conferir exit code, não canalize a saída.
 `ERR launch_failed`). Ele não compila — só lista `/user/games`, mostra capa e
 lança. E o `runtime: "native"` segue ausente do schema, então um binário
 compilado do fonte ainda não tem como ser declarado.
+
+### 2026-10-31 (26) — Copilot (RAGE e Construct: por que não, e o que é viável no lugar)
+
+O mantenedor perguntou pela viabilidade de suporte a outras engines, citando
+**RAGE** e **Construct**. Registrado em [docs/GAMES.md](docs/GAMES.md) §"Outras
+engines" — **de propósito no documento que já existia**, para não repetir a
+poluição de criar mais um arquivo (foi o que ele pediu duas horas antes).
+
+**RAGE é um nome ambíguo, e as duas coisas são fechadas:**
+
+- **RAGE da Rockstar** (GTA IV/V, RDR2): proprietária, nunca licenciada, sem
+  fonte; binários só x86; exige D3D ou Vulkan — e `src/init/device_profile.c`
+  emite `"graphics_api": { ..., "vulkan": false }` (linha 375; ADR-06). Fora
+  também por RAM: GTA V pede 4–8 GB contra 1–2 GB.
+- **id Tech 5**, cujo codinome é "RAGE" (jogo *Rage*, 2011): a id Software
+  liberou **até o id Tech 4**. Conferido na lista oficial de repositórios dela
+  (20 repos): o mais novo é `DOOM-3-BFG` (GPL-3.0). **O id Tech 5 nunca foi
+  liberado.**
+
+**Construct 3 (Scirra) não cabe por peso, não por licença.** O runtime **não é
+aberto**: os 14 repositórios da org `Scirra` são SDK de addon, plugins de loja e
+projetos de exemplo — nenhum é o runtime. E o export é **HTML5**, então rodar
+exige motor de navegador. Medido no índice do **Alpine aarch64**:
+
+| Pacote | Instalado |
+|---|---|
+| `webkit2gtk` | **114,9 MB** |
+| `webkit2gtk-6.0` | 113,6 MB |
+| `gtk+3.0` | 11,5 MB |
+| `chromium` | 243,2 MB |
+| `qt6-qtwebengine` | 197,5 MB |
+
+O rootfs inteiro tem **28 MB** e a partição **160 MB**. Um navegador sozinho
+estoura o orçamento, e ainda traria a pilha GTK/Wayland que os ADR-02/ADR-04
+evitam.
+
+**O achado útil:** a engine "grande" que **de fato** cabe é o **id Tech 4**.
+`id-Software/DOOM-3-BFG` é **GPL-3.0** (verificado na API) e o porte canônico
+`dhewm/dhewm3` também é **GPL-3.0**. E o PortMaster **já tem** `ports/doom3`
+compilado para ARM, com `dhewm3` (37,8 MB), `base.so` (33,2 MB) e `d3xp.so`
+(35,0 MB) — builds **sem strip**. Os dados são do jogo comercial: o usuário
+fornece, como em qualquer port legal.
+
+**Portas que continuam fechadas (e não é falta de vontade):** RAGE e id Tech 5
+não têm fonte; Construct exigiria um navegador de 115 MB. Nenhuma delas entra no
+`runtime` de `metadata.json` (`godot|retroarch|proton`) sem ADR própria — e não
+há ADR a escrever para "engine sem fonte".
+
+**Verificação:** licenças conferidas na API (`id-Software/DOOM-3-BFG` GPL-3.0,
+`dhewm/dhewm3` GPL-3.0, `aap/librw` MIT); lista oficial da id Software lida
+inteira (20 repos); `Scirra` (14 repos, nenhum runtime); tamanhos do Alpine
+aarch64; `ports/doom3` inspecionado arquivo por arquivo. `make lint` rc=0 e
+`tests/run_tests.sh` **26/26**. **Não rodou:** nada disso em aparelho — e
+`GTAmodding/re3` não existe mais (derrubado por DMCA), o que fecha a rota
+"GTA III/VC por reimplementação".
