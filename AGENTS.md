@@ -2810,6 +2810,44 @@ funcionar no console.
   reprova qualquer `CONFIG_*` pedido que o BusyBox não defina. Testada ao
   contrário com `CONFIG_NC_UNIX` e com `CONFIG_SWAPONOFF`.
 
+### 3.105 O espelho das chaves rodava antes de as chaves existirem
+
+O `S50usb` copia `/user/.ssh/dropbear` para `/run` antes de chamar o helper
+(§3.98). A ordem do `rcS` é:
+
+```
+S50usb → S55usbnet → S60mtpd → S62sshd      <- quem GERA as chaves e' o S62sshd
+```
+
+Numa partição recém-formatada, `/user/.ssh/dropbear` **não existe** quando o
+`S50usb` roda, então o guarda `[ -d ... ]` era falso e o snapshot não copiava
+nada. Medido no aparelho (imagem de 01/11):
+
+```
+$ ssh root@10.55.0.2 'ls -la /run/giochi/dropbear/'
+ls: /run/giochi/dropbear/: No such file or directory
+```
+
+e o log do cartão **não tinha** a linha `chaves do dropbear espelhadas`, que
+eu tinha certeza de ter visto funcionar — nos testes, onde o diretório já
+existia.
+
+Consequência: o SSH em modo `mass` só funcionava por sorte. O dropbear
+sobe no boot em `mtp` (quando `/user` está montada), mantém os descritores
+abertos, e continua respondendo depois do `umount`. Um boot que **começasse**
+em `mass` não teria chave de host nenhuma.
+
+- O espelho passou para o `S62sshd`, **depois** do laço que gera as chaves —
+  é o único ponto do boot em que elas existem.
+- Guarda: `test_espelha_as_chaves_depois_de_gerar`, que exige a chamada e
+  exige que ela esteja **depois** de `dropbearkey -t`. Testada ao contrário:
+  removendo o bloco, reprova.
+- **Regra que fica**: "eu vi essa linha no log" precisa vir com **de onde**.
+  A linha existia nos testes (diretório preparado à mão) e nunca no aparelho.
+  Um snapshot de estado que depende de outro script tem de morar **depois**
+  dele na ordem de execução — e a guarda tem de comparar as posições, não só
+  a presença.
+
 ### 3.104 NetworkManager desfaz o IP manual da interface USB
 
 `tools/giochi-ctl.py preparar` atribuía `10.55.0.1/24` com `ip addr add` e

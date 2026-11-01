@@ -327,6 +327,30 @@ class SshdSobeTest(unittest.TestCase):
                          "a chave foi instalada so' no diretorio que o "
                          "dropbear nao le")
 
+
+    def test_espelha_as_chaves_depois_de_gerar(self):
+        """O espelho do `S50usb` roda antes das chaves existirem.
+
+        Medido na X55 (imagem de 01/11): `/run/giochi/dropbear` NAO existia e
+        o log nao tinha a linha de espelho. A ordem do `rcS` e'
+        `S50usb` -> `S55usbnet` -> `S60mtpd` -> `S62sshd`, e quem GERA as
+        chaves e' o `S62sshd`. Numa particao recem-formatada o guarda
+        `[ -d /user/.ssh/dropbear ]` do `S50usb` era falso, e o snapshot nao
+        copiava nada.
+
+        Consequencia real: um boot que comecasse em modo `mass` (com /user no
+        PC desde o inicio) ficaria sem chave de host e sem SSH.
+        """
+        with open(SSHD, encoding="utf-8") as fh:
+            fonte = fh.read()
+        self.assertIn("giochi_ssh_snapshot", fonte,
+                      "o S62sshd tem de espelhar as chaves DEPOIS de gerar: "
+                      "e' o unico ponto em que elas existem")
+        # A chamada tem de estar depois do laco que gera as chaves.
+        self.assertGreater(fonte.index("giochi_ssh_snapshot"),
+                           fonte.index("dropbearkey -t"),
+                           "espelhar antes de gerar copia diretorio vazio")
+
     def test_sem_dev_mode_nao_sobe(self):
         (self.user / "settings.json").write_text(
             json.dumps({"schema_version": "1.1",

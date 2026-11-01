@@ -239,19 +239,53 @@ def ssh_base() -> list[str]:
     return comando.split()
 
 
+KNOWN_HOSTS = os.environ.get("GIOCHI_KNOWN_HOSTS",
+                             os.path.expanduser("~/.ssh/known_hosts"))
+
+# Mensagens do ssh quando a chave do servidor mudou. Acontecem SEMPRE que o
+# cartao e' regravado (a particao /user nova gera chaves novas) — ou a cada
+# boot em modo `mass`, onde as chaves ficam em /run por falta de /user
+# (AGENTS.md §3.98). Nao e' ataque: e' um cartao novo.
+MARCAS_CHAVE_MUDOU = ("host key for", "has changed",
+                      "remote host identification has changed")
+
+
 def ssh_exec(remoto: str, timeout: float = 30.0) -> subprocess.CompletedProcess:
     cmd = ssh_base() + [
         "-o", "StrictHostKeyChecking=accept-new",
-        "-o", "UserKnownHostsFile=" + os.path.expanduser("~/.ssh/known_hosts"),
+        "-o", "UserKnownHostsFile=" + KNOWN_HOSTS,
         "-o", "ConnectTimeout=8",
         "-o", "BatchMode=no",
         f"{USUARIO}@{HOST}", remoto,
     ]
     try:
-        return roda(cmd, timeout=timeout)
+        r = roda(cmd, timeout=timeout)
     except subprocess.TimeoutExpired:
         erro(f"timeout de {timeout:.0f}s esperando o console")
         return subprocess.CompletedProcess(cmd, 124, "", "timeout")
+
+    # Chave mudou: esqueca a antiga e tente UMA vez. Sem isso, regravar o
+    # cartao exige `ssh-keygen -R` manual — e a mensagem do ssh manda fazer
+    # isso sem dizer que a causa e' banal.
+    if r.returncode != 0 and any(m in (r.stderr or "").lower()
+                                 for m in MARCAS_CHAVE_MUDOU):
+        log(f"chave de {HOST} mudou (cartao regravado?); esquecendo a antiga")
+        if shutil.which("ssh-keygen"):
+            roda(["ssh-keygen", "-f", KNOWN_HOSTS, "-R", HOST])
+        else:
+            try:
+                with open(KNOWN_HOSTS, encoding="utf-8") as fh:
+                    linhas = [l for l in fh if HOST not in l]
+                with open(KNOWN_HOSTS, "w", encoding="utf-8") as fh:
+                    fh.writelines(linhas)
+            except OSError:
+                pass
+        try:
+            r = roda(cmd, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            erro(f"timeout de {timeout:.0f}s esperando o console")
+            return subprocess.CompletedProcess(cmd, 124, "", "timeout")
+    return r
 
 
 # Cliente do control.sock: o binario `giochi-ctl` DENTRO do console.

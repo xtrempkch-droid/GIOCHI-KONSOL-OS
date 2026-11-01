@@ -197,6 +197,22 @@ else
     log "aviso: nenhuma authorized_keys encontrada ($AuthKeys nem $AuthDir)"
 fi
 
+# Espelha as chaves em /run AGORA, que e' quando elas existem.
+#
+# O espelho do S50usb roda antes de qualquer chave ser gerada (a geracao e'
+# aqui, ~2 s depois): numa particao recem-formatada `/user/.ssh/dropbear`
+# ainda nao existe e o snapshot nao tem o que copiar. Resultado medido na
+# X55: `/run/giochi/dropbear` nao existia, e um boot que comecasse em modo
+# `mass` (com /user no PC desde o inicio) nao teria chave de host nenhuma.
+#
+# Copiar depois de gerar resolve na ordem certa: qualquer boot posterior tem
+# as chaves em /run antes do proximo `mass`.
+if command -v giochi_ssh_snapshot >/dev/null 2>&1; then
+    if giochi_ssh_snapshot "$AuthDir" 2>/dev/null; then
+        log "chaves do dropbear espelhadas em ${GIOCHI_SSH_CACHE:-/run/giochi/dropbear}"
+    fi
+fi
+
 # Senha de root: aplicada se o arquivo existir (imagem de desenvolvimento).
 if [ -f /etc/giochi/root_password ]; then
     pass=$(cat /etc/giochi/root_password 2>/dev/null)
