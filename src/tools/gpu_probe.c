@@ -13,7 +13,7 @@
  *
  * Este programa faz os cinco passos em ordem, imprimindo o resultado de cada
  * um. É diagnóstico: não entra no caminho de boot normal, roda sob demanda
- * (o S20graphics chama uma vez, com a saída no log do cartão).
+ * (o S90graphics chama uma vez, com a saída no log do cartão).
  *
  * USO
  *     giochi-gpu-probe              # resumo legível, para o log

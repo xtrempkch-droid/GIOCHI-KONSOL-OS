@@ -69,12 +69,43 @@ fi
 # --- scripts de init --------------------------------------------------
 # Sem estes scripts a imagem nao inicia: falta de um deles e erro fatal, nao
 # um skip silencioso (foi assim que um .gitignore errado passou despercebido).
-install -d "$TARGET_DIR/etc/init.d"
+#
+# O TARGET_DIR sobrevive ao build incremental e NAO apaga nada quando um
+# arquivo sai do repositorio: um script renomeado deixa o antigo no lugar, a
+# imagem sai com os DOIS e o `rcS` roda o velho primeiro. Medido em
+# 2026-11-01, ao mover S20graphics para S90graphics: o squashfs tinha
+# S20graphics, S90graphics e S99launcher juntos — ou seja, a correcao do §3.86
+# nao tinha efeito nenhum e nada avisava.
+#
+# Por isso o que instalamos fica registrado num manifesto FORA da imagem: na
+# execucao seguinte, todo nome do manifesto que sumiu da lista e' apagado.
+INIT_DIR="$TARGET_DIR/etc/init.d"
+INI_MANIFEST="$(dirname "$TARGET_DIR")/.giochi-init-managed"
+install -d "$INIT_DIR"
+
+ini_list="S00bootlog S05modules S05update S10storage S30swap
+          S40dongle S50usb S55usbnet S62sshd S90graphics"
+
+# Nomes que nunca chegaram a entrar no manifesto (limpeza unica):
+#   S20graphics -> S90graphics  fazia `exec /usr/bin/giochi-init` no meio do
+#     laco do rcS e matava o resto do boot (AGENTS.md §3.86).
+#   S99launcher                 codigo morto; o supervisor lanca o Launcher.
+aposentados="S20graphics S99launcher"
+[ -f "$INI_MANIFEST" ] && aposentados="$aposentados $(cat "$INI_MANIFEST")"
+for velho in $aposentados; do
+    case " $(echo $ini_list) " in
+        *" $velho "*) continue ;;
+    esac
+    if [ -f "$INIT_DIR/$velho" ]; then
+        rm -f "$INIT_DIR/$velho"
+        echo "post-build: removido /etc/init.d/$velho (fora da lista de init)"
+    fi
+done
+
 missing_init=""
-for s in S00bootlog S05modules S05update S10storage S20graphics S30swap \
-         S40dongle S50usb S55usbnet S62sshd S99launcher; do
+for s in $ini_list; do
     if [ -f "$SCRIPTS_DIR/$s" ]; then
-        install -m 0755 "$SCRIPTS_DIR/$s" "$TARGET_DIR/etc/init.d/$s"
+        install -m 0755 "$SCRIPTS_DIR/$s" "$INIT_DIR/$s"
     else
         missing_init="$missing_init $s"
     fi
@@ -84,6 +115,7 @@ if [ -n "$missing_init" ]; then
     echo "post-build: verifique se scripts/init.d esta versionado" >&2
     exit 1
 fi
+( echo $ini_list | tr ' ' '\n' ) > "$INI_MANIFEST"
 
 # --- scripts de init dos PACOTES que conflitam com os nossos --------------
 # Cada pacote do Buildroot instala o proprio /etc/init.d/Sxx. Dois deles
@@ -237,7 +269,7 @@ if [ -n "${GIOCHI_ROOT_PASSWORD:-}" ] || \
 fi
 
 # --- identidade do aparelho em runtime --------------------------------
-# Lido pelo Launcher (buttons.map), por S20graphics (painel/rotacao) e por
+# Lido pelo Launcher (buttons.map), por S90graphics (painel/rotacao) e por
 # S50usb (suporte a gadget). Formato chave=valor, sem espacos.
 install -d "$TARGET_DIR/etc/giochi"
 cat > "$TARGET_DIR/etc/giochi/device.conf" <<CONF

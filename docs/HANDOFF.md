@@ -122,7 +122,7 @@ Três defeitos corrigidos (detalhe em AGENTS.md §3.50–§3.52):
 | `make` falho anunciado como sucesso | cada `make` agora tem `\|\| { ...; return 1; }` |
 
 Também: o Wi-Fi ganhou `rtw88/rtw8821c_fw.bin` + `regulatory.db` (o probe do
-`rtw_8821cs` falhava com `-22`) e o `S20graphics` deixou de ler `powkiddy` como
+`rtw_8821cs` falhava com `-22`) e o `S90graphics` deixou de ler `powkiddy` como
 SoC.
 
 **Imagem regravada e verificada** (`sha256` `3530bb1b…`, kernel `#4`,
@@ -286,7 +286,7 @@ partição FAT → erro de I/O. Ver `AGENTS.md` §3.38–3.43.
 
 ## S3 — Init scripts — feito
 
-- `scripts/init.d/{S05update,S10storage,S20graphics,S30swap,S40dongle,S50usb,S99launcher}`.
+- `scripts/init.d/{S05update,S10storage,S90graphics,S30swap,S40dongle,S50usb,S55usbnet,S62sshd}`.
 - `rootfs_overlay/etc/inittab`, `rcS`, `rcK`, `fstab`, `mdev.conf`, `lib.sh`.
 - Instalados por `post-build.sh`; validados com `sh -n`.
 - `S30swap` reescrito para §3.1/§3.2: zRAM **512 MB (1 GB) / 1 GB (2 GB)**,
@@ -372,7 +372,7 @@ partição FAT → erro de I/O. Ver `AGENTS.md` §3.38–3.43.
 
 ## S8 — Gamescope + Mesa — feito (script)
 
-- `S20graphics` com `MESA_LOADER_DRIVER_OVERRIDE` por SoC, `modetest` de
+- `S90graphics` com `MESA_LOADER_DRIVER_OVERRIDE` por SoC, `modetest` de
   sanidade, comando Gamescope canônico e fallback direto para `giochi-init`.
 
 ## S9 — .giochi + thumbgen — feito (pack/extract) / esqueleto (thumb)

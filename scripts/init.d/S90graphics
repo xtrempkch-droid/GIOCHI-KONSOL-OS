@@ -1,6 +1,14 @@
 #!/bin/sh
-# Giochi Konsol OS v1.2 — S20graphics (ADR-04/05, S8).
+# Giochi Konsol OS v1.2 — S90graphics (ADR-04/05, S8).
 # Sobe Gamescope com backend DRM puro e executa o Launcher.
+#
+# POR QUE S90 E NAO S20 (AGENTS.md 3.86): este script termina em `exec`, que
+# SUBSTITUI o processo. Dentro do laco do rcS, isso mata o resto da sequencia —
+# e foi exatamente o que aconteceu no boot real da X55: chamado de S20, ele
+# executava antes de S30swap, S40dongle, S50usb, S55usbnet, S60mtpd e S62sshd.
+# Resultado: gadget USB nunca configurado, nenhuma interface de rede, MTP e SSH
+# mortos — e nada no log, porque os scripts simplesmente nao rodavam.
+# O supervisor tem de ser o ULTIMO: por isso o prefixo S90.
 set -u
 
 # lib.sh: helpers comuns (GIOCHI_RUN_DIR, log de boot). O '.' que falha ABORTA
@@ -9,7 +17,7 @@ if [ -r /etc/giochi/lib.sh ]; then
     . /etc/giochi/lib.sh
 fi
 
-TAG=S20graphics
+TAG=S90graphics
 # A identidade vem de /etc/giochi/device.conf, NAO do /proc/device-tree.
 # O compatible do RK3566 comeca por "powkiddy" (fabricante), entao ler o
 # primeiro campo dava 'SoC powkiddy nao reconhecido' e o Mesa ficava sem
@@ -123,7 +131,7 @@ sonda_video() {
 
 export GIOCHI_SOC="$SOC"
 
-# S99launcher nao deve subir um segundo supervisor.
+# Nao deve subir um segundo supervisor.
 mkdir -p /run/giochi
 : > /run/giochi/launcher.lock 2>/dev/null || true
 
@@ -266,4 +274,6 @@ if command -v gamescope >/dev/null 2>&1; then
 fi
 
 log "gamescope ausente; executando giochi-init direto (fallback S8)"
+# `exec`: daqui para baixo o supervisord E' o giochi-init. Isto so' pode
+# acontecer no ultimo script do rcS (AGENTS.md 3.86).
 exec /usr/bin/giochi-init

@@ -25,7 +25,7 @@ S05MODULES = os.path.join(ROOT, "scripts/init.d/S05modules")
 MDEV_CONF = os.path.join(ROOT, "buildroot/board/giochi/mdev.conf")
 BUSYBOX_FRAGMENT = os.path.join(ROOT, "buildroot/board/giochi/busybox.fragment")
 LINUX_POWKIDDY = os.path.join(ROOT, "buildroot/board/giochi/linux-powkiddy.fragment")
-S20GRAPHICS = os.path.join(ROOT, "scripts/init.d/S20graphics")
+GRAPHICS = os.path.join(ROOT, "scripts/init.d/S90graphics")
 INITTAB = os.path.join(ROOT, "buildroot/board/giochi/rootfs_overlay/etc/inittab")
 TOOLS_MK = os.path.join(ROOT, "buildroot/package/giochi-tools/giochi-tools.mk")
 
@@ -55,7 +55,7 @@ class PrimeiroBootTest(unittest.TestCase):
     def test_mesa_nao_forca_driver_de_render(self):
         """O driver do barramento e' o kmsro, nao o panfrost.
 
-        Medido na X55: o S20graphics exportava
+        Medido na X55: o S90graphics exportava
         `MESA_LOADER_DRIVER_OVERRIDE=panfrost`. Nesta placa o dispositivo DRM e'
         o *display* (rockchip-drm); quem fala com ele e' o `rockchip_dri.so`
         (kmsro), que delega a RENDERIZACAO ao panfrost. Forcando `panfrost`, o
@@ -63,11 +63,11 @@ class PrimeiroBootTest(unittest.TestCase):
         falha e o SDL so' diz "EGL not initialized" — tela apagada com o DRM
         bindado.
         """
-        codigo = sh_code(read(S20GRAPHICS))
+        codigo = sh_code(read(GRAPHICS))
 
         self.assertNotIn(
             "MESA_LOADER_DRIVER_OVERRIDE=panfrost", codigo,
-            "S20graphics volta a forcar o driver de RENDER: o kmsro "
+            "S90graphics volta a forcar o driver de RENDER: o kmsro "
             "(rockchip_dri.so) e' quem fala com o display")
         # Unset explicito no caminho padrao: e' o que deixa o kmsro decidir.
         self.assertIn("unset MESA_LOADER_DRIVER_OVERRIDE", codigo)
@@ -82,7 +82,7 @@ class PrimeiroBootTest(unittest.TestCase):
         resultado que ninguem mediu — o tipo de mentira que manda a
         investigacao para o lado errado.
         """
-        codigo = sh_code(read(S20GRAPHICS))
+        codigo = sh_code(read(GRAPHICS))
 
         self.assertIn("return 2", codigo,
                       "sonda precisa distinguir 'nao testado' de 'passou'")
@@ -97,10 +97,10 @@ class PrimeiroBootTest(unittest.TestCase):
         kms_swrast_dri.so nem swrast_dri.so. Com panfrost como unico driver,
         uma falha dele derrubava o EGL para sempre, sem alternativa.
         """
-        codigo = sh_code(read(S20GRAPHICS))
+        codigo = sh_code(read(GRAPHICS))
 
         self.assertIn("kms_swrast", codigo,
-                      "S20graphics perdeu o fallback de software")
+                      "S90graphics perdeu o fallback de software")
 
         for template in ("base-rk3566.defconfig", "base-rk3326.defconfig"):
             caminho = os.path.join(ROOT, "buildroot/board/giochi/defconfig",
@@ -142,9 +142,9 @@ class PrimeiroBootTest(unittest.TestCase):
         self.assertIn("devolver_console_de_video(", render)
         self.assertIn("/sys/class/vtconsole/vtcon%d/bind", render)
 
-        # O S20graphics liga o splash por 10 s (tempo de olhar e ver) e deixa
+        # O S90graphics liga o splash por 10 s (tempo de olhar e ver) e deixa
         # desligar por marcador, sem recompilar — mesmo padrao do `nolog`.
-        script = sh_code(read(S20GRAPHICS))
+        script = sh_code(read(GRAPHICS))
         self.assertIn("GIOCHI_SPLASH_FRAMES=600", script)
         self.assertIn("nosplash", script)
         self.assertIn("/boot/nosplash", script)
@@ -170,7 +170,7 @@ class PrimeiroBootTest(unittest.TestCase):
         # A rotacao tem de vir do aparelho, nao fixa no codigo.
         self.assertIn("GIOCHI_ROTATION", render)
 
-        script = read(S20GRAPHICS)
+        script = read(GRAPHICS)
         self.assertIn('export GIOCHI_ROTATION="$ROTATION"', script,
                       "sem exportar a rotacao o Launcher gira no sentido errado")
         # Escape hatch de campo: acertar 90 x 270 sem recompilar 40 min.
@@ -207,7 +207,7 @@ class PrimeiroBootTest(unittest.TestCase):
     def test_launcher_le_rotacao_do_device_conf(self):
         """Quem inicia o Launcher NAO pode decidir a orientacao.
 
-        O giochi-init pode ser iniciado pelo rcS, pelo S99launcher ou pelo
+        O giochi-init pode ser iniciado pelo rcS (via S90graphics) ou pelo
         inittab — e so' o caminho do rcS exportava GIOCHI_ROTATION. Ler do
         /etc/giochi/device.conf (regra da §3.47) torna o resultado o mesmo
         qualquer que seja o caminho.
@@ -386,13 +386,13 @@ class PrimeiroBootTest(unittest.TestCase):
         self.assertIn("CONFIG_PHY_ROCKCHIP_INNO_DSIDPHY=y", body,
                       "PHY do DSI voltou a ser carregável (=m)")
 
-    def test_s20graphics_le_soc_do_device_conf(self):
+    def test_s90graphics_le_soc_do_device_conf(self):
         """O `compatible` do RK3566 começa por 'powkiddy' (fabricante).
 
         Ler o primeiro campo dava "SoC 'powkiddy' nao reconhecido" e o Mesa
         ficava sem `MESA_LOADER_DRIVER_OVERRIDE`.
         """
-        body = read(S20GRAPHICS)
+        body = read(GRAPHICS)
 
         self.assertIn("GIOCHI_SOC", body)
         self.assertIn("DEVICE_CONF", body)
@@ -412,10 +412,10 @@ class PrimeiroBootTest(unittest.TestCase):
         "rk817-charger: Battery voltage ... below minimum" a cada 8 s — apaga o
         que a UI desenhou.
         """
-        body = read(S20GRAPHICS)
+        body = read(GRAPHICS)
 
         self.assertIn("devolver_framebuffer", body,
-                      "S20graphics nao entrega o framebuffer para a UI")
+                      "S90graphics nao entrega o framebuffer para a UI")
         # A chamada tem de existir, nao so a definicao.
         self.assertGreaterEqual(body.count("devolver_framebuffer"), 2,
                                 "devolver_framebuffer definida e nao chamada")
@@ -474,13 +474,13 @@ class PrimeiroBootTest(unittest.TestCase):
         conector, criar GBM, eglInitialize, eglCreateContext) e o log do cartao
         passa a dizer onde parou.
         """
-        body = read(S20GRAPHICS)
+        body = read(GRAPHICS)
         mk = read(TOOLS_MK)
 
         self.assertIn("giochi-gpu-probe", mk,
                       "o pacote giochi-tools nao instala a sonda")
         self.assertIn("giochi-gpu-probe", body,
-                      "S20graphics nao chama a sonda")
+                      "S90graphics nao chama a sonda")
         # Roda DEPOIS do handover do framebuffer, senao mede outro estado.
         # A tentativa padrao (`sonda_video ""`) e' a que decide o driver que o
         # SDL vai encontrar, e ela escreve com >> para nao apagar o bloco da
@@ -492,6 +492,149 @@ class PrimeiroBootTest(unittest.TestCase):
                       "a sonda tem de APPENDAR: rodar duas vezes e' o normal")
         self.assertIn("GIOCHI_NO_GPU_PROBE", body,
                       "sem escape hatch a sonda nao pode ser desligada")
+
+    # --- ordem do rcS: o supervisor tem de ser o ULTIMO ------------------
+    def _scripts_de_init(self):
+        """Todo script S* que a imagem instala, com o caminho de origem."""
+        itens = {}
+        d = os.path.join(ROOT, "scripts/init.d")
+        for nome in sorted(os.listdir(d)):
+            if re.fullmatch(r"S\d\d.*", nome):
+                itens[nome] = os.path.join(d, nome)
+        # Pacotes do Buildroot instalam os deles (ex.: giochi-mtpd -> S60mtpd).
+        base = os.path.join(ROOT, "buildroot/package")
+        for pacote in sorted(os.listdir(base)):
+            d = os.path.join(base, pacote)
+            if not os.path.isdir(d):
+                continue
+            for nome in sorted(os.listdir(d)):
+                if re.fullmatch(r"S\d\d.*", nome):
+                    itens.setdefault(nome, os.path.join(d, nome))
+        return itens
+
+    def test_supervisor_e_o_ultimo_script(self):
+        """`exec` no meio do rcS mata o resto do boot (AGENTS.md 3.86).
+
+        Medido no boot real da X55: com o supervisor em S20, o rcs imprimiu
+        `start /etc/init.d/S20graphics` e nada mais. S30swap, S50usb, S55usbnet,
+        S60mtpd e S62sshd nunca rodaram — sem gadget USB, sem rede, sem MTP e
+        sem SSH, e sem nenhuma mensagem de erro.
+        """
+        scripts = self._scripts_de_init()
+        supervisores = []
+        for nome, caminho in scripts.items():
+            with open(caminho, encoding="utf-8") as fp:
+                corpo = sh_code(fp.read())
+            if re.search(r"^\s*exec\s+.*giochi-init", corpo, re.M):
+                supervisores.append(nome)
+
+        self.assertEqual(
+            1, len(supervisores),
+            "esperava exatamente um script de init com `exec giochi-init`; "
+            "achei %r" % (supervisores,))
+        ultimo = max(scripts)
+        self.assertEqual(
+            ultimo, supervisores[0],
+            "o script que faz `exec` do supervisor tem de ser o ULTIMO do rcS "
+            "(e' %r, o ultimo e' %r): com `exec` antes dele, todo script "
+            "posterior nunca roda" % (supervisores[0], ultimo))
+
+    def test_scripts_de_rede_e_usb_rodam_antes_do_supervisor(self):
+        """O que o usuário percebe como "o USB nao funciona" mora aqui."""
+        scripts = self._scripts_de_init()
+        supervisor = None
+        for nome, caminho in scripts.items():
+            with open(caminho, encoding="utf-8") as fp:
+                if re.search(r"^\s*exec\s+.*giochi-init",
+                             sh_code(fp.read()), re.M):
+                    supervisor = nome
+        self.assertIsNotNone(supervisor)
+        for obrigatorio in ("S50usb", "S55usbnet", "S62sshd", "S60mtpd"):
+            with self.subTest(script=obrigatorio):
+                self.assertIn(obrigatorio, scripts,
+                              "%s nao e' mais instalado na imagem" % obrigatorio)
+                self.assertLess(
+                    obrigatorio, supervisor,
+                    "%s roda DEPOIS do supervisor (%s): nunca e' alcancado"
+                    % (obrigatorio, supervisor))
+
+    def test_rcs_nao_faz_exec(self):
+        """`exec` no proprio rcS tem o mesmo efeito, so' que em todos."""
+        corpo = sh_code(read(RCS))
+        self.assertNotRegex(
+            corpo, r"(?m)^\s*exec\s",
+            "o rcS nao pode fazer `exec`: ele substituiria o processo do laco")
+
+    def test_laco_do_rcs_ordena_por_nome(self):
+        """A ordem do boot e' a ordem alfabetica do glob — nada mais."""
+        corpo = read(RCS)
+        self.assertIn("/etc/init.d/S[0-9][0-9]*", corpo,
+                      "o laco do rcS nao varre os scripts S* em ordem")
+        self.assertIn("run_scripts", corpo)
+
+    def test_listas_de_scripts_cobrem_o_supervisor(self):
+        """Nome trocado e o script nao entra na imagem (falha silenciosa)."""
+        post = read(POST_BUILD)
+        m = re.search(r'ini_list="(.*?)"', post, re.S)
+        self.assertIsNotNone(m, "post-build.sh nao declara ini_list")
+        instalados = m.group(1).split()
+        self.assertIn("S90graphics", instalados,
+                      "post-build.sh nao instala o S90graphics")
+        self.assertNotIn("S20graphics", instalados)
+        self.assertNotIn("S99launcher", instalados)
+
+        tracked = read(os.path.join(ROOT, "tools/check-tracked.sh"))
+        self.assertIn("S90graphics", tracked)
+
+    def test_post_build_remove_script_aposentado(self):
+        """O TARGET_DIR sobrevive ao build e nao apaga o que saiu do repo.
+
+        Medido na imagem de 2026-11-01, depois de mover S20graphics para
+        S90graphics: o squashfs tinha S20graphics, S90graphics E S99launcher
+        juntos. Como o rcS ordena pelo nome, o ANTIGO rodava primeiro e o
+        `exec` matava o laco — a correcao do §3.86 existia no repositorio e
+        nao existia na imagem, com `make` rc=0.
+
+        Roda o post-build.sh REAL contra um TARGET_DIR temporario: um teste
+        que so' casasse texto passaria mesmo com o `rm` removido.
+        """
+        import subprocess
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            target = os.path.join(tmp, "target")
+            initd = os.path.join(target, "etc/init.d")
+            os.makedirs(initd)
+            for antigo in ("S20graphics", "S90graphics", "S99launcher"):
+                with open(os.path.join(initd, antigo), "w",
+                          encoding="utf-8") as fp:
+                    fp.write("#!/bin/sh\n")
+
+            env = dict(os.environ, GIOCHI_DEVICE="x55")
+            proc = subprocess.run(
+                ["sh", POST_BUILD, target], env=env,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            self.assertEqual(0, proc.returncode,
+                             "post-build.sh falhou:\n%s"
+                             % proc.stdout.decode("utf-8", "replace"))
+
+            sobrou = sorted(os.listdir(initd))
+            self.assertIn("S90graphics", sobrou,
+                          "o supervisor nao foi instalado: %r" % (sobrou,))
+            self.assertNotIn(
+                "S20graphics", sobrou,
+                "S20graphics continua na arvore: o rcS roda o script ANTIGO "
+                "primeiro e o `exec` mata o resto do boot")
+            self.assertNotIn("S99launcher", sobrou,
+                             "S99launcher (codigo morto) continua na arvore")
+
+            # Manifesto fora da imagem e idempotente: rodar de novo nao muda.
+            before = sorted(os.listdir(initd))
+            subprocess.run(["sh", POST_BUILD, target], env=env,
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+            self.assertEqual(before, sorted(os.listdir(initd)),
+                             "post-build.sh nao e' idempotente")
 
     def test_build_nao_anuncia_imagem_quando_make_falha(self):
         """'if ! build_device ...' desliga o 'set -e' dentro da função.

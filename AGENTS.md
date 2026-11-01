@@ -610,12 +610,13 @@ ferramenta de diagnóstico abaixo continua válida (ela garante fbcon com o
 `S00bootlog` (primeiro script de `rcS`) grava o log na partição FAT e deixa
 `giochi-boot.inprogress`; se ele ainda estiver lá no próximo boot, o anterior
 não terminou. O detalhe que quase passou: **`rcS` nunca retorna** neste sistema
-— o `S20graphics` faz `exec /usr/bin/giochi-init`. Se o marcador fosse apagado
-no fim do `rcS`, ele nunca sairia e todo boot reportaria falha falsa.
+— o `S90graphics` (era `S20graphics` até o §3.86) faz `exec /usr/bin/giochi-init`.
+Se o marcador fosse apagado no fim do `rcS`, ele nunca sairia e todo boot
+reportaria falha falsa.
 
 - O marcador é apagado em `giochi_boot_marker_clear` (em `lib.sh`), chamado pelo
-  `S20graphics` e pelo `S99launcher` **antes** do `exec`: o critério é "o
-  controle chegou ao supervisor", não "o rcS terminou".
+  `S90graphics` **antes** do `exec`: o critério é "o controle chegou ao
+  supervisor", não "o rcS terminou".
 - `rcS` roda `S00bootlog` **sozinho e antes do laço** (é ele quem cria o destino
   do `tee`) e depois duplica a saída do resto com `tee -a`.
 - Nada aqui escreve em `/etc`; e o `S00bootlog` nunca aborta o boot: sem cartão
@@ -2140,6 +2141,62 @@ Ou seja: **a imagem não é a causa**. O que falta é medição no lado físico.
 - Registro honesto: **o teste de SSH/MTP pedido não foi executado** porque não há
   dispositivo. Dizer "testei e não deu" seria falso; o que houve foi "não há o
   que testar", com a imagem do lado do sistema descartada como causa.
+
+### 3.86 `exec` dentro do laço do `rcS` mata todo o resto do boot
+
+O `S20graphics` terminava em `exec /usr/bin/giochi-init`. O `rcS` chama os
+scripts **dentro de um laço**, e `exec` substitui o processo do laço: nada
+depois daquele script roda. Medido no log serial da X55:
+
+```
+start /etc/init.d/S00bootlog    <- rodou
+start /etc/init.d/S05modules    <- rodou
+start /etc/init.d/S20graphics   <- exec: o laco morreu aqui
+```
+
+`S30swap`, `S40dongle`, **`S50usb`**, **`S55usbnet`**, **`S60mtpd`** e
+**`S62sshd`** nunca rodaram. É a explicação de "o USB não funciona" e de "não
+consigo SSH" — sem gadget, sem rede USB, sem MTP e sem SSH, e **nenhuma
+mensagem de erro em lugar nenhum**. O log parecia um boot normal e curto.
+
+- Quem faz `exec` do supervisor tem de ser o **último** script (`S90graphics`).
+- O `rcS` também **não** pode fazer `exec` — mesmo efeito, em todos os scripts.
+- Guardas em `tests/test_primeiro_boot.py`: exatamente um script com
+  `exec giochi-init`, ele é o de maior nome, `S50usb`/`S55usbnet`/`S60mtpd`/
+  `S62sshd` vêm antes dele, e o `rcS` não contém `exec`.
+- **Regra que fica**: ao renomear para `S9x`, **o nome antigo tem de sair da
+  árvore de build** — ver §3.87, que é como essa correção quase não valeu nada.
+
+### 3.87 O `TARGET_DIR` não esquece: script renomeado vira DOIS scripts no boot
+
+Corrigido o §3.86 (`git mv S20graphics S90graphics`), o build rodou, a imagem
+foi gerada… e o SquashFS continuava com os dois:
+
+```
+squashfs-root/etc/init.d/S20graphics
+squashfs-root/etc/init.d/S90graphics
+squashfs-root/etc/init.d/S99launcher
+```
+
+Causa: `TARGET_DIR` **sobrevive ao build incremental** e nada é apagado quando
+um arquivo sai do repositório. O `post-build.sh` *instalava* o `S90graphics` e
+seguia em frente; o `S20graphics` de builds anteriores ficava onde estava — e,
+como o `rcS` ordena pelo nome, o **antigo** rodava primeiro e o laço morria
+antes do novo. A correção existia no repositório e **não** existia na imagem.
+É a mesma classe do §3.33 (`boot.scr`) e §3.39 (`extlinux.conf`).
+
+- `post-build.sh` mantém um **manifesto fora da imagem**
+  (`$(dirname TARGET_DIR)/.giochi-init-managed`) com os scripts que ele mesmo
+  instalou; na execução seguinte, todo nome do manifesto que sumiu da lista é
+  apagado. Isso cobre renomeação futura **sem lista escrita à mão**.
+- Nomes que nunca entraram num manifesto (`S20graphics`, `S99launcher`) ficam
+  numa lista de limpeza única, com o motivo ao lado de cada um.
+- Testado ao contrário com o `post-build.sh` **real** contra um `TARGET_DIR`
+  temporário contendo `S20graphics`, `S90graphics` e `S99launcher`: sobra só o
+  `S90graphics`. Um nome inventado acrescentado ao manifesto também é removido.
+- **Regra que fica**: antes de comemorar uma correção de imagem, **liste o
+  conteúdo do SquashFS**. `make` com rc=0, `post-image` sem erro e arquivo de
+  origem novo não provam que a imagem mudou.
 
 ## 4. O que NÃO foi verificado
 

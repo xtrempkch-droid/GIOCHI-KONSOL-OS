@@ -1138,21 +1138,21 @@ private:
 
     /* Decides once per output size: draw offscreen and rotate, or draw direct.
      * The angle comes from GIOCHI_ROTATE (override) or GIOCHI_ROTATION (read
-     * from device.conf by S20graphics). */
+     * from device.conf by S90graphics). */
     int rotacao_pedida(const UiState &ui) const
     {
         /* 1. /boot/rotate: o campo decide o sentido sem recompilar. O
-         *    S20graphics ja' leu e exportou; ler de novo aqui mantem o
+         *    S90graphics ja' leu e exportou; ler de novo aqui mantem o
          *    contrato se alguem subir o Launcher a mao. */
         if (const char *manual = std::getenv("GIOCHI_ROTATE");
             manual != nullptr && *manual != '\0') {
             return std::atoi(manual);
         }
 
-        /* 2. /etc/giochi/device.conf: a MESMA fonte que o S20graphics usa, lida
+        /* 2. /etc/giochi/device.conf: a MESMA fonte que o S90graphics usa, lida
          *    do arquivo (nao do ambiente). Depender de variavel de ambiente
          *    aqui significa "quem me iniciou decide a orientacao" — e o
-         *    giochi-init pode ser iniciado pelo rcS, pelo S99launcher ou pelo
+         *    giochi-init pode ser iniciado pelo rcS, pelo S90graphics ou pelo
          *    inittab. Medido: foi assim que a UI saiu em pe' uma vez.
          *    Regra da §3.47: dado que vive dentro da imagem se le' da imagem. */
         {
@@ -1355,7 +1355,7 @@ static Renderer *open_sdl(const giochi_layout &layout, std::string *err)
     return renderer;
 }
 
-/* Quando a UI nao consegue abrir o video, o S20graphics ja' desvinculou o
+/* Quando a UI nao consegue abrir o video, o S90graphics ja' desvinculou o
  * fbcon (para o cursor nao piscar por cima do desenho). O resultado, medido no
  * aparelho, era tela preta e nenhuma pista — o log existia, mas so' no serial
  * e no cartao.

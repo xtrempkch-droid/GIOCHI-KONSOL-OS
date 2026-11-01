@@ -1,5 +1,7 @@
 # Giochi Konsol OS v1.2 — /etc/inittab (ADR-02: BusyBox init, sem systemd).
-# Ordem da secao S3: S05 -> S10 -> S20 -> S30 -> S40dongle -> S50usb -> S99launcher
+# Ordem da secao S3: S05 -> S10 -> S30 -> S40dongle -> S50usb -> S55usbnet ->
+# S60mtpd -> S62sshd -> S90graphics. O S90graphics faz `exec` do supervisor:
+# e o ULTIMO de proposito (AGENTS.md 3.86).
 
 ::sysinit:/bin/mount -t proc proc /proc
 ::sysinit:/bin/mount -t sysfs sysfs /sys

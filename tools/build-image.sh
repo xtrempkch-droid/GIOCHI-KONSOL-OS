@@ -494,6 +494,18 @@ build_device() {
     images="$out/build/images"
     if [ -f "$images/sdcard.img" ]; then
         cp "$images/sdcard.img" "$out/$img_name"
+
+        # Artefato e hash de builds ANTERIORES nao sobrevivem a este. Medido:
+        # `dist/x55/giochi-x55-sdcard.img.sha256` descrevia a imagem de 03:02
+        # com a de 03:22 do lado — dois arquivos com o mesmo nome e hashes
+        # diferentes, e nada avisando. Publicamos so' o comprimido; se este
+        # build nao gerou comprimido (GIOCHI_NO_COMPRESS=1), o antigo tambem
+        # sai, para nao ser confundido com o novo (AGENTS.md §3.39).
+        rm -f "$out/$img_name.sha256" \
+              "$out/$img_name.xz" "$out/$img_name.xz.sha256" \
+              "$out/$img_name.zst" "$out/$img_name.zst.sha256" \
+              "$out/$img_name.gz" "$out/$img_name.gz.sha256"
+
         summary="$summary
   $id: $out/$img_name ($(du -h "$out/$img_name" | cut -f1))"
         # O artefato de distribuicao e o comprimido (~40 MB contra ~900 MB):

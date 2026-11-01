@@ -65,8 +65,8 @@ if [ "$bad" -ne 0 ]; then
 fi
 
 # Os scripts de init precisam estar versionados: sem eles a imagem nao inicia.
-for s in S05update S10storage S20graphics S30swap S40dongle S50usb \
-         S55usbnet S62sshd S99launcher; do
+for s in S05update S10storage S30swap S40dongle S50usb \
+         S55usbnet S62sshd S90graphics; do
     if ! git ls-files --error-unmatch "scripts/init.d/$s" >/dev/null 2>&1; then
         echo "check-tracked: scripts/init.d/$s nao esta versionado" >&2
         bad=$((bad + 1))

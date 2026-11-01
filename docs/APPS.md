@@ -32,7 +32,7 @@ Ordem de trabalho: [roadmap.md](./roadmap.md).
 | 5 | `portmaster` | app externo | — | ⛔ **não existe**. Mesmo caso da Loja (`APP:portmaster`) |
 | 6 | `giochi-thumbgen` | utilitário C | [src/thumbgen](../src/thumbgen) | 🟡 gera o `.rgba` 152×85 e o placeholder; **extração de `thumb.png`/`capa.png` do tar pendente** (precisa de libarchive) |
 | 7 | `dropbear` | daemon SSH | [scripts/init.d/S62sshd](../scripts/init.d/S62sshd) | ✅ Modo Desenvolvedor, desligado por padrão, só em `10.55.0.2:22`, senha ou chave |
-| 8 | Scripts de init | shell (BusyBox) | [scripts/init.d](../scripts/init.d) | ✅ `S05update`, `S10storage`, `S20graphics`, `S30swap`, `S40dongle`, `S50usb`, `S55usbnet`, `S62sshd`, `S99launcher` |
+| 8 | Scripts de init | shell (BusyBox) | [scripts/init.d](../scripts/init.d) | ✅ `S05update`, `S10storage`, `S30swap`, `S40dongle`, `S50usb`, `S55usbnet`, `S62sshd`, `S90graphics` |
 | 9 | RetroArch | app externo | — | 🔒 fase 2 (§4.2 `runtime`); o schema e o `metadata.cpp` já aceitam/rejeitam |
 | 10 | Proton | stub `#ifdef` | [src/launcher/metadata.cpp](../src/launcher/metadata.cpp) | ✅ desativado por padrão (`GIOCHI_ENABLE_PROTON=0`); recusa `runtime=proton` |
 | 12 | Jogos padrão | Godot 4.3 | [Jogos/](../Jogos) | ✅ Spacewar, Colossal Cave e Arcade Volleyball; lista, licenças e bench em [GAMES.md](./GAMES.md) e `assets/default-games.json` |

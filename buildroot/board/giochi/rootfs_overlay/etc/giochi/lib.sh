@@ -111,7 +111,7 @@ giochi_bootlog_path() {
 
 # Marca o boot como concluido (chamado quando o controle passa ao supervisor).
 # Sem isso o proximo boot reportaria "BOOT ANTERIOR NAO TERMINOU" para sempre,
-# porque rcS nao retorna: S20graphics faz exec do giochi-init.
+# porque rcS nao retorna: S90graphics faz exec do giochi-init.
 giochi_boot_marker_clear() {
     _log=$(giochi_bootlog_path) || return 0
     [ -n "${_log:-}" ] || return 0
