@@ -1084,7 +1084,7 @@ completo e bindou na hora. O oops que vem em seguida
 
 ### 3.49 A API de conteúdo do GitHub trunca em 1000 entradas — e mente por omissão
 
-Ao avaliar o SuperTux (ver [docs/SUPERTUX.md](docs/SUPERTUX.md)) precisei saber
+Ao avaliar o SuperTux (ver [docs/LOJA.md](docs/LOJA.md)) precisei saber
 quais pacotes o Buildroot 2024.02 tem. Pedi a listagem de `package/` e filtrei
 por nome — o resultado foi **"supertux: não existe"**, **"sdl2: não existe"**,
 "physfs: não existe". Os três existem.
@@ -1228,7 +1228,7 @@ mentia sobre o aparelho).
 
 ### 3.55 A API do itch.io devolve **HTTP 200** para erro de autenticação
 
-Ao avaliar o itch.io como catálogo da Loja ([docs/ITCHIO.md](docs/ITCHIO.md)),
+Ao avaliar o itch.io como catálogo da Loja ([docs/LOJA.md](docs/LOJA.md)),
 `GET https://itch.io/api/1/x/game/1` respondeu **200** e eu quase anotei "a API
 não exige chave". O corpo era:
 
@@ -1429,6 +1429,65 @@ diz **qual** dos cinco passos falhou, e cada um tem correção diferente: abrir
 **Armadilha de dependência:** `GIOCHI_TOOLS_DEPENDENCIES` precisa de `libdrm`,
 **não** `drm` — o nome do pacote no Buildroot é `libdrm` e o erro é
 `No rule to make target 'drm'`, que não sugere o nome certo.
+
+
+### 3.62 O RK3566 não tinha fonte de entropia: `getrandom()` travava a UI
+
+**O sintoma parecia de vídeo e era de entropia.** O log do aparelho, com o
+SDL2 já compilado com KMSDRM:
+
+```
+[    2.172] I: buttons.map: secao [default] carregada de /usr/share/giochi/buttons.map
+            < 8,8 s SEM NENHUMA LINHA >
+[   11.005956] random: crng init done
+MESA-LOADER: failed to open kms_swrast: ...
+MESA-LOADER: failed to open swrast: ...
+[   11.062] W: render: SDL2 indisponivel (SDL_CreateWindow: EGL not initialized)
+```
+
+Duas medições fecham o caso:
+
+1. O silêncio termina **exatamente** em `crng init done`. Não é coincidência de
+   arredondamento: o Launcher ficou 8,8 s bloqueado e destravou no instante em
+   que o CRNG ficou pronto.
+2. O **mesmo trecho** de `MESA-LOADER`/`render` terminava em **1,7 s** antes de
+   o SDL2 ganhar KMSDRM. O bloqueio é *novo* porque o caminho de código é novo:
+   sem KMSDRM o `SDL_Init` falhava na escolha do driver de vídeo e nunca
+   chegava ao EGL. Com KMSDRM o SDL chega ao EGL, e o EGL pede bytes
+   aleatórios (`getrandom()`, que **bloqueia** até o CRNG ser inicializado).
+
+A causa da falta de entropia:
+
+- `CONFIG_HW_RANDOM_ROCKCHIP=y` (embutido) e `drivers/char/hw_random/rockchip-rng.c`
+  mainline existem;
+- o nó `rng@fe388000` está em `rk356x.dtsi` — com **`status = "disabled"`**;
+- quem liga é o `rk3568.dtsi`, e a X55 é **rk3566** → o nó nunca saiu de
+  `disabled`. Medido no DTB da imagem com `dtc -I dtb -O dts`.
+
+Ou seja: nenhuma fonte de entropia de hardware, e o CRNG passou a depender de
+ruído de temporizador/disco. **Isso varia de boot para boot**: 11 s num boot e
+**1024 s** em outro (medido no log de uma sessão anterior). O mesmo aparelho,
+o mesmo cartão, tempos absurdamente diferentes — que é a assinatura clássica de
+"esperando entropia".
+
+- Correção: patch de DTS
+  `buildroot/board/giochi/patches/linux/0002-arm64-dts-rockchip-liga-o-trng-do-rk3566-na-x55.patch`
+  com `&rng { status = "okay"; };`.
+- `BR2_LINUX_KERNEL_PATCH` passou a apontar para o **diretório**
+  `board/giochi/patches/linux`: o Buildroot aplica todos os `*.patch` em ordem
+  de nome. Listar arquivo por arquivo fazia um patch novo ser ignorado em
+  silêncio.
+- Guardas: suíte `patch-de-kernel` (`test_templates_apontam_para_o_diretorio`,
+  `test_patch_do_trng_liga_o_no_do_rk3566`).
+- **X35S/X35H**: o DTS é externo; quando ele for trazido, precisa da mesma
+  linha. Sem ela o problema volta (e é ainda pior: sem tela, sem log e com o
+  boot lento sem explicação).
+
+**Regra que fica:** silêncio de vários segundos no meio do log de boot, com
+término em `crng init done`, é `getrandom()` bloqueado — não é driver, não é
+I/O, não é "o Launcher travou". E `dtc -I dtb -O dts <dtb> | grep -A6 <no>`
+responde "este bloco existe de verdade na imagem?" em um segundo, no PC, sem
+gravar cartão.
 
 
 ## 4. O que NÃO foi verificado
@@ -2500,7 +2559,7 @@ um único caminho que devolve `-EINVAL` **sem logar**
 
 O mantenedor perguntou se valia adicionar o **SuperTux** e se **40 fps** não
 estraga a jogabilidade. Resposta e decisão em
-[docs/SUPERTUX.md](docs/SUPERTUX.md); **nada foi adicionado** (decisão:
+[docs/LOJA.md](docs/LOJA.md); **nada foi adicionado** (decisão:
 "não adicionar agora, só registrar a análise").
 
 **A pergunta dos 40 fps tem resposta no fonte, não em opinião.** O 0.6.3 separa
@@ -2599,7 +2658,7 @@ de módulo faltando.
 ### 2026-10-31 (22) — Copilot (itch.io como fonte da Loja: não serve, e a prova é um `enum`)
 
 O mantenedor quis usar o **itch.io** para adquirir jogos grátis e pôr no app da
-Loja. Análise em [docs/ITCHIO.md](docs/ITCHIO.md); **nada foi adotado**.
+Loja. Análise em [docs/LOJA.md](docs/LOJA.md); **nada foi adotado**.
 
 **O dado que fecha a questão não é licença, é modelagem.** O modelo de dados
 oficial do itch.io (`go-itchio`, a lib do `butler` e do app oficial) define
@@ -2712,7 +2771,7 @@ Launcher, o próximo item é o desenho dos widgets (`TODO(v1.2)` em
 
 O mantenedor apontou um furo na entrada anterior: *"se o itch.io liberar o código
 fonte não seria possível compilar em arm64?"*. **Está certo, e o §3 do
-[docs/ITCHIO.md](docs/ITCHIO.md) era mais estreito do que o texto sugeria** —
+[docs/LOJA.md](docs/LOJA.md) era mais estreito do que o texto sugeria** —
 ele vale para **binários publicados**, não para o jogo. Corrigido com uma seção
 nova (§3.4) e o veredito do topo.
 
@@ -2746,7 +2805,7 @@ binário de runtime a partir do fonte), e a spec já anota o item:
 destrava **duas** coisas de uma vez — os jogos do itch.io publicados como
 projeto Godot **e** os três jogos padrão do repositório (Arcade Volleyball,
 Spacewar, Colossal Cave), que hoje instalam projeto em vez de binário pelo
-mesmo motivo. Virou o item 4 da recomendação em `docs/ITCHIO.md`.
+mesmo motivo. Virou o item 4 da recomendação em `docs/LOJA.md`.
 
 **Modelo corrigido:** o itch.io não serve como *catálogo automático* (o dado de
 arquitetura não existe), mas serve como **coleção curada** — por jogo,
@@ -2809,7 +2868,7 @@ pontual em vez de tentativa.
 ### 2026-10-31 (24) — Copilot (mapa de fontes de jogos: Alpine é musl, e isso é o achado)
 
 Depois do itch.io, o mantenedor perguntou se havia **outra fonte**. Comparação
-medida em [docs/STORE-SOURCES.md](docs/STORE-SOURCES.md); nada adotado.
+medida em [docs/LOJA.md](docs/LOJA.md); nada adotado.
 
 **O achado que vale a sessão:** o **Alpine Linux** usa **musl-libc** — a mesma
 escolha do ADR-03 — e publica **24.049 pacotes aarch64** (`main` 5.543 +
@@ -2868,3 +2927,66 @@ PortMaster baixada em arquivo (488 ports, 430,7 MB de `.aarch64`); release do
 TIC-80 v1.4.1; `check-links` ok (30 arquivos) e `make lint` rc=0. **Não rodou:**
 nenhum binário do Alpine no aparelho — a compatibilidade musl×musl é hipótese
 verificável, não fato medido, e está declarada assim no doc.
+
+### 2026-10-31 (25) — Copilot (Loja: três docs viram um, e o `store` que produz o `.giochi`)
+
+O mantenedor cortou o rumo: as três notas de fontes (`SUPERTUX.md`,
+`ITCHIO.md`, `STORE-SOURCES.md`) eram **poluição** para uma decisão já tomada.
+Consolidadas em [docs/LOJA.md](docs/LOJA.md) — decisão, números que a sustentam
+e o contrato do pacote, em um arquivo. As três foram removidas e as referências
+reapontadas (`docs/APPS.md`, `docs/GAMES.md`, este arquivo).
+
+**A premissa que precisava morrer antes de escrever código:** compilar no
+aparelho **não dá**. O defconfig não tem `BR2_PACKAGE_GCC`, `MAKE` nem `CMAKE`
+(medido), e são 1–2 GB de RAM. Compilar é trabalho de PC; o console **instala**.
+Isso não é limitação contornável — é a arquitetura que o ADR-03 já fixou.
+
+**Entregue: `giochi-forge store`** (`src/forge/giochi_forge/store.py` +
+subcomando em `__main__.py`). Lê uma pasta de projetos baixados, diz o que cada
+um é e empacota o que já dá:
+
+```console
+$ python3 -m src.forge.giochi_forge store --src ~/baixados --out ./pacotes \
+      --device rk3566-2gb --key chave.pem --install /media/user/games
+```
+
+Cada pasta recebe um `kind` — `pacote`, `pacote-incompleto`, `projeto-godot`,
+`fonte`, `desconhecido` — e **toda recusa vem com o motivo**, nunca um "falhou"
+genérico. É o que torna o relatório útil para decidir o que portar.
+
+Decisões que o código toma e que valem registro:
+
+- `arch` ≠ `aarch64` é **erro** (ADR-13), não aviso;
+- `--device` + `forge.json` que não cabe = pacote **barrado** pela classificação
+  existente (reusa `classify.py`, não duplica regra);
+- assinatura falhou → **pacote descartado** (`unlink`). Um `.giochi` sem
+  assinatura não passa no `giochi-verify`; deixá-lo no diretório é convite a
+  gravar engano. Isso foi um defeito real que o teste pegou: na primeira versão
+  o arquivo ficava no disco **e** a mensagem dizia "empacotamento falhou" quando
+  só a assinatura havia falhado;
+- `scan()` **não desce dois níveis**: um zip do GitHub extrai como `<repo>-main/`
+  e descer mais acharia "projeto" dentro de `examples/` de outro projeto.
+
+**Armadilha de teste (de novo, e é a terceira variação):** `cmd | tail` devolve
+o status do **tail**, não do comando. Vi `rc=0` com 2 erros no relatório e quase
+"consertei" um bug que não existia — o `store` já saía com 3 corretamente. Ao
+conferir exit code, não canalize a saída.
+
+**Verificação (tudo rodado):**
+
+- `tests/forge/test_store.py` — **18 testes** (detecção de `kind`, tar na ordem
+  da ADR-11, arch errada, runtime desconhecido, Godot e fonte pulados com
+  motivo, dry-run sem escrever, chave ausente sem pacote órfão, classificação
+  contra o aparelho). Suíte `forge` foi de 19 para **37 testes, OK**.
+- **Testado ao contrário**: fiz `detect_kind` aceitar pacote incompleto como
+  pacote → **3 falhas**; restaurado → OK.
+- de ponta a ponta com fixture real de 5 casos: 1 gerado, 3 pulados, 1 erro;
+  `.giochi` com membros `metadata.json, capa.png, bin/run` (ordem da ADR-11);
+  com `--key` gerou `.sig` + `.manifest.json` e copiou para o destino.
+- `make lint` rc=0, `check-links` ok (28 arquivos), `tests/run_tests.sh`
+  **26/26**.
+
+**Aberto:** o app da Loja **no console** continua não existindo (aba mostra
+`ERR launch_failed`). Ele não compila — só lista `/user/games`, mostra capa e
+lança. E o `runtime: "native"` segue ausente do schema, então um binário
+compilado do fonte ainda não tem como ser declarado.

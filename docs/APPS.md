@@ -25,7 +25,7 @@ Ordem de trabalho: [roadmap.md](./roadmap.md).
 | 1 | `giochi-init` | daemon C | [src/init](../src/init) | ✅ supervisor, `control.sock`, FIFO, hotkey, `device_profile.json`; ciclo de vida coberto por `lifecycle_test.sh` |
 | 2 | `giochi-launcher` | C++17 + SDL2 | [src/launcher](../src/launcher) | 🟡 motor de layout, tema, `settings.json`, overlay, biblioteca prontos; **desenho dos widgets é esboço** (`TODO(v1.2)`) |
 | 3 | `giochi-musicd` | daemon C + ALSA | [src/musicd](../src/musicd) | 🟡 socket e protocolo §4.8.4 prontos; **decodificação PCM pendente** |
-| 4 | `giochi-store` | app externo | — | ⛔ **não existe**. `layout.json` aponta `APP:giochi-store` e o `giochi-init` responde `ERR launch_failed` com log claro. Fonte de catálogo avaliada: [ITCHIO.md](ITCHIO.md) (itch.io **não** serve — não modela ARM) |
+| 4 | `giochi-store` | app externo | — | ⛔ **não existe**. `layout.json` aponta `APP:giochi-store` e o `giochi-init` responde `ERR launch_failed` com log claro. Fontes avaliadas e contrato do pacote: [LOJA.md](LOJA.md) |
 | 5 | `portmaster` | app externo | — | ⛔ **não existe**. Mesmo caso da Loja (`APP:portmaster`) |
 | 6 | `giochi-thumbgen` | utilitário C | [src/thumbgen](../src/thumbgen) | 🟡 gera o `.rgba` 152×85 e o placeholder; **extração de `thumb.png`/`capa.png` do tar pendente** (precisa de libarchive) |
 | 7 | `dropbear` | daemon SSH | [scripts/init.d/S62sshd](../scripts/init.d/S62sshd) | ✅ Modo Desenvolvedor, desligado por padrão, só em `10.55.0.2:22`, senha ou chave |
@@ -90,11 +90,10 @@ Ferramentas de PC que **não** vão para a imagem (ver
    **Fonte de catálogo:** o itch.io foi avaliado e **não serve** — o modelo de
    dados dele não tem ARM (`all`/`386`/`amd64`), então a Loja não consegue
    filtrar o que roda em aarch64, e a oferta ARM64 nativa é de dezenas de
-   títulos. Ver [ITCHIO.md](ITCHIO.md). Comparação medida de todas as fontes
-   candidatas em [STORE-SOURCES.md](STORE-SOURCES.md): o `PortMaster-New` (MIT,
-   ≥488 ports com binários `.aarch64` prontos) é a mais alinhada, seguido do
-   **Alpine aarch64** — que, sendo **musl como nós**, serve de binário e de
-   receita — e do **TIC-80** (MIT, engine arm64 de 4,9 MB, cartuchos de ~100 KB).
+   títulos. Ver [LOJA.md](LOJA.md), que registra os números e o contrato do
+   `.giochi`. A fonte mais alinhada é o `PortMaster-New` (MIT, ≥488 ports com
+   binários `.aarch64` prontos), seguido do **Alpine aarch64** (musl como nós:
+   serve de binário e de receita) e do **TIC-80** (MIT, 4,9 MB).
 2. **`news.json` sem produtor.** A Home mostra as dicas compiladas; a Loja
    deveria alimentar o arquivo.
 3. **`giochi-forge` sem o lado "físico"**: detecção por USB, leitura de

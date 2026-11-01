@@ -73,8 +73,8 @@ depender de memória:
 
 | Jogo | Veredito | Por quê |
 |---|---|---|
-| [SuperTux](SUPERTUX.md) | **não adicionado** (2026-10-31) | 40 fps é jogável (o motor tem passo lógico fixo), mas o `data/` ocupa ≈160 MB comprimido — não cabe na partição de 160 MB —, a licença é GPL-3.0+ com assets CC-BY-SA, e é binário nativo (o contrato de jogo padrão hoje é Godot). O pacote do **Alpine aarch64** confirma: `supertux-data` = 244 MB instalados para 5 MB de binário. Ver a análise completa. |
-| itch.io (catálogo) | **não adotado** (2026-10-31) | o modelo de dados não tem ARM (`all`/`386`/`amd64`) — não há como filtrar o que roda em aarch64. Ver [ITCHIO.md](ITCHIO.md) e a comparação de fontes em [STORE-SOURCES.md](STORE-SOURCES.md). |
+| SuperTux | **não adicionado** (2026-10-31) | 40 fps é jogável (o motor tem passo lógico fixo), mas o `data/` ocupa ≈160 MB comprimido — não cabe na partição de 160 MB —, a licença é GPL-3.0+ com assets CC-BY-SA, e é binário nativo (o contrato de jogo padrão hoje é Godot). O pacote do **Alpine aarch64** confirma: `supertux-data` = 244 MB instalados para 5 MB de binário. Ver [LOJA.md](LOJA.md). |
+| itch.io (catálogo) | **não adotado** (2026-10-31) | o modelo de dados não tem ARM (`all`/`386`/`amd64`) — não há como filtrar o que roda em aarch64. Ver [LOJA.md](LOJA.md). |
 
 ## Benchmark
 

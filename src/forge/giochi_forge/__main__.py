@@ -4,6 +4,7 @@
     python3 -m giochi_forge check    --profile device_profile.json --project .
     python3 -m giochi_forge build    --project . --out jogo.giochi
     python3 -m giochi_forge keys     --out keys/
+    python3 -m giochi_forge store    --src baixados/ --out pacotes/ --key chave.pem
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from .classify import (
     Verdict,
     classify,
 )
+from . import store as store_mod
 from .package import PackageError, build_package, generate_keypair, sign_package
 from .profile import MANUAL_PROFILES, DeviceProfile, ProfileError
 
@@ -110,6 +112,41 @@ def cmd_build(args: argparse.Namespace) -> int:
     return EXIT_COMPATIBLE
 
 
+def cmd_store(args: argparse.Namespace) -> int:
+    """Le uma pasta de projetos baixados e produz `.giochi` para os validos.
+
+    Roda no PC: o rootfs do console nao tem toolchain e o tar do BusyBox nao
+    aceita as opcoes que o formato exige (AGENTS.md 3.12).
+    """
+    profile = None
+    if args.device:
+        try:
+            profile = MANUAL_PROFILES[args.device]
+        except KeyError as exc:
+            raise ProfileError(f"aparelho desconhecido: {args.device}") from exc
+
+    src = Path(args.src)
+    if not src.is_dir():
+        print(f"store: pasta de origem inexistente: {src}", file=sys.stderr)
+        return EXIT_ERROR
+
+    report = store_mod.run(src, args.out, key=args.key, profile=profile,
+                           dry_run=args.dry_run)
+    if args.device and profile is not None:
+        print(f"dispositivo: {profile.device_id} ({profile.ram_mb} MB)")
+    print(store_mod.render(report))
+
+    if args.install:
+        try:
+            copiados = store_mod.install(report, args.install)
+        except PackageError as exc:
+            print(f"store: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+        print(f"  {copiados} pacote(s) copiado(s) para {args.install}")
+
+    return EXIT_ERROR if report.has_errors else EXIT_COMPATIBLE
+
+
 def cmd_keys(args: argparse.Namespace) -> int:
     priv, pub = generate_keypair(args.out)
     print(f"chave privada: {priv}")
@@ -145,6 +182,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_build.add_argument("--no-proton", action="store_true",
                          help="recusa runtime=proton")
     p_build.set_defaults(func=cmd_build)
+
+    p_store = sub.add_parser(
+        "store", help="le uma pasta de projetos baixados e produz .giochi")
+    p_store.add_argument("--src", required=True,
+                         help="pasta com os projetos (um subdiretorio por jogo)")
+    p_store.add_argument("--out", required=True, help="onde gravar os .giochi")
+    p_store.add_argument("--key", help="chave privada Ed25519 (PEM)")
+    p_store.add_argument("--device", choices=sorted(MANUAL_PROFILES),
+                         help="classifica contra este aparelho")
+    p_store.add_argument("--install", metavar="DIR",
+                         help="copia os .giochi gerados para DIR (ex.: /media/user/games)")
+    p_store.add_argument("--dry-run", action="store_true",
+                         help="so relata, nao escreve pacote")
+    p_store.set_defaults(func=cmd_store)
 
     p_keys = sub.add_parser("keys", help="gera par Ed25519 de assinatura")
     p_keys.add_argument("--out", required=True, help="diretorio de saida")
