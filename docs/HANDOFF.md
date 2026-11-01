@@ -330,7 +330,7 @@ partição FAT → erro de I/O. Ver `AGENTS.md` §3.38–3.43.
   `network.integrated` (X55 tem RTL8821CS) e `usb_gadget.mass_storage`
   (false em X35S/X35H, F12). `device_id` ainda sem serial de hardware.
 
-## S5 — Launcher — feito (motor) / esqueleto (widgets)
+## S5 — Launcher — feito (motor) / **desenha** (widgets) desde 2026-10-31
 
 - C++17: `main.cpp`, `layout.cpp`, `theme.cpp`, `settings.cpp`, `overlay.cpp`,
   `input.cpp`, `evdev.cpp`, `ipc_client.cpp`, `metadata.cpp`, `library.cpp`,
@@ -344,7 +344,12 @@ partição FAT → erro de I/O. Ver `AGENTS.md` §3.38–3.43.
   nomes canônicos → código evdev, e o `evdev.cpp` resolve os códigos pelo mapa
   carregado (fallback compilado idêntico a `buttons.default.json`). A aba
   Biblioteca navega itens e envia `LAUNCH` com o `metadata.json` inline.
-- TODO: desenho do grid 4×3/topbar/hint bar e contabilidade de VRAM/LRU.
+- Feito em 2026-10-31: topbar com abas medidas, grade 4×3/5×3 com anel de
+  foco, hint bar e painel por aba. Geometria em `ui_geometry.cpp` (puro,
+  testado no host) e texto pelo atlas `assets/font.a8`; `make ui-preview`
+  mostra o resultado sem o aparelho.
+- TODO: indicadores da topbar, hint por par (botão, ação), capas
+  (`thumbgen`), conteúdo de Home/Música e contabilidade de VRAM/LRU.
 
 ## S6 — Configurações — esqueleto
 

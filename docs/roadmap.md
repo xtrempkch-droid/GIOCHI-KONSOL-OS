@@ -12,7 +12,7 @@ Especificação normativa: [architecture-v1.2.md](./architecture-v1.2.md).
 | # | Frente | Estado | Bloqueia |
 |---|---|---|---|
 | 1 | Imagem bootável no aparelho 🧪 | **nunca testada em hardware** | tudo |
-| 2 | Desenho dos widgets no Launcher | esboço (`TODO(v1.2)`) | uso real da UI |
+| 2 | Desenho dos widgets no Launcher | **desenha** (2026-10-31), a validar no aparelho | conteúdo real das abas |
 | 3 | Layout × painel (640×480 vs 720×1280) | layout é esticado | UI na X55 |
 | 4 | Áudio: decode + mux do RK817 | pendente | aba Música |
 | 5 | Gamepad (`rocknix-joypad`) e painel (X35S/X35H) ⛔ | não empacotado | essas duas placas |
@@ -67,17 +67,27 @@ Sinais de alerta conhecidos e onde olhar: `docs/hardware-e-drivers.md` (F1–F12
 ## 2. Launcher: desenhar os widgets
 
 O motor está pronto (layout schema 1.6, tema, `settings.json`, overlay de 2
-níveis, biblioteca, `buttons.map`), mas `src/launcher/render.cpp` só pinta o
-fundo do tema e o bootsplash. Todo o resto depende disso para ser usável.
+níveis, biblioteca, `buttons.map`). Em 2026-10-31 o `render.cpp` passou a
+**desenhar**: a geometria saiu para `src/launcher/ui_geometry.cpp` (módulo puro,
+coberto por `tests/test_ui_geometry.cpp`) e o texto vem do atlas gerado por
+`tools/make-font.py` (`assets/font.a8`). `make ui-preview` mostra o resultado
+sem o aparelho.
 
-- [ ] Topbar (40 px) com abas, indicadores e clock — posições vêm de
-      `assets/home.json` (`regions.top_bar`).
-- [ ] Grid da biblioteca: tile 152×85 + título 20, 4×3, scroll vertical com
-      overscan de 1 linha, scrollbar de 4 px.
-- [ ] Aba Música: now playing 120×120, barra de progresso, controles, lista.
-- [ ] Overlay de Configurações (nível 0 e submenu Sistema) com o estado atual
-      dos itens (ex.: `Modo USB   MTP`, `Modo Desenvolvedor   desligado`).
-- [ ] `hint_bar` (30 px) com os botões contextuais por aba.
+- [x] Topbar (40/60 px) com abas **medidas** e sublinhado de acento no ativo.
+- [ ] Indicadores da topbar (rede, bateria, clock) — falta a fonte de dado.
+- [x] Grid da biblioteca: tile 152×85 / 228×128 + título, 4×3 e 5×3, paginação
+      pelo foco e anel de foco de 2/3 px por fora do tile.
+- [ ] Scrollbar na sarjeta direita e scroll suave (hoje a página troca inteira).
+- [ ] Capas: `thumb.rgba` depende do `giochi-thumbgen`, que ainda não extrai
+      imagem do pacote — o tile é um retângulo.
+- [ ] Aba Música: now playing, barra de progresso, controles, lista.
+- [ ] Aba Home: hero "Continuar", Novidades e Recentes (`assets/devices/*/home.json`).
+- [ ] Aba Loja/Ports: dependem de `giochi-store`/`portmaster`, que não existem
+      ([APPS.md](./APPS.md)); a aba hoje diz isso.
+- [ ] `hint_bar` (30/45 px) por **par (botão, ação)** com chip; hoje é uma frase.
+- [ ] Overlay de Configurações com o estado atual dos itens
+      (ex.: `Modo USB   MTP`, `Modo Desenvolvedor   desligado`); hoje é um painel
+      com o índice do item.
 - [ ] Medir VRAM real e comparar com o teto de **4 MB** (§8 da spec) e com os
       `vram_budget_kb` declarados por aba (`home` 800, `music` 1024,
       `library` 4096).
