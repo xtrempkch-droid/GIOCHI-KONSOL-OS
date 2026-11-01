@@ -133,6 +133,62 @@ class FormatoDoPatch(unittest.TestCase):
         self.assertTrue(nome.startswith("0002-"),
                         "o patch do TRNG tem de ordenar depois do 0001")
 
+    def test_patch_do_usb_poe_a_porta_em_modo_dispositivo(self):
+        """OTG sem extcon = nenhum UDC = nenhum gadget (AGENTS.md §3.88).
+
+        O `usb_host0_xhci` do rk356x.dtsi vem `dr_mode = "otg"`, e nem o
+        dtsi nem o DTS da X55 declaram `extcon` ou `usb-role-switch`. Sem
+        isso o dwc3 fica na maquina OTG esperando um evento do pino ID que
+        esta placa nao tem, `/sys/class/udc` fica vazio, e o
+        `giochi-usb-mode` sai com "nenhum UDC disponivel" — sem MTP, sem
+        rede USB e sem SSH, com o PC nao vendo dispositivo nenhum.
+        """
+        nome = ("0003-arm64-dts-rockchip-x55-usb-c-em-modo-dispositivo"
+                ".patch")
+        caminho = os.path.join(PATCH_DIR, nome)
+        self.assertTrue(os.path.isfile(caminho),
+                        "patch do USB-C ausente: %s" % caminho)
+        texto = read(caminho)
+        self.assertIn("rk3566-powkiddy-x55.dts", texto)
+        self.assertIn("&usb_host0_xhci", texto)
+        self.assertIn('dr_mode = "peripheral"', texto,
+                      "o patch nao poe a porta em modo dispositivo")
+        # O nome tem de ordenar depois dos outros dois: o Buildroot aplica
+        # em ordem de nome e todos tocam o mesmo DTS.
+        self.assertTrue(nome.startswith("0003-"),
+                        "o patch do USB tem de ordenar depois do TRNG")
+
+    def test_dts_usado_nao_declara_extcon_nem_role_switch(self):
+        """A premissa do patch: sem extcon, OTG nao escolhe papel sozinho.
+
+        Se um dia o DTS (ou o dtsi) ganhar `extcon`/`usb-role-switch`, o
+        patch deixa de ser necessario — e este teste avisa em vez de deixar
+        um `dr_mode` forcado sem motivo.
+        """
+        arvores = kernel_trees()
+        if not arvores:
+            self.skipTest("nenhuma arvore de kernel em dist/")
+        dts = os.path.join(arvores[0], "arch/arm64/boot/dts/rockchip",
+                           "rk3566-powkiddy-x55.dts")
+        dtsi = os.path.join(arvores[0], "arch/arm64/boot/dts/rockchip",
+                            "rk356x.dtsi")
+        if not (os.path.isfile(dts) and os.path.isfile(dtsi)):
+            self.skipTest("DTS da X55 nao encontrado na arvore")
+
+        for caminho in (dtsi, dts):
+            corpo = read(caminho)
+            nome = os.path.basename(caminho)
+            with self.subTest(arquivo=nome):
+                # O patch pode ter sido revertido pela propria suite acima,
+                # entao procuramos so' as propriedades de deteccao de papel.
+                self.assertNotIn("extcon", corpo,
+                                 "%s passou a declarar extcon: o patch do "
+                                 "USB pode ter ficado desnecessario" % nome)
+                self.assertNotIn("usb-role-switch", corpo,
+                                 "%s passou a declarar usb-role-switch: o "
+                                 "patch do USB pode ter ficado "
+                                 "desnecessario" % nome)
+
     def test_build_rearma_o_kernel_quando_os_patches_mudam(self):
         """Mudar o conjunto de patches NAO invalida o .stamp_patched.
 

@@ -1,0 +1,67 @@
+Forca o modo dispositivo no USB-C da X55 (o gadget nunca subia)
+
+O `usb_host0_xhci` do rk356x.dtsi vem com `dr_mode = "otg"`. Em OTG o dwc3
+nao e' nem host nem dispositivo: ele espera um evento do pino ID (ou de um
+`extcon`/`usb-role-switch` no DT) para escolher. A X55 nao tem nenhum dos
+dois — conferido no DTS inteiro:
+
+  $ grep -n "extcon\|usb-role-switch" rk356x.dtsi rk3566-powkiddy-x55.dts
+  (nada)
+
+Sem extcon, `dwc3_drd_init()` cai no ramo que liga a maquina OTG do proprio
+controlador (`dwc3_set_prtcap(dwc, DWC3_GCTL_PRTCAP_OTG)` + `dwc3_otg_init`)
+e fica esperando `OEVT.ID`/session-valid. Numa porta USB-C que so' funciona
+como dispositivo, esse evento nao chega: o controlador nunca entra em modo
+peripheral, nao registra UDC, e `/sys/class/udc` fica VAZIO.
+
+Consequencia em cascata, toda silenciosa:
+
+  - `giochi-usb-mode` faz `ls /sys/class/udc | head -n1` e nao acha nada;
+    loga "nenhum UDC disponivel; gadget configurado mas inativo" e sai 0;
+  - sem UDC nao ha bind, entao o PC NAO ve dispositivo nenhum no barramento
+    (`lsusb` sem nada novo);
+  - sem gadget nao ha MTP, nao ha rede USB e nao ha SSH — os tres dependem
+    do mesmo bind.
+
+E' por isso que "o USB nao funciona" sobreviveu a troca de imagem, de cartao
+e de cabo: o defeito esta' no DT, antes de qualquer script.
+
+A correcao e' a mesma que o mainline usa nos outros portateis RK3566:
+
+  rk3566-powkiddy-rk2023.dtsi:  &usb_host0_xhci { dr_mode = "peripheral"; ... }
+  rk3566-anbernic-rgxx3.dtsi:   &usb_host0_xhci { dr_mode = "peripheral"; ... }
+
+O do Anbernic ate' documenta o motivo no comentario: "port works as a
+peripheral (and not a host or OTG port)". Sao a mesma categoria de aparelho
+que a X55: porta USB-C de dispositivo, sem pino ID.
+
+Com `dr_mode = "peripheral"` o dwc3 vai direto para
+`DWC3_GCTL_PRTCAP_DEVICE` no probe, o UDC aparece e o gadget passa a ancorar
+independente de qualquer deteccao de papel.
+
+Efeito colateral: a porta deixa de funcionar como host. Nao ha perda — o
+`usb_host1_xhci`/`usb_host1_ehci` continuam host, e a X55 nao tem
+controladora externa na USB-C.
+
+Verificado: `dtc -I dtb -O dts` no DTB gerado mostra `dr_mode = "peripheral"`
+no no `usb@fcc00000` (antes: "otg").
+
+--- a/arch/arm64/boot/dts/rockchip/rk3566-powkiddy-x55.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3566-powkiddy-x55.dts
+@@ -935,3 +935,16 @@
+ &rng {
+ 	status = "okay";
+ };
++
++/*
++ * USB-C: a porta e' de DISPOSITIVO, e o rk356x.dtsi a declara como "otg".
++ * Sem extcon e sem usb-role-switch no DT, o dwc3 fica na maquina OTG
++ * esperando um evento do pino ID que esta placa nao tem — o controlador
++ * nunca entra em modo peripheral, `/sys/class/udc` fica vazio e o gadget
++ * (MTP, rede USB e SSH) nao ancora em nenhum PC. E' o mesmo que o mainline
++ * faz nos outros portateis RK3566 (powkiddy-rk2023 e anbernic-rgxx3).
++ * Ver AGENTS.md §3.88.
++ */
++&usb_host0_xhci {
++	dr_mode = "peripheral";
++};

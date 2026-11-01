@@ -530,3 +530,9 @@ run terminar, baixe o artefato, grave e registre aqui o resultado (é o item 1 d
    marcado em `src/musicd/audio_alsa.c`.
 10. **USB na X35S/X35H:** não ancora (`failed to enable ep0out`); `S50usb` deve
     degradar para "USB indisponível" em vez de logar erro repetido.
+    **Atualização 2026-11-01:** o mesmo `failed to enable ep0out` apareceu na
+    **X55**, e a causa é a mesma para as três placas — `dr_mode = "otg"` sem
+    `extcon`/`usb-role-switch` no DT (AGENTS.md §3.88). Na X55 está corrigido
+    por patch (`0003-...-usb-c-em-modo-dispositivo.patch`, DTB gerado com
+    `peripheral`). Para X35S/X35H falta o DTS delas, que não é mainline: o
+    patch terá de ser aplicado quando o DTS existir.

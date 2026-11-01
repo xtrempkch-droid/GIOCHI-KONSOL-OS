@@ -26,7 +26,7 @@ em que ordem em [docs/roadmap.md](docs/roadmap.md); inventário de cada app
 | Kernel, DTB e raiz na X55 | **bootou**: `Mounted root (squashfs) on device 179:2` por `root=PARTUUID` |
 | Painel do X35S/X35H | **bloqueado** por driver fora da árvore (GPL, licenciamento adiado — §3.43) |
 | Gravação do cartão | **verificada byte a byte** (`tools/verify-card.py`); SDXC de 116 GB falhou com `EIO` |
-| USB: gadget composto (MTP + rede/SSH + Mass Storage) | **pronto**, testado contra configfs falso |
+| USB: gadget composto (MTP + rede/SSH + Mass Storage) | **pronto** no código; **o controlador nunca registrava UDC** porque o DTS dizia `dr_mode = "otg"` sem `extcon`/`usb-role-switch` (§3.88) — corrigido por patch de DT, **imagem ainda não testada no aparelho** |
 | Modo Desenvolvedor (§4.6.1): SSH via USB desligado por padrão | **pronto**, testado |
 | Launcher: motor de layout, tema, `settings.json`, overlay 2 níveis, biblioteca | **pronto** |
 | Launcher: **desenho dos widgets** no backend SDL2 | **desenha** em hardware: geometria pura + atlas gerado, i18n pt-BR/en, status (Wi-Fi/bateria/cabo), hint bar em chips, paisagem (§3.69–3.73) |
@@ -2197,6 +2197,78 @@ antes do novo. A correção existia no repositório e **não** existia na imagem
 - **Regra que fica**: antes de comemorar uma correção de imagem, **liste o
   conteúdo do SquashFS**. `make` com rc=0, `post-image` sem erro e arquivo de
   origem novo não provam que a imagem mudou.
+
+### 3.88 A porta USB-C da X55 é de DISPOSITIVO, mas o DTS dizia `otg`
+
+O serial do aparelho (imagem com o §3.86/§3.87 já corrigidos) mostrou que os
+scripts **passaram** a rodar — e o USB continuou não aparecendo no PC:
+
+```
+[    5.711245] configfs-gadget.giochi gadget.0: HOST MAC 02:47:69:6f:63:69
+[    5.711898] configfs-gadget.giochi gadget.0: MAC 02:47:69:6f:63:68
+[    5.714811] dwc3 fcc00000.usb: failed to enable ep0out
+```
+
+A primeira linha prova que o `S50usb` rodou e que o `giochi-usb-mode` montou o
+configfs inteiro. Então o defeito não é de script: é do controlador.
+
+Causa: `rk356x.dtsi` declara `usb_host0_xhci` com `dr_mode = "otg"`, e nem o
+dtsi nem o `rk3566-powkiddy-x55.dts` declaram `extcon` **nem**
+`usb-role-switch` (conferido com `grep`, zero ocorrências). Sem esses, o dwc3
+cai no ramo OTG do `dwc3_drd_init()`, liga a máquina OTG do próprio
+controlador e fica esperando evento do pino ID. Nesse modo
+`__dwc3_set_mode()` **não chama `dwc3_gadget_init()`** (só os ramos
+`DWC3_GCTL_PRTCAP_DEVICE` e `..._HOST` chamam) — e é `dwc3_gadget_init()` que
+faz `usb_add_gadget()`, que é quem registra o UDC.
+
+Consequência: `/sys/class/udc` fica **vazio**, o `giochi-usb-mode` sai com
+"nenhum UDC disponivel" e o PC não vê dispositivo nenhum. "O USB não funciona"
+sobreviveu a três trocas de imagem, dois cartões e dois cabos porque o defeito
+está no DT, antes de qualquer script.
+
+- Correção: patch `0003-arm64-dts-rockchip-x55-usb-c-em-modo-dispositivo.patch`,
+  no mesmo molde do mainline para os outros portáteis RK3566
+  (`rk3566-powkiddy-rk2023.dtsi` e `rk3566-anbernic-rgxx3.dtsi` fazem
+  exatamente `dr_mode = "peripheral"`; o do Anbernic até documenta: *"port
+  works as a peripheral (and not a host or OTG port)"*).
+- **Medido no DTB gerado**, não no fonte: `otg\0` = **0 ocorrências**,
+  `peripheral\0` = **1**. Antes o DTB tinha `otg`.
+- Guarda: `tests/test_kernel_patch.py` exige o patch, o `dr_mode` e a ordem
+  (`0003-`); e um segundo teste falha se o DTS passar a declarar
+  `extcon`/`usb-role-switch` — sinal de que o patch ficou desnecessário.
+- **Regra que fica**: `dr_mode = "otg"` sem `extcon`/`usb-role-switch` é um
+  gadget que nunca existe. Antes de investigar userspace, olhe
+  `/sys/class/udc` — vazio quer dizer que o controlador nem entrou em modo
+  dispositivo.
+
+### 3.89 `mass` desmonta `/user` e, se o gadget falhar, o cartão "some"
+
+O mesmo boot mostrou o preço do defeito acima, alguns milissegundos depois:
+
+```
+[1.778827] EXT4-fs (mmcblk1p4): mounted filesystem ... r/w with ordered data mode
+[5.698329] EXT4-fs (mmcblk1p4): unmounting filesystem ...
+[6.278] E: nao foi possivel gravar /user/.giochi/device_profile.json
+[6.326] I: settings.json ausente; usando defaults
+[6.602] I: biblioteca: 0 pacotes em /user/games
+```
+
+O modo `mass` do `giochi-usb-mode` desmonta `/user` (correto: o host monta o
+ext4 e dois donos corrompem). O bind no UDC falhou, o host nunca montou nada,
+e a partição ficou **sem dono até o próximo boot** — sem `settings.json`, sem
+jogos e sem música. O usuário perde o sistema inteiro por causa de um modo de
+USB que nem chegou a funcionar.
+
+- Agora o desmonte marca `USUARIO_DESMONTADO=1` e `restaura_user()` devolve o
+  ponto de montagem em **todo** caminho de saída posterior: sem UDC e com
+  bind falho. Transforma "perdi o cartão até reiniciar" em "o USB não subiu".
+- Guardas na suíte `usb-gadget` (cenários 6 e 7): UDC como diretório força o
+  `echo > UDC` a falhar (EISDIR), e o teste cobra o `exit != 0`, que o
+  controlador **não** ficou marcado como anexado e que os dois caminhos de
+  falha chamam `restaura_user`. Testado ao contrário: removendo a chamada do
+  bind falho, o cenário 7 reprova.
+- **Regra que fica**: `umount` seguido de operação que pode falhar precisa de
+  caminho de volta. Desmontar e "torcer" custa ao usuário a partição inteira.
 
 ## 4. O que NÃO foi verificado
 

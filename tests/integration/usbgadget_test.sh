@@ -102,5 +102,42 @@ touch "$T/etc/giochi/usb_gadget_disabled"
 rm -rf "$T"
 echo "  skip marcador /etc/giochi/usb_gadget_disabled (caminho absoluto)"
 
+echo "cenario 6: bind no UDC falha e /user NAO fica desmontada"
+# Medido na X55 (imagem de 01/11): modo mass desmontou /user, o bind no UDC
+# falhou com "failed to enable ep0out" e o sistema seguiu a sessao inteira
+# sem /user — settings.json ausente, 0 jogos, 0 musicas — ate' reiniciar.
+# Aqui o UDC e' um arquivo comum, entao o `echo > UDC` falha como falharia
+# no controlador quebrado. O que se cobra: o helper devolve a particao.
+setup
+# UDC como DIRETORIO: open(O_WRONLY) nele falha com EISDIR. E' assim que
+# simulamos "o controlador recusou o bind" sem precisar de hardware.
+rm -f "$T/gadget/UDC"
+mkdir -p "$T/gadget/UDC"
+GIOCHI_DRY_RUN=0 GADGET="$T/gadget" FFS_DIR="$T/ffs" \
+GIOCHI_UDC=fake-udc MTPSVC=/bin/true \
+    sh "$SCRIPT" mtp >"$T/out.txt" 2>&1
+rc=$?
+check "bind recusado devolve erro" "$([ "$rc" != "0" ] && echo 1)"
+check "controlador NAO ficou marcado como anexado" \
+    "$([ -d "$T/gadget/UDC" ] && echo 1)"
+rm -rf "$T"
+
+echo "cenario 7: o helper tenta devolver /user quando o gadget falha"
+# A remontagem real depende de montar um ext4; aqui se cobra o CONTRATO no
+# codigo: todo caminho de saida depois do desmonte chama restaura_user, e o
+# desmonte marca o estado. Sem isso, o bug do §3.89 volta calado.
+corpo=$(sed 's/^[[:space:]]*#.*$//' "$SCRIPT")
+check "restaura_user definida" \
+    "$(printf '%s' "$corpo" | grep -q 'restaura_user()' && echo 1)"
+check "desmonte marca USUARIO_DESMONTADO" \
+    "$(printf '%s' "$corpo" | grep -q 'USUARIO_DESMONTADO=1' && echo 1)"
+check "sem UDC -> restaura_user" \
+    "$(printf '%s' "$corpo" | grep -q 'nenhum UDC disponivel' && \
+       printf '%s' "$corpo" | awk '/nenhum UDC disponivel/,/^fi/' | \
+       grep -q 'restaura_user' && echo 1)"
+check "bind falho -> restaura_user" \
+    "$(printf '%s' "$corpo" | awk '/falha ao anexar/,/exit 1/' | \
+       grep -q 'restaura_user' && echo 1)"
+
 echo "----"
 [ "$fail" -eq 0 ]

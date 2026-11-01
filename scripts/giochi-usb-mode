@@ -27,6 +27,9 @@ NET_FUNCTION=${GIOCHI_USB_NET:-ecm}
 SERIAL_FILE=/user/.giochi/serial
 MTPSVC=${MTPSVC:-/usr/sbin/giochi-mtpd}
 DRY=${GIOCHI_DRY_RUN:-0}
+# Marcado quando o modo mass desmonta /user; `restaura_user` usa isto para
+# devolver a particao se o gadget nao anexar (AGENTS.md §3.89).
+USUARIO_DESMONTADO=0
 
 # POSIX: '.' que falha ABORTA shells nao-interativos (o '|| true' nao
 # protege). Sem o lib.sh o script segue com os defaults propria.
@@ -153,11 +156,30 @@ fi
 if [ "$MODE" = "mass" ]; then
     user_part=$(giochi_user_part 2>/dev/null)
     if [ -n "${user_part:-}" ] && mkdir -p functions/mass_storage.0 2>/dev/null; then
-        # Mass Storage exige a particao DESMONTADA enquanto conectado.
+        # Mass Storage exige a particao DESMONTADA enquanto conectado: o host
+        # monta o sistema de arquivos dela, e dois donos do mesmo ext4
+        # corrompem. O desmonte e' necessario — o que NAO podia acontecer e'
+        # desmontar e, se o gadget falhar, seguir a sessao inteira sem /user.
+        #
+        # Medido na X55 (imagem de 01/11): modo `mass`, o desmonte aconteceu,
+        # o bind no UDC falhou com "failed to enable ep0out" e o sistema ficou
+        # com /user INACESSIVEL ate' o proximo boot:
+        #
+        #   [1.778] EXT4-fs (mmcblk1p4): mounted filesystem ... r/w
+        #   [5.698] EXT4-fs (mmcblk1p4): unmounting filesystem ...
+        #   [6.278] E: nao foi possivel gravar /user/.giochi/device_profile.json
+        #   [6.326] I: settings.json ausente; usando defaults
+        #   [6.602] I: biblioteca: 0 pacotes em /user/games
+        #
+        # Ou seja: o cartao inteiro "sumia" por causa de um modo de USB que
+        # nem chegou a funcionar. AGENTS.md §3.89.
         if mountpoint -q /user 2>/dev/null; then
             sync
-            umount /user 2>/dev/null || \
+            if umount /user 2>/dev/null; then
+                USUARIO_DESMONTADO=1
+            else
                 log "aviso: /user em uso; desmonte antes de usar Mass Storage"
+            fi
         fi
         echo 0 > functions/mass_storage.0/stall
         echo 1 > functions/mass_storage.0/lun.0/removable
@@ -169,16 +191,37 @@ if [ "$MODE" = "mass" ]; then
     fi
 fi
 
+# --- devolve /user quando o gadget NAO funcionou --------------------------
+# O modo mass desmonta /user (dois donos do mesmo ext4 corrompem). Se o bind
+# no UDC falhar, o host nunca monta nada e a particao fica sem dono: o
+# aparelho segue com /user inacessivel, sem settings, sem jogos e sem musica,
+# e o unico jeito de voltar e' reiniciar. Devolver o ponto de montagem aqui
+# transforma "perdi o cartao ate' o proximo boot" em "o USB nao funcionou".
+restaura_user() {
+    [ "${USUARIO_DESMONTADO:-0}" = "1" ] || return 0
+    mountpoint -q /user 2>/dev/null && return 0
+    if mount /user 2>/dev/null; then
+        log "/user remontada (o gadget nao anexou)"
+    else
+        log "ERRO: /user continua desmontada; reinicie o aparelho"
+    fi
+}
+
 # --- anexa ao controlador -------------------------------------------------
 udc=${GIOCHI_UDC:-$(ls /sys/class/udc 2>/dev/null | head -n1)}
 if [ -z "${udc:-}" ]; then
     log "nenhum UDC disponivel; gadget configurado mas inativo"
+    restaura_user
     exit 0
 fi
 if [ "$DRY" = "1" ]; then
     log "dry-run: anexaria em $udc (modo $MODE)"
 else
-    echo "$udc" > UDC || { log "falha ao anexar ao UDC $udc"; exit 1; }
+    if ! echo "$udc" > UDC; then
+        log "falha ao anexar ao UDC $udc"
+        restaura_user
+        exit 1
+    fi
     log "gadget anexado em $udc (modo $MODE, rede=$NET_OK, mtp=$MTP_OK)"
 fi
 
