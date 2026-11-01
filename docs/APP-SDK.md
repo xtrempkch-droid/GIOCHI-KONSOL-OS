@@ -88,7 +88,15 @@ Regras que o teste cobra:
 | `POWEROFF` / `REBOOT` / `SUSPEND` | `OK <ação>` / `ERR <ação>_failed` | derruba a sessão (menos `SUSPEND`) |
 | `WIFI_UP` / `WIFI_DOWN` | `OK wifi_up` / `ERR no_adapter` | sem rádio → `ERR no_adapter` |
 | `BT_UP` / `BT_DOWN` | `OK bt_up` / `ERR no_adapter` | idem |
+| `SET_DATE <epoch>` | `OK date <epoch>` / `ERR invalid_date` / `ERR missing_date` / `ERR date_failed` | acerta o relógio e persiste em `/user/.giochi/relogio` (docs/RELÓGIO.md). Época fora de 2020..2100 é **recusada** |
 | `SET_THEME <id>` | **`ERR not_implemented`** | ver abaixo |
+
+**`SET_DATE` é a porta para corrigir a data sem cabear o aparelho.** O console
+não tem RTC (docs/RELÓGIO.md); quando a bateria do RTC é trocada, a época
+salva fica velha e o TLS da Loja passa a falhar com erro de data. O app da
+Loja usará este comando quando detectar data implausível; hoje ele já funciona
+por SSH (`tools/giochi-ctl.py data`). O handler persiste a época na **mesma**
+fonte que o `rcK` usa no desligamento, então a correção sobrevive a reboot.
 
 **`SET_THEME` não funciona na v1.2, e agora diz isso.** O canal existente é
 Launcher → init (o Launcher grava `settings.json` e manda o comando). Trocar o

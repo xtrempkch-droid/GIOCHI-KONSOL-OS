@@ -73,6 +73,7 @@ COMANDOS = {
     "LAUNCH_APP <caminho>": "abre um app externo",
     "POWEROFF|REBOOT|SUSPEND": "energia (derruba a sessao)",
     "WIFI_UP|WIFI_DOWN|BT_UP|BT_DOWN": "radio",
+    "SET_DATE <epoch>": "acerta o relogio e persiste (docs/RELÓGIO.md)",
     "SET_THEME <id>": "NAO implementado na v1.2 (responde ERR)",
 }
 
@@ -370,6 +371,28 @@ def cmd_listar(args) -> int:
     return 0
 
 
+def cmd_data(args) -> int:
+    """Acerta a data do console com a hora do PC.
+
+    O aparelho nao tem RTC (docs/RELÓGIO.md): a bateria do RTC trocada deixa
+    a hora salva velha, e a data so' volta com ajuda externa. Este comando
+    calcula a epoca local do PC e manda `SET_DATE` pelo SSH — e' o mesmo
+    canal que o app da Loja usara' no futuro.
+    """
+    agora = int(time.time())
+    r = ctl(f"SET_DATE {agora}")
+    resposta = r.stdout.strip()
+    if r.returncode != 0 and not resposta:
+        erro(f"falha ao falar com o control.sock: {r.stderr.strip()}")
+        return r.returncode if r.returncode else 1
+    log(f"SET_DATE {agora}  ->  {resposta or '(sem resposta)'}")
+    if resposta.startswith("OK"):
+        log("data do console sincronizada com este PC.")
+        return 0
+    erro(f"o console recusou: {resposta}")
+    return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         prog="giochi-ctl",
@@ -397,6 +420,9 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("comandos", help="lista o protocolo do control.sock")
     p.set_defaults(func=cmd_listar)
+
+    p = sub.add_parser("data", help="acerta a data do console com a do PC")
+    p.set_defaults(func=cmd_data)
 
     args = ap.parse_args(argv)
     return args.func(args)

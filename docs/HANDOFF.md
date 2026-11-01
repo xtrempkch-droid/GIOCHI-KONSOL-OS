@@ -355,6 +355,38 @@ partição FAT → erro de I/O. Ver `AGENTS.md` §3.38–3.43.
 - TODO: indicadores da topbar, hint por par (botão, ação), capas
   (`thumbgen`), conteúdo de Home/Música e contabilidade de VRAM/LRU.
 
+## S5b — Launcher como app — feito (2026-11-01)
+
+O Launcher pode ser atualizado sem regravar o sistema
+([LAUNCHER-APP.md](LAUNCHER-APP.md)):
+
+- o supervisor resolve `/user/apps/giochi-launcher` **antes** de
+  `/usr/bin/giochi-launcher` (fallback da imagem, sempre presente);
+- o teste é `access(X_OK)`: upload interrompido via MTP não derruba a UI;
+- a resolução repete a cada relançamento (volta de jogo/crash): instalar o
+  app em runtime vale na próxima Home, sem reboot;
+- assets: `/user/apps/giochi-launcher/assets/layout.json` sobrepõe
+  `/usr/share/giochi` (binário + layout/tema/locales viajam juntos);
+- `S10storage` semeia `/user/apps`.
+
+Orçamento inalterado (RAM ≤ 60 MB repouso, VRAM ≤ 4 MB); o app **não** é
+assinado (mesmo modelo dos ports em `/user/ports`) e não há upgrade automático
+de rede para ele.
+
+## S5c — Relógio sem RTC — feito (2026-11-01)
+
+O aparelho **não tem RTC** (zero linhas `rtc` no dmesg; §3.110). Três fontes
+em cascata no `S01relogio` (pedido do usuário → época salva pelo `rcK` → data
+do cartão), todas com faixa de sanidade 2020..2100. Portas para corrigir a
+data ([RELÓGIO.md](RELÓGIO.md)):
+
+- **MTP (já funciona):** arquivo `/user/.giochi/relogio.pedido` com época ou
+  `YYYY-MM-DD HH:MM`; aplicado no boot, removido, fonte persistente
+  atualizada. Pedido inválido fica no lugar e o boot avisa.
+- **`SET_DATE <epoch>` no control.sock:** valida, `date -s @<epoch>`, persiste
+  em `/user/.giochi/relogio`. `tools/giochi-ctl.py data` manda a hora do PC
+  por SSH; o app da Loja usará o mesmo comando no futuro (falta só a UI).
+
 ## S6 — Configurações — esqueleto
 
 - `overlay.cpp` com os 7 itens de §4.9.3 e navegação/‑toggle.

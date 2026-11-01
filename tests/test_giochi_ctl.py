@@ -147,6 +147,22 @@ class CtlTest(unittest.TestCase):
         self.assertEqual(r.returncode, 1)
         self.assertIn("not_implemented", r.stdout)
 
+    def test_set_date_por_ctl(self):
+        """A porta da Loja/SSH para acertar a data (docs/RELÓGIO.md)."""
+        r = self.rodar("ctl", "SET_DATE", "1793556647")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("OK date 1793556647", r.stdout)
+
+    def test_data_subcomando_manda_a_hora_do_pc(self):
+        """`giochi-ctl.py data` calcula a epoca local e envia SET_DATE."""
+        import time as _t
+        r = self.rodar("data")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        m = __import__("re").search(r"OK date (\d+)", r.stdout)
+        self.assertIsNotNone(m, f"sem resposta OK date: {r.stdout!r}")
+        self.assertLess(abs(int(m.group(1)) - int(_t.time())), 10,
+                        "a epoca enviada tinha de ser a hora deste PC")
+
     # -- casos de borda --------------------------------------------------
 
     def test_sem_interface_usb_preparar_falha_com_dica(self):
@@ -251,7 +267,8 @@ class CtlTest(unittest.TestCase):
     def test_comandos_lista_o_protocolo(self):
         r = self.rodar("comandos")
         self.assertEqual(r.returncode, 0, r.stderr)
-        for verbo in ("PING", "USB_MODE", "DEV_MODE", "LAUNCH_APP"):
+        for verbo in ("PING", "USB_MODE", "DEV_MODE", "LAUNCH_APP",
+                      "SET_DATE"):
             self.assertIn(verbo, r.stdout)
         # A lista tem de ser honesta sobre o SET_THEME.
         self.assertIn("NAO implementado", r.stdout)

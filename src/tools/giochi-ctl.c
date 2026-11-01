@@ -59,6 +59,7 @@ static void lista_comandos(void)
     puts("LAUNCH_APP <caminho>     abre um app externo");
     puts("POWEROFF|REBOOT|SUSPEND  energia (derruba a sessao)");
     puts("WIFI_UP|WIFI_DOWN        radio");
+    puts("SET_DATE <epoch>         acerta o relogio e persiste (docs/RELÓGIO.md)");
     puts("SET_THEME <id>           NAO implementado na v1.2 (responde ERR)");
 }
 

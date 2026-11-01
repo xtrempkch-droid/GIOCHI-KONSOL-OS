@@ -73,6 +73,74 @@ if [ ! -d "${ARQUIVO%/*}" ]; then
     }
 fi
 
+# ---- pedido do usuario (via MTP) ------------------------------------------
+# docs/RELÓGIO.md: o MTP expoe /user ao PC, entao o usuario pode criar um
+# arquivo de texto com a data e o sistema a aplica no proximo boot. Por que
+# isto existe: o aparelho nao tem RTC e a bateria do RTC, quando trocada,
+# derruba a fonte de hora (a epoca do ultimo desligamento fica velha). Sem
+# rede ha' um unico caminho para corrigir: o usuario ditar a data — e o MTP
+# e' o que existe sem cabear o aparelho.
+#
+# Formato aceito (um por linha, o primeiro que casar):
+#   so' digitos          -> epoca (ex.: 1793556647)
+#   qualquer outra coisa -> data legivel para `date -s` (ex.: 2026-11-01 15:30)
+#
+# Aplicou -> grava na fonte persistente E remove o pedido (senao reaplicaria
+# em todo boot). Invalido -> mantem o arquivo e registra: o aviso a cada boot
+# e' proposital, lembra que existe um pedido pendente para corrigir.
+PEDIDO="${ARQUIVO}.pedido"
+if [ -f "$PEDIDO" ]; then
+    _texto=$(sed -n '1p' "$PEDIDO" 2>/dev/null | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    _aplicado=0
+    if [ -n "$_texto" ]; then
+        case "$_texto" in
+            ''|*[!0-9]*)
+                # Data legivel: `date -s` do BusyBox aceita "YYYY-MM-DD
+                # hh:mm[:ss]". Como argumento UNICO entre aspas: nada de eval,
+                # nada de shell — o texto nao e' interpretado.
+                if date -s "$_texto" >/dev/null 2>&1; then
+                    _ano=$(date -u +%Y 2>/dev/null | tr -dc '0-9')
+                    if [ "$_ano" -ge 2020 ] 2>/dev/null && \
+                       [ "$_ano" -le 2099 ] 2>/dev/null; then
+                        _aplicado=1
+                    else
+                        log "pedido de data aplicado mas ficou no ano $_ano; rejeitado"
+                        # devolve o relogio ao estado anterior: sem RTC o
+                        # melhor que temos e' a epoca salva, lida logo abaixo.
+                        if [ -r "$ARQUIVO" ]; then
+                            _antigo=$(tr -dc '0-9' < "$ARQUIVO" 2>/dev/null)
+                            case "$_antigo" in ''|*[!0-9]*) ;; *)
+                                date -s "@$_antigo" >/dev/null 2>&1 || true ;;
+                            esac
+                        fi
+                    fi
+                else
+                    log "pedido de data invalido ('$_texto'); ignorado"
+                fi
+                ;;
+            *)
+                # Epoca: a mesma faixa de sanidade do resto do script.
+                if [ "$_texto" -gt 1577836800 ] && \
+                   [ "$_texto" -lt 4102444800 ]; then
+                    if date -s "@$_texto" >/dev/null 2>&1; then
+                        _aplicado=1
+                    else
+                        log "date -s falhou para o pedido @$_texto"
+                    fi
+                else
+                    log "pedido de data fora de faixa ($_texto); ignorado"
+                fi
+                ;;
+        esac
+    fi
+    if [ "$_aplicado" = 1 ]; then
+        printf '%s\n' "$(date +%s 2>/dev/null | tr -dc '0-9')" \
+            > "$ARQUIVO" 2>/dev/null || true
+        rm -f "$PEDIDO" 2>/dev/null || true
+        log "pedido de data aplicado ($(date -u '+%Y-%m-%d %H:%M:%S UTC')); fonte persistente atualizada"
+    fi
+fi
+
 # ---- restaura -------------------------------------------------------------
 # O arquivo tem de conter UM inteiro (epoch). Qualquer outra coisa e' lixo de
 # desligamento bruto: ignorar em vez de setar uma data absurda.

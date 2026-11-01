@@ -170,6 +170,28 @@ class ControlSocketTest(InitHarness):
         self.assertEqual(self.command("DEV_MODE TALVEZ"), "ERR invalid_mode")
         self.assertEqual(self.command("DEV_MODE"), "ERR invalid_mode")
 
+    def test_set_date_valida_e_persiste(self):
+        """SET_DATE e' a porta da Loja/SSH para acertar a data (docs/RELÓGIO.md).
+
+        O aparelho nao tem RTC: quando a bateria e' trocada, a epoca salva
+        fica velha e a data so' volta com ajuda externa. Com GIOCHI_DRY_RUN=1
+        o `date -s` real NAO roda (o relogio do host fica intacto), mas a
+        resposta e a persistencia sao exatamente as do aparelho.
+        """
+        r = self.command("SET_DATE 1793556647")
+        self.assertEqual(r, "OK date 1793556647")
+        self.assertEqual(self.command("SET_DATE"), "ERR missing_date")
+        self.assertEqual(self.command("SET_DATE abc"), "ERR invalid_date")
+        self.assertEqual(self.command("SET_DATE 1"), "ERR invalid_date")
+        self.assertEqual(self.command("SET_DATE 99999999999999"),
+                         "ERR invalid_date")
+
+        salvo = Path(self.tmp.name) / "user" / ".giochi" / "relogio"
+        self.assertTrue(salvo.is_file(),
+                        "a epoca tem de ser persistida para o proximo boot: "
+                        "e' a mesma fonte que o rcK/S01relogio usam")
+        self.assertEqual(salvo.read_text().strip(), "1793556647")
+
     def test_set_theme_admite_que_nao_esta_implementado(self):
         """Antes respondia "OK theme <id>" sem fazer NADA.
 

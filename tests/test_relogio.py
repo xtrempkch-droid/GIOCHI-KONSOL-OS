@@ -64,12 +64,30 @@ exit 0
         # `date` falso: registra o que foi pedido e devolve uma epoca
         # PLAUSIVEL (2026) — o caso base. O cenario do relogio errado (2017)
         # e' um teste proprio, porque o rcK tem de RECUSAR salvar aquilo.
+        # `date` falso e REALISTA: aceita `-s @<digitos>` e `-s` com data
+        # no formato YYYY-MM-DD[ hh:mm[:ss]], e RECUSA o resto — igual ao
+        # `parse_datestr` do BusyBox. Um shim que aceita qualquer `-s`
+        # deixava o teste do pedido-lixo passar pelo caminho errado: o
+        # "lixo" era "aplicado" e o script removia o arquivo, exatamente o
+        # que nao pode acontecer.
         self._shim("date", """#!/bin/sh
 echo "date $*" >> "%s"
 case "$1" in
-    -s) exit 0 ;;
+    -s)
+        a="$2"
+        case "$a" in
+            @[0-9]*) exit 0 ;;
+            [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*) exit 0 ;;
+            *) exit 1 ;;
+        esac ;;
     -r) exec /usr/bin/stat -c %%Y "$2" ;;
     +%%s) echo "%d"; exit 0 ;;
+    +%%Y) echo "2026"; exit 0 ;;
+    -u)
+        case "$2" in
+            +%%Y) echo "2026"; exit 0 ;;
+            *) exit 0 ;;
+        esac ;;
 esac
 exit 0
 """ % (self.chamadas, EPOCA_2026))
@@ -233,6 +251,125 @@ class DataDoCartaoNoPrimeiroBoot(RelogioBase):
         self.assertIn("date -s @%d" % (EPOCA_2026 + 86400),
                       self._chamadas_date(),
                       "a epoca salva e' mais precisa que a data do cartao")
+
+
+
+class PedidoDeDataViaMtp(RelogioBase):
+    """docs/RELÓGIO.md: o usuario corrige a data criando um arquivo via MTP.
+
+    O MTP expoe /user ao PC; `relogio.pedido` e' a porta de entrada da data
+    quando a bateria do RTC e' trocada e a epoca salva ficou velha. Aceita
+    epoca (so' digitos) ou data legivel para `date -s`.
+    """
+
+    def _pedido(self, conteudo):
+        caminho = os.path.join(self.user, ".giochi", "relogio.pedido")
+        with open(caminho, "w", encoding="utf-8") as fh:
+            fh.write(conteudo)
+        return caminho
+
+    def _salvo(self):
+        caminho = os.path.join(self.user, ".giochi", "relogio")
+        if os.path.exists(caminho):
+            with open(caminho, encoding="utf-8") as fh:
+                return fh.read().strip()
+        return None
+
+    def test_pedido_epoch_aplica_e_remove(self):
+        pedido = self._pedido("%d\n" % EPOCA_2026)
+        r = self._rodar(S01)
+        self.assertEqual(0, r.returncode, r.stderr)
+        self.assertIn("date -s @%d" % EPOCA_2026, self._chamadas_date(),
+                      "a epoca do pedido tinha de ser aplicada: %r"
+                      % self._chamadas_date())
+        self.assertFalse(os.path.exists(pedido),
+                         "pedido aplicado tem de ser REMOVIDO (senao "
+                         "reaplica em todo boot)")
+        self.assertIsNotNone(self._salvo(),
+                             "a fonte persistente tinha de ser atualizada")
+
+    def test_pedido_data_legivel_aplica_e_remove(self):
+        pedido = self._pedido("2026-11-01 15:30\n")
+        r = self._rodar(S01)
+        self.assertEqual(0, r.returncode, r.stderr)
+        self.assertIn("date -s 2026-11-01 15:30", self._chamadas_date(),
+                      "a data legivel tinha de ir ao `date -s` como um "
+                      "argumento: %r" % self._chamadas_date())
+        self.assertFalse(os.path.exists(pedido))
+
+    def test_pedido_com_crlf_e_aceito(self):
+        # Arquivo criado no Windows chega com \r\n; o script remove o \r.
+        pedido = self._pedido("%d\r\n" % EPOCA_2026)
+        r = self._rodar(S01)
+        self.assertEqual(0, r.returncode, r.stderr)
+        self.assertIn("date -s @%d" % EPOCA_2026, self._chamadas_date())
+        self.assertFalse(os.path.exists(pedido))
+
+    def test_pedido_lixo_nao_aplica_e_mantem(self):
+        pedido = self._pedido("nao sou uma data\n")
+        r = self._rodar(S01)
+        self.assertEqual(0, r.returncode, r.stderr)
+        self.assertTrue(os.path.exists(pedido),
+                        "pedido invalido fica no lugar: o aviso a cada boot "
+                        "e' proposital, lembra que ha' algo para corrigir")
+        self.assertIn("pedido de data invalido", r.stdout + r.stderr)
+
+    def test_pedido_fora_de_faixa_mantem(self):
+        pedido = self._pedido("1\n")
+        r = self._rodar(S01)
+        self.assertEqual(0, r.returncode, r.stderr)
+        self.assertNotIn("date -s @1", " ".join(self._chamadas_date()))
+        self.assertTrue(os.path.exists(pedido))
+        self.assertIn("fora de faixa", r.stdout + r.stderr)
+
+    def test_pedido_que_termina_em_ano_errado_e_rejeitado(self):
+        # `date -s` aceitou a string, mas o relogio ficou em 2017: nao pode
+        # persistir nem remover o pedido — e a epoca salva anterior volta.
+        self._shim("date", """#!/bin/sh
+echo "date $*" >> "%s"
+case "$1" in
+    -s)
+        a="$2"
+        case "$a" in
+            @[0-9]*) exit 0 ;;
+            [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*) exit 0 ;;
+            *) exit 1 ;;
+        esac ;;
+    +%%s) echo "%d"; exit 0 ;;
+    +%%Y) echo "2017"; exit 0 ;;
+    -u)
+        case "$2" in
+            +%%Y) echo "2017"; exit 0 ;;
+            *) exit 0 ;;
+        esac ;;
+esac
+exit 0
+""" % (self.chamadas, EPOCA_2026))
+        with open(os.path.join(self.user, ".giochi", "relogio"), "w") as fh:
+            fh.write("%d\n" % (EPOCA_2026 - 86400))
+        pedido = self._pedido("2026-11-01 15:30\n")
+        r = self._rodar(S01)
+        self.assertEqual(0, r.returncode, r.stderr)
+        self.assertTrue(os.path.exists(pedido),
+                        "pedido com resultado implausivel NAO e' removido")
+        self.assertIn("date -s @%d" % (EPOCA_2026 - 86400),
+                      self._chamadas_date(),
+                      "a epoca salva anterior tinha de ser restaurada: %r"
+                      % self._chamadas_date())
+        self.assertIn("rejeitado", r.stdout + r.stderr)
+
+    def test_pedido_tem_prioridade_sobre_epoca_salva(self):
+        with open(os.path.join(self.user, ".giochi", "relogio"), "w") as fh:
+            fh.write("%d\n" % (EPOCA_2026 - 86400))
+        self._pedido("%d\n" % EPOCA_2026)
+        r = self._rodar(S01)
+        self.assertEqual(0, r.returncode, r.stderr)
+        ordem = [l for l in self._chamadas_date()
+                 if l.startswith("date -s")]
+        self.assertTrue(ordem, "nenhuma aplicacao registrada")
+        self.assertEqual("date -s @%d" % EPOCA_2026, ordem[0],
+                         "o pedido do usuario tem de ser a PRIMEIRA "
+                         "aplicacao, antes da epoca salva: %r" % ordem)
 
 
 class RcKGuarda(RelogioBase):
