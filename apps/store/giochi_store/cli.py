@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from .catalogo import catalogo, novidades, sha256_de, varrer
+from .destino import descobrir, games_de, resumo, todos
 
 
 def escrever(destino: Path, nome: str, doc: dict) -> Path:
@@ -19,7 +20,43 @@ def escrever(destino: Path, nome: str, doc: dict) -> Path:
     return alvo
 
 
+class SemEscrita(Exception):
+    """O destino existe mas não aceita escrita deste usuário."""
+
+
+def _verificar_escrita(games: Path) -> None:
+    """Testa a escrita de verdade ANTES de copiar 40 MB.
+
+    A partição `/user` do cartão é ext4 e o udisks monta como ROOT; a do MTP é
+    do gvfs e pode vir somente-leitura. Nos dois casos a primeira tentativa
+    estourava `PermissionError` com traceback — que não diz o que fazer.
+    Escrever um arquivo vazio responde a mesma pergunta em um syscall.
+    """
+    try:
+        games.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise SemEscrita(f"nao consegui criar '{games}': {exc.strerror}") from exc
+
+    teste = games / ".giochi-store-teste"
+    try:
+        teste.write_bytes(b"")
+    except OSError as exc:
+        raise SemEscrita(
+            f"'{games}' nao aceita escrita ({exc.strerror})."
+            "\n  cartao montado pelo udisks e' do root:"
+            f"\n      sudo chown -R $USER '{games.parent}'"
+            "\n  ou use o MTP (o gvfs monta com o seu usuario)") from exc
+    finally:
+        try:
+            teste.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def instalar(pacotes, games: Path, dry_run: bool) -> tuple[int, int]:
+    if not dry_run:
+        _verificar_escrita(games)
+
     """Copia os pacotes validos para `games`, conferindo o sha256 no DESTINO.
 
     Conferir na origem nao serve: copiar e confiar no `shutil.copy` nao pega
@@ -88,10 +125,56 @@ def cmd_instalar(args) -> int:
     if not pacotes:
         print(f"giochi-store: nenhum .giochi em '{args.src}'", file=sys.stderr)
         return 2
-    copiados, falhas = instalar(pacotes, Path(args.games).expanduser(),
-                                args.dry_run)
-    print(f"{copiados} instalado(s), {falhas} recusado(s)")
+
+    # Sem --games, descobre o destino: MTP (console no cabo) ou cartao no
+    # leitor. Pedir o caminho na mao significava copiar para o lugar errado
+    # sem erro nenhum quando o usuario errava o /media/<user>/<label>.
+    if args.games:
+        games = Path(args.games).expanduser()
+        print(f"destino: {games}")
+    else:
+        destinos = todos()
+        if not destinos:
+            print(f"giochi-store: {resumo()}", file=sys.stderr)
+            return 2
+        alvo = descobrir(preferir=args.preferir)
+        if alvo is None:
+            print(f"giochi-store: nenhum destino do tipo '{args.preferir}'."
+                  f"\n{resumo()}", file=sys.stderr)
+            return 2
+        if len(destinos) > 1:
+            print("destinos encontrados:")
+            for d in destinos:
+                marca = "->" if d.caminho == alvo.caminho else "  "
+                print(f" {marca} {d}")
+            print(f"   usando o primeiro; use --preferir cartao|mtp para escolher")
+        games = games_de(alvo)
+        print(f"destino: {games}")
+
+    try:
+        copiados, falhas = instalar(pacotes, games, args.dry_run)
+    except SemEscrita as exc:
+        print(f"giochi-store: {exc}", file=sys.stderr)
+        return 3
+
+    if args.dry_run:
+        print(f"{copiados} seria(m) copiado(s), {falhas} recusado(s)")
+    else:
+        print(f"{copiados} instalado(s), {falhas} recusado(s)")
     return 0 if falhas == 0 else 1
+
+
+def cmd_destinos(args) -> int:
+    """Mostra onde o console esta' visivel e qual seria usado."""
+    achados = todos()
+    if not achados:
+        print(resumo(), file=sys.stderr)
+        return 1
+    alvo = descobrir(preferir=args.preferir)
+    for d in achados:
+        marca = "*" if alvo and d.caminho == alvo.caminho else " "
+        print(f" {marca} {d}  (games: {games_de(d)})")
+    return 0
 
 
 def cmd_listar(args) -> int:
@@ -128,10 +211,16 @@ def main(argv: list[str] | None = None) -> int:
 
     i = sub.add_parser("instalar", help="copia para GIOCHI_USER/games")
     i.add_argument("--src", required=True)
-    i.add_argument("--games", required=True,
-                   help="ex.: /media/eu/GIOCHI_USER/games")
+    i.add_argument("--games", default=None,
+                   help="caminho explicito; sem ele, descobre cartao ou MTP")
+    i.add_argument("--preferir", choices=("cartao", "mtp"), default=None,
+                   help="com dois destinos, qual usar")
     i.add_argument("--dry-run", action="store_true")
     i.set_defaults(func=cmd_instalar)
+
+    d = sub.add_parser("destinos", help="onde o console esta' visivel")
+    d.add_argument("--preferir", choices=("cartao", "mtp"), default=None)
+    d.set_defaults(func=cmd_destinos)
 
     l = sub.add_parser("listar", help="mostra o catalogo em texto")
     l.add_argument("--src", required=True)

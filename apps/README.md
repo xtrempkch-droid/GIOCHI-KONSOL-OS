@@ -45,8 +45,15 @@ Produz o que o Launcher consome e instala no cartão:
 # catalogo + novidades da Home (news.json)
 apps/store/giochi-store catalogo --src ./pacotes --out /media/eu/GIOCHI_USER/.cache
 
-# copia para o cartão, conferindo o sha256 NO DESTINO
-apps/store/giochi-store instalar --src ./pacotes --games /media/eu/GIOCHI_USER/games
+# onde o console está visível (cartão no leitor OU MTP pelo cabo)
+apps/store/giochi-store destinos
+
+# copia, descobrindo o destino e conferindo o sha256 NO DESTINO
+apps/store/giochi-store instalar --src ./pacotes
+# com os dois destinos presentes:
+apps/store/giochi-store instalar --src ./pacotes --preferir mtp
+# caminho explícito (qualquer ponto de montagem, inclusive MTP do gvfs):
+apps/store/giochi-store instalar --src ./pacotes --games /run/media/eu/GIOCHI_USER/games
 
 # so' olhar
 apps/store/giochi-store listar --src ./pacotes

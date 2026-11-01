@@ -31,6 +31,7 @@ from giochi_store.catalogo import (  # noqa: E402
     validar,
     varrer,
 )
+from giochi_store.destino import Destino, _tem_assinatura  # noqa: E402
 
 META_OK = {
     "id": "jogo-bom",
@@ -220,6 +221,23 @@ class InstalacaoTest(unittest.TestCase):
         self.assertEqual(copiados, 1)
         self.assertEqual(falhas, 1)
 
+    def test_destino_sem_escrita_falha_com_instrucao(self):
+        """Cartão montado pelo udisks é do root: a mensagem tem de dizer o que
+        fazer, não despejar PermissionError com traceback."""
+        from giochi_store.cli import SemEscrita, instalar
+
+        somente_leitura = self.dir / "ro"
+        somente_leitura.mkdir()
+        somente_leitura.chmod(0o500)          # sem escrita para o dono
+        try:
+            with self.assertRaises(SemEscrita) as ctx:
+                instalar(varrer(self.dir / "src"), somente_leitura, False)
+            texto = str(ctx.exception)
+            self.assertIn("nao aceita escrita", texto)
+            self.assertIn("MTP", texto, "a mensagem precisa sugerir a saida")
+        finally:
+            somente_leitura.chmod(0o700)
+
     def test_copia_conferindo_o_destino(self):
         games = self.dir / "games"
         copiados, falhas = self._cli()(varrer(self.dir / "src"), games, False)
@@ -228,6 +246,44 @@ class InstalacaoTest(unittest.TestCase):
         self.assertTrue((games / "bom.giochi").is_file())
         self.assertFalse((games / "ruim.giochi").exists(),
                          "pacote recusado foi copiado para o cartao")
+
+
+class DestinoTest(unittest.TestCase):
+    """Descoberta do ponto de cópia: cartão no leitor ou MTP pelo cabo.
+
+    O nome do ponto de montagem do MTP muda com bus/device/vendor string, então
+    a descoberta é por CONTEÚDO (`games/` ou `.giochi/`), nunca por nome. Um
+    caminho errado aqui significa copiar 40 MB para o lugar errado sem erro.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_assinatura_por_games(self):
+        (self.dir / "games").mkdir()
+        self.assertTrue(_tem_assinatura(self.dir))
+
+    def test_assinatura_por_giochi(self):
+        (self.dir / ".giochi").mkdir()
+        self.assertTrue(_tem_assinatura(self.dir))
+
+    def test_diretorio_vazio_nao_e_destino(self):
+        self.assertFalse(_tem_assinatura(self.dir))
+
+    def test_arquivo_nao_e_diretorio(self):
+        (self.dir / "games").write_text("nao e diretorio")
+        self.assertFalse(_tem_assinatura(self.dir))
+
+    def test_caminho_inexistente_nao_explode(self):
+        self.assertFalse(_tem_assinatura(self.dir / "nao-existe"))
+
+    def test_destino_expoe_games(self):
+        d = Destino(self.dir, "cartao")
+        self.assertEqual(str(d), f"cartao: {self.dir}")
 
 
 if __name__ == "__main__":

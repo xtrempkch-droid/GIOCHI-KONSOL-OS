@@ -95,6 +95,30 @@ O storage exposto é `/user` (jogos, músicas, ports, `.giochi`). Config em
 Se o kernel não tiver `CONFIG_USB_F_FS`, o helper cai automaticamente para Mass
 Storage e registra o motivo.
 
+### Usar o MTP para copiar jogos (o caminho do dia a dia)
+
+MTP é o jeito de **não tirar o cartão**: o console plugado por USB expõe `/user`
+como o volume **"Giochi"**. O `giochi-store` acha o destino sozinho:
+
+```sh
+apps/store/giochi-store destinos          # onde o console esta' visivel
+apps/store/giochi-store instalar --src ./pacotes
+```
+
+| Destino | Como aparece | Dono |
+|---|---|---|
+| cartão no leitor | `/run/media/<usuário>/GIOCHI_USER` | **root** (o udisks monta assim) |
+| MTP pelo cabo | `/run/user/<uid>/gvfs/mtp:host=...` | **o seu usuário** |
+
+A descoberta é por **conteúdo** (`games/` ou `.giochi/`), nunca pelo nome do
+ponto de montagem — o nome do MTP muda com o bus, o device e a string de vendor.
+Com os dois presentes, `--preferir cartao` ou `--preferir mtp` escolhe.
+
+**Limite do MTP:** ele expõe arquivos, não permissões. `settings.json` e
+`ssh/authorized_keys` precisam de modo `0600` e diretório `0700`, e o MTP não os
+aplica — por isso o **Modo Desenvolvedor é preparado pelo cartão**
+([`tools/giochi-dev-mode.sh`](../tools/giochi-dev-mode.sh)), não por MTP.
+
 ### Trocar o modo em runtime
 
 | Entrada | Ação |

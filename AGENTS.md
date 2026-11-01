@@ -2063,6 +2063,55 @@ rastro, exatamente a classe do §3.34.
 - Guarda: `tests/test_dev_mode_card.py::test_sem_dev_mode_nao_sobe` exige a
   mensagem **e** que o `dropbear -p` não apareça.
 
+### 3.82 `exec cmd || true` nunca volta, e o `pkexec` limpa o ambiente
+
+Três defeitos em sequência no `tools/giochi-dev-mode.sh`, todos só visíveis
+rodando no cartão de verdade:
+
+1. **`exec` antes do teste.** `exec sudo -n ... 2>/dev/null || true` — o `exec`
+   substitui o processo, então o `||` **nunca** roda. Com `sudo -n` falhando
+   (esta máquina não tem sudo sem senha), o script morria em silêncio e o
+   `pkexec` — a única saída — nunca era tentado. **Teste o elevador antes de
+   `exec`**: `sudo -n true && exec sudo ...`.
+2. **`pkexec` LIMPA o ambiente.** Só passa uma lista branca (DISPLAY,
+   XAUTHORITY, TERM…). Passar a chave por `GIOCHI_SSH_PUBKEY` não chegava no
+   processo elevado, que voltava a procurar `~/.ssh` com `HOME=/root` e dizia
+   "chave não encontrada". **Passe por argumento.**
+3. **`$USER` vira `root` e `$0` vira relativo.** A busca `find /media/$USER`
+   apontava para `/media/root`. Agora a descoberta é `findmnt` + assinatura de
+   conteúdo (`games/`, `settings.json`), e o script usa o próprio caminho
+   **absoluto** (`$SELF`) para se re-executar.
+
+Também: a partição `/user` do cartão é **ext4 montada pelo udisks como root**,
+então "não gravável" é o caso NORMAL, não erro do usuário — o script eleva
+sozinho em vez de mandar descobrir.
+
+### 3.83 `PermissionError` com traceback não é mensagem de erro
+
+`apps/store ... instalar` copiava para `/run/media/<user>/GIOCHI_USER/games` e,
+sem permissão, despejava a pilha do `shutil`. A pergunta "posso escrever aqui?"
+se responde com **um syscall**, antes de copiar 40 MB:
+
+- `_verificar_escrita()` cria um arquivo vazio no destino e traduz o `OSError`
+  em instrução: `sudo chown -R $USER <partição>` ou "use o MTP (o gvfs monta
+  com o seu usuário)".
+- Guarda: `test_destino_sem_escrita_falha_com_instrucao` (diretório `0500`)
+  exige a frase e a menção ao MTP.
+
+### 3.84 O destino da cópia não pode ser adivinhado pelo usuário
+
+Há dois caminhos para o `/user` do console — cartão no leitor e MTP pelo cabo —
+e o ponto de montagem do MTP muda com bus/device/vendor string
+(`/run/user/1000/gvfs/mtp:host=...`). Pedir o caminho na mão significava copiar
+para o lugar errado **sem erro nenhum**.
+
+- `apps/store/giochi_store/destino.py` descobre por **conteúdo** (`games/` ou
+  `.giochi/`), nunca por nome; `giochi-store destinos` mostra os achados e
+  `--preferir cartao|mtp` desempata.
+- **Limite honesto do MTP**: ele expõe arquivos, não permissões. `settings.json`
+  e `ssh/authorized_keys` precisam de `0600`/`0700`, e o MTP não os aplica — o
+  Modo Desenvolvedor continua sendo preparado pelo cartão.
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):
