@@ -11,11 +11,23 @@ HELPER=${HELPER:-/usr/sbin/giochi-usb-mode}
 
 # POSIX: '.' que falha ABORTA shells nao-interativos (o '|| true' nao
 # protege). Sem o lib.sh o script segue com os defaults propria.
-if [ -r /etc/giochi/lib.sh ]; then
-    . /etc/giochi/lib.sh
+# GIOCHI_LIB permite apontar para outra copia (teste de host roda o script
+# real sem /etc/giochi). No aparelho o caminho e' sempre o padrao.
+GIOCHI_LIB=${GIOCHI_LIB:-/etc/giochi/lib.sh}
+if [ -r "$GIOCHI_LIB" ]; then
+    . "$GIOCHI_LIB"
 fi
 
-log() { logger -t "$TAG" -- "$*" 2>/dev/null || echo "$TAG: $*" >&2; }
+# Log em DOIS lugares de proposito: o syslog (que o S00bootlog grava no
+# cartao) e o stderr — e o rcS roda os scripts com `2>&1 | tee -a $bootlog`,
+# entao o stderr chega tambem no serial. Medido nesta sessao: quando o modo
+# `mass` desmonta /user, o unico instrumento que sobra e' o serial; um
+# "por que o USB nao subiu" que so' existe no cartao custa desligar o
+# aparelho e tirar o cartao a cada tentativa.
+log() {
+    logger -t "$TAG" -- "$*" 2>/dev/null || true
+    echo "$TAG: $*" >&2
+}
 
 # Aparelhos sem USB funcional (X35S/X35H, hardware-e-drivers.md F12).
 if [ -f /etc/giochi/usb_gadget_disabled ]; then
@@ -23,13 +35,51 @@ if [ -f /etc/giochi/usb_gadget_disabled ]; then
     exit 0
 fi
 
+# Espelha o settings em /run ANTES de chamar o helper: o modo `mass`
+# desmonta /user, e os scripts que decidem o Modo Desenvolvedor rodam
+# DEPOIS deste (S55usbnet, S62sshd). Sem o espelho eles leem um arquivo
+# que nao existe mais e concluem "desenvolvedor desligado" — foi assim que
+# o usb0 ficou DOWN na X55 (AGENTS.md §3.91).
+#
+# `command -v` antes de cada funcao do lib.sh: sem o lib.sh (teste de host,
+# imagem incompleta) o script tem de continuar lendo $SETTINGS direto, como
+# fazia antes, e nao tratar "funcao ausente" como "desenvolvedor desligado".
+if [ -r "$SETTINGS" ] && command -v giochi_settings_snapshot >/dev/null 2>&1; then
+    if giochi_settings_snapshot "$SETTINGS"; then
+        log "settings espelhado em $GIOCHI_SETTINGS_CACHE"
+    else
+        log "aviso: nao foi possivel espelhar $SETTINGS em /run"
+    fi
+fi
+
+# Mesmo motivo, um passo pior: /etc/dropbear e' symlink para
+# /user/.ssh/dropbear, e o modo `mass` leva /user inteira para o PC. Sem o
+# espelho, o S62sshd (que roda depois) nao tem chave de host NEM
+# authorized_keys e o SSH nao sobe — com a rede USB perfeitamente no ar.
+# Medido na X55: `S62sshd: ERRO: /etc/dropbear nao e' gravavel`.
+if [ -d /user/.ssh/dropbear ] && command -v giochi_ssh_snapshot >/dev/null 2>&1; then
+    if giochi_ssh_snapshot /user/.ssh/dropbear; then
+        log "chaves do dropbear espelhadas em $GIOCHI_SSH_CACHE"
+    else
+        log "aviso: nao foi possivel espelhar /user/.ssh/dropbear em /run"
+    fi
+fi
+
 mode=mtp
-if [ -f "$SETTINGS" ]; then
+origem=padrao
+# Le do arquivo do usuario; se ele nao existir (ou /user ja' tiver saido),
+# le do espelho — que e' tmpfs e portanto nunca sobrevive a um boot.
+settings_lido=$SETTINGS
+if command -v giochi_settings_path >/dev/null 2>&1; then
+    settings_lido=$(giochi_settings_path "$SETTINGS" 2>/dev/null) || settings_lido=$SETTINGS
+fi
+if [ -n "$settings_lido" ] && [ -f "$settings_lido" ]; then
+    origem=$settings_lido
     if command -v jq >/dev/null 2>&1; then
-        mode=$(jq -r '.system.usb_mode // "mtp"' "$SETTINGS" 2>/dev/null)
+        mode=$(jq -r '.system.usb_mode // "mtp"' "$settings_lido" 2>/dev/null)
     else
         mode=$(sed -n 's/.*"usb_mode"[[:space:]]*:[[:space:]]*"\([a-z]*\)".*/\1/p' \
-                    "$SETTINGS" 2>/dev/null | head -n1)
+                    "$settings_lido" 2>/dev/null | head -n1)
     fi
 fi
 
@@ -38,6 +88,10 @@ case "$mode" in
     mtp|MTP)   mode=mtp ;;
     *)         log "modo '$mode' invalido; usando mtp"; mode=mtp ;;
 esac
+
+# O log de boot nao dizia QUAL modo foi escolhido nem de onde veio — e sem
+# isso nao da' para separar "o usuario pediu mass" de "o padrao e' mass".
+log "modo USB: $mode (origem: $origem)"
 
 [ -x "$HELPER" ] || { log "aviso: $HELPER ausente; gadget nao configurado"; exit 0; }
 
@@ -75,8 +129,56 @@ sonda_udc() {
 
 sonda_udc
 
+# --- sonda do FunctionFS -------------------------------------------------
+# O mount de functionfs e' o passo que o MTP precisa e o que menos fala:
+# quando falha, a unica pista e' "nao montou". Medir aqui, ANTES do helper,
+# separa tres causas que dao o mesmo sintoma:
+#
+#   /sys/module/usb_f_fs ausente   -> a funcao nao esta' no kernel
+#   mount falha com EBUSY          -> ja' ha um functionfs montado
+#   mount ok e sem ep0             -> o kernel nao criou os endpoints
+sonda_functionfs() {
+    # NAO usar /sys/module/usb_f_fs: codigo embutido (=y) so' ganha entrada em
+    # /sys/module quando tem parametros. O `f_fs` ESTA' no kernel (compilado em
+    # `usb_f_fs.o`, dentro de vmlinux) e /sys/module nao o lista — medir por
+    # ali deu falso negativo na X55 e mandou investigar o kconfig, que estava
+    # certo. A fonte de verdade e' o registro do driver no barramento de
+    # funcoes USB.
+    if [ -e /sys/bus/usb-function/drivers/ffs ]; then
+        log "sonda: driver ffs registrado no barramento usb-function"
+    elif [ -d /sys/module/usb_f_fs ]; then
+        log "sonda: usb_f_fs presente em /sys/module (modulo)"
+    else
+        log "sonda: ffs nao localizado (CONFIG_USB_F_FS=y?)"
+    fi
+    _mnt=$(mount 2>/dev/null | awk '$5 == "functionfs" { print $3; exit }')
+    if [ -n "${_mnt:-}" ]; then
+        log "sonda: functionfs ja' montado em $_mnt"
+    else
+        log "sonda: nenhum functionfs montado"
+    fi
+    if [ -e /dev/ffs-mtp/ep0 ]; then
+        log "sonda: /dev/ffs-mtp/ep0 existe"
+    fi
+}
+
+sonda_functionfs
+
 if "$HELPER" "$mode"; then
     log "gadget USB configurado em modo $mode"
+    # O S60mtpd le /run/giochi/usb_mode para decidir se sobe o responder MTP.
+    # Nada escrevia esse arquivo: o S60mtpd caia no default "mtp" e subia o
+    # umtprd mesmo quando o gadget estava em `mass` ou so' com rede — um
+    # daemon a mais, sem funcao para responder. Gravar aqui e' o que torna o
+    # arquivo verdadeiro.
+    _rundir=${GIOCHI_RUN_DIR:-/run/giochi}
+    if command -v giochi_ensure_run_dir >/dev/null 2>&1; then
+        giochi_ensure_run_dir 2>/dev/null || true
+    else
+        mkdir -p "$_rundir" 2>/dev/null || true
+    fi
+    printf '%s\n' "$mode" > "$_rundir/usb_mode" 2>/dev/null || \
+        log "aviso: nao foi possivel gravar $_rundir/usb_mode"
     # O helper sai 0 tambem quando nao havia UDC ('configurado mas inativo').
     # Conferir o arquivo UDC do configfs separa "anexou" de "ficou parado".
     #

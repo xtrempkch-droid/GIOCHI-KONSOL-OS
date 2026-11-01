@@ -2360,6 +2360,448 @@ imprimia um log plausível e a conclusão saía como "não há dado relevante".
   posição. O sintoma tem o mesmo formato do §3.42 (log termina no meio de uma
   linha): a informação existe, o instrumento não a mostra.
 
+### 3.91 `f_mass_storage` não abre `PARTUUID=` — o PC vê 0 setores
+
+O `giochi_user_part()` montava o nome da partição C a partir do `root=` do
+`/proc/cmdline`. Com `root=PARTUUID=47494f43-02` ele devolvia
+`PARTUUID=47494f43-04`, que é o formato que o **`mount`** aceita (o `fstab` usa
+`LABEL=`, e o BusyBox resolve ambos com `FEATURE_MOUNT_LABEL`) e que o
+**`f_mass_storage` recusa**. Medido no serial da X55:
+
+```
+[5.695596] Mass Storage Function, version: 2009/09/11
+[5.696075] LUN: removable file: (no medium)
+[5.737564] EXT4-fs (mmcblk1p4): unmounting filesystem 17d4fe60-...
+[5.745999] mass_storage.0/lun.0: unable to open backing file: PARTUUID=47494f43-04
+[5.753623] configfs-gadget.giochi gadget.0: HOST MAC 02:47:69:6f:63:69
+```
+
+e no PC: `lsusb` anunciava o Mass Storage, `lsblk` mostrava `sde 0B` e **nenhuma
+linha de erro** aparecia em lugar nenhum. O custo disso era triplo: o modo
+`mass` desmontou `/user` **para isso**, entregou um disco vazio e deixou o
+sistema sem a partição de dados (`/user/music` e `/user/games` inacessíveis,
+`settings.json` ausente).
+
+- `giochi_user_part()` passou a devolver sempre um **nó de bloco**, em quatro
+  degraus: `/proc/mounts` (quando `/user` está montado, o dispositivo já está
+  resolvido), `root=/dev/...` + numeração de p4, `/dev/disk/by-label/GIOCHI_USER`
+  (só existe com udev), e por fim o glob `/dev/mmcblk*p4` / `/dev/sd?4` — que
+  cobre exatamente o caso "`root=PARTUUID` com `/user` desmontado".
+- `giochi-usb-mode` **confere `[ -b ]`** antes de anexar e, se não for bloco,
+  diz `Mass Storage indisponivel: particao /user nao resolvida ('...')` e segue
+  só com a rede.
+- Guardas: `test_giochi_user_part_devolve_no_de_bloco_nunca_partuuid` e
+  `test_usb_mode_recusa_alvo_que_nao_e_no_de_bloco` (suíte `primeiro-boot`).
+  Testadas ao contrário: reintroduzir a versão que monta `PARTUUID` reprova as
+  duas.
+- **Regra que fica**: o mesmo dado (`/user`) tem **três** formas de nome
+  (`LABEL=`, `PARTUUID=`, `/dev/...`) e cada consumidor aceita um subconjunto.
+  Antes de repassar um caminho adiante, confira o tipo do alvo (`-b`, `-d`, `-f`)
+  — o kernel recusa em silêncio e o sintoma aparece longe da causa.
+
+### 3.92 Decisão de boot que só existe no syslog custa um ciclo de cartão
+
+`log()` nos scripts mandava a mensagem **só** para o `logger`. Quando o modo
+`mass` desmonta `/user` (ou quando o gadget não sobe), o aparelho fica sem o
+único instrumento que responde "por que": o log vai para o cartão, e ler o
+cartão exige desligar, tirar, montar no PC e regravar.
+
+O `rcS` já roda os scripts com `2>&1 | tee -a "$bootlog"` — ou seja, **o
+stderr chega ao serial e ao cartão ao mesmo tempo**. Bastava usar isso.
+
+- `log()` de `S50usb`, `S55usbnet`, `S62sshd` e `giochi-usb-mode` agora escreve
+  no syslog **e** no stderr. Custo: a linha aparece duas vezes no
+  `giochi-boot.log` (uma com carimbo do `syslogd`, outra com o prefixo da tag) —
+  incomparavelmente mais barato que perder o boot.
+- As decisões que faltavam no log ganharam linha própria:
+  `modo USB: <x> (origem: <arquivo|padrao>)`, `settings espelhado em /run/...`,
+  `Mass Storage indisponivel: ... nao resolvida`, e a queda do MTP passou a
+  distinguir **três** causas que antes davam a mesma frase
+  (`configfs recusou ffs.*` × `functionfs nao montou` × `caiu para Mass
+  Storage`).
+
+### 3.93 `settings.json` decidindo por um arquivo que o próprio boot destruiu
+
+Ver §3.89 para o caso do modo `mass`. O resumo que fica: `S50usb` decide o modo
+de USB lendo `/user/settings.json`; o modo `mass` **desmonta `/user`**; e
+`S55usbnet`/`S62sshd` rodam **depois** e leem o mesmo arquivo — que não existe
+mais. Eles concluíam "Modo Desenvolvedor desligado", deixavam o `usb0` DOWN e o
+PC ficava em NO-CARRIER sem `10.55.0.2`.
+
+- `/run/giochi/settings.json` guarda o último estado conhecido, gravado pelo
+  `S50usb` **antes** de chamar o helper (`giochi_settings_snapshot`).
+- `giochi_settings_path` devolve o arquivo do usuário quando existe e o espelho
+  quando não. Quem escreve continua sendo só o Launcher (§4.9.5).
+- Os três scripts degradam para o caminho original quando o `lib.sh` não define
+  as funções (`command -v` antes de chamar). Uma versão anterior fazia
+  `Settings=$(giochi_settings_path ...) || Settings=` — com a função ausente
+  isso virava **"desenvolvedor desligado"**, que é o mesmo defeito que o
+  espelho veio corrigir, só que permanente. As suítes `devmode`,
+  `cliente-ssh` e `modo-dev-no-cartao` pegaram.
+
+### 3.94 `CONFIG_USB_FUNCTIONFS=y` — o nome engana e ele derruba o MTP
+
+O MTP do configfs recusava ser criado, e a mensagem da época apontava para o
+símbolo errado. O `.config` do kernel tinha **os dois** símbolos que o MTP
+precisa (`USB_F_FS=y`, `USB_CONFIGFS_F_FS=y`) e mesmo assim:
+
+```
+giochi-usb: aviso: configfs recusou ffs.mtp (CONFIG_USB_CONFIGFS_F_FS?); usando Mass Storage
+```
+
+A causa estava em um terceiro símbolo, com nome quase igual:
+
+| símbolo | o que é | efeito |
+|---|---|---|
+| `USB_F_FS` | a **função** `f_fs` | necessário |
+| `USB_CONFIGFS_F_FS` | expõe `f_fs` no configfs | necessário |
+| `USB_FUNCTIONFS` | o gadget **legado** `g_ffs` | **impede o MTP** |
+
+`g_ffs` chama `ffs_single_dev()` no `__init` e marca o único dispositivo
+FunctionFS do sistema como reservado. A partir daí `_ffs_alloc_dev()` devolve
+`-EBUSY` para **qualquer** `mkdir functions/ffs.*`:
+
+```
+drivers/usb/gadget/legacy/g_ffs.c    : gfs_init()      → ffs_single_dev(opts->dev)
+drivers/usb/gadget/function/f_fs.c   : _ffs_alloc_dev() → if (_ffs_get_single_dev()) return ERR_PTR(-EBUSY);
+```
+
+- O `linux.fragment` e o `linux-powkiddy.fragment` deixaram de pedir
+  `CONFIG_USB_FUNCTIONFS`; os dois agora têm o comentário explicando por quê.
+- De quebra, os fragmentos pediam `CONFIG_USB_CONFIGFS_F_MTP=y` e
+  `CONFIG_USB_F_MTP=y`, que **não existem no mainline** (conferido em
+  `drivers/usb/gadget` do 6.12): o kconfig do kernel descartava os dois em
+  silêncio — a mesma armadilha do §3.2, agora no kernel. MTP neste sistema é o
+  `umtprd` no userspace sobre `f_fs`.
+- Guardas: suíte `config-aplicada` (`tests/test_config_aplicada.py`) —
+  `GadgetLegadoReservaOFunctionFS` cobra os três símbolos nos fragmentos e no
+  `.config` real quando ele existe. Testada ao contrário: reintroduzir
+  `CONFIG_USB_FUNCTIONFS=y` reprova.
+- **Regra que fica**: símbolo de kernel com nome parecido de outro não é
+  cosmético — `USB_FUNCTIONFS` ≠ FunctionFS. Antes de culpar o script, confira
+  se o `gadget legado` (`CONFIG_USB_G_*` / `CONFIG_USB_*FUNCTIONFS`) está
+  habilitado.
+
+### 3.95 MTP quebrado não pode virar `mass` automaticamente
+
+Quando o `ffs` falhava, o helper trocava para `mass`. Esse fallback parecia
+útil e era destrutivo: o modo `mass` **desmonta `/user`**, e com ele caem as
+chaves do dropbear (`/etc/dropbear` é symlink para `/user/.ssh`), a biblioteca
+e a música. Medido na X55:
+
+```
+S62sshd: aviso: falha ao gerar chave ed25519
+S62sshd: aviso: falha ao gerar chave rsa
+S62sshd: Modo Desenvolvedor ativo, mas sem chave e sem senha: SSH nao sobe
+```
+
+…com o Modo Desenvolvedor ligado e o `usb0` já com IP. Mass Storage é
+**escolha** do usuário (menu do Launcher / `USB_MODE MASS`); recuperação de MTP
+quebrado não é lugar para ele.
+
+- Agora, MTP que não sobe leva a **só rede**: `MODO_SEM_DADOS=1`, e o log diz
+  `MTP indisponivel (<causa>): gadget so' com rede (Mass Storage exigiria
+  desmontar /user)`. As três causas são distinguidas: `configfs` (mkdir
+  recusado), `mount` (functionfs não montou) e serviço ausente.
+- Guardas: `FallbackDeMtpNaoDesmontaOUser` (mesma suíte). Testada ao contrário.
+
+### 3.96 FunctionFS recusa bind sem descritores (`-19`) — a ordem importa
+
+Primeira imagem com o `f_fs` realmente funcionando, e o gadget **não anexou**:
+
+```
+configfs-gadget.giochi gadget.0: HOST MAC 02:47:69:6f:63:69
+udc fcc00000.usb: failed to start giochi: -19
+UDC core: giochi: couldn't find an available UDC or it's busy
+sh: write error: Resource busy
+```
+
+`-19` é `ENODEV`, não "busy". O fonte diz de onde vem:
+
+```
+drivers/usb/gadget/function/f_fs.c : ffs_do_functionfs_bind()
+    ret = ffs_opts->dev->desc_ready ? 0 : -ENODEV;
+```
+
+`desc_ready` só fica verdadeiro depois que o daemon do userspace **escreve os
+descritores no ep0**. O `giochi-usb-mode` fazia o bind no UDC e só então
+subia o `umtprd` — o kernel binding sem descritores, e a mensagem que aparece
+(`couldn't find an available UDC or it's busy`) mente: o UDC estava livre.
+
+- A ordem agora é: montar functionfs → **subir o umtprd** → anexar ao UDC.
+  Se o bind falhar com o daemon já iniciado, o log diz
+  `causa provavel: o umtprd nao escreveu os descritores em /dev/ffs-mtp/ep0`.
+- Guarda: `test_helper_sobe_o_mtp_antes_de_anexar_o_udc` — compara a posição
+  de `"$MTPSVC" start` com `echo "$udc" > UDC` no arquivo (o `echo "" > UDC`
+  do começo é a parada limpa, não o bind). Testada ao contrário movendo o bloco
+  para depois do bind: reprova.
+- **Regra que fica**: `-ENODEV` no bind de um gadget de userspace
+  (`f_fs`, `u_serial` sobre `f_acm`, `f_fs` de MTP) quase sempre é **ordem**,
+  não configuração. O kernel precisa do descritor antes do bind.
+
+### 3.97 `install -d` sobre symlink pendente falha e o log mentiu
+
+`post-build.sh` faz `/etc/dropbear` → `/user/.ssh/dropbear`. Numa partição
+recém-formatada o **alvo** não existe, e `install -d` sobre um link pendente
+falha com `EEXIST` (o link existe; o diretório, não). A linha seguinte
+instalava a `authorized_keys` — falhava também — e o script registrava
+`authorized_keys instalada (1 chave(s))` **sem olhar o resultado**:
+
+```
+S62sshd: authorized_keys instalada (1 chave(s))
+S62sshd: Modo Desenvolvedor ativo, mas sem chave e sem senha: SSH nao sobe
+```
+
+Dois boots perdidos porque o log afirmava o contrário do que aconteceu.
+
+- Agora o alvo do symlink é resolvido (`readlink -f`) e criado; a escrita é
+  **testada** (`: > arquivo`), não presumida; e a instalação da chave só é
+  anunciada se o `install` devolver 0.
+- Guarda: `test_authkeys_dir_symlink_pendente_funciona`
+  (`tests/test_dev_mode_card.py`) monta um symlink cujo alvo não existe e cobra
+  a `authorized_keys` no alvo. Testada ao contrário: com `install -d` simples,
+  reprova.
+- **Regra que fica**: log que anuncia sucesso sem conferir a operação é pior
+  que log ausente — ele **desvia** a investigação. Foi o mesmo padrão do §3.90
+  (ferramenta que mostrava o lugar errado do log).
+
+### 3.98 `mass` funciona e o SSH cai junto — a rede USB fica sem serviço
+
+Primeiro boot com o Mass Storage **de verdade** (o `sde` do PC saiu de `0B`
+para `512M`). Nesse mesmo boot:
+
+```
+S50usb: modo USB: mass (origem: /user/settings.json)
+giochi-usb: gadget anexado em fcc00000.usb (modo efetivo: mass, rede=1, mtp=0)
+S55usbnet: Modo Desenvolvedor: usb0 = 10.55.0.2/24 (PC: 10.55.0.1/24)
+S62sshd: ERRO: /etc/dropbear nao e' gravavel (particao /user montada?)
+```
+
+O adendo 4.6.1 exige que a **rede USB esteja sempre presente**, e ela estava:
+`usb0` com IP. Mas o dropbear escuta em `10.55.0.2:22`, e as chaves dele moram
+em `/user/.ssh/dropbear` — a partição que o modo `mass` acabou de entregar ao
+PC. Resultado: interface UP, `ping` funciona, **nenhum serviço** para acessar.
+
+É o §3.93 outra vez, agora com as chaves em vez do `settings.json`, e a
+pergunta de fundo é a mesma: um modo de USB não pode derrubar o outro contrato.
+
+- `giochi_ssh_snapshot` copia `dropbear_*_host_key` e `authorized_keys` para
+  `/run/giochi/dropbear` **antes** do helper (no `S50usb`, lado a lado com o
+  espelho do `settings`).
+- `giochi_ssh_dir` devolve o diretório utilizável: primeiro o alvo do symlink
+  (criando-o — numa partição nova o diretório não existe, mas o pai está
+  gravável, e tratar "não existe" como "não serve" jogava para o volátil sem
+  necessidade), depois o espelho de `/run`.
+- `S62sshd` usa o mesmo resolvedor para as **duas** pastas: `KeysDir` (chaves
+  de host, `-r`) e `AuthKeysDir` (authorized_keys). Quando cai no espelho, o
+  log avisa `as chaves de host sao VOLATEIS: mudam a cada boot` — e o PC vai
+  reclamar no `known_hosts`, o que é honesto e visível.
+- Guarda: `test_modo_mass_com_user_fora_usa_espelho_volatil`
+  (`tests/test_dev_mode_card.py`). O `dropbearkey` falso **cria** o arquivo
+  (antes só registrava a chamada, e a asserção "a chave existe" passava em
+  qualquer caminho). Testada ao contrário: trocar `mkdir -p` por `[ -d ]`
+  reprova.
+- **Aberto**: chave de host volátil é o pior dos dois males, não o ideal. O
+  certo é reservar uma fatia fora de `/user` (ou aceitar `StrictHostKeyChecking`
+  documentado). Fica registrado; hoje funciona sem intervenção manual.
+
+### 3.99 `umtprd` usa `-conf`, não `-c` — e a saída ia para um arquivo que ninguém lê
+
+O `giochi-mtpd` chamava `"$BIN" -c "$CONF"`. O uMTP-Responder 1.8.1 não tem
+flag curta para configuração:
+
+```c
+/* dist/<id>/build/build/giochi-mtpd-umtprd-1.8.1/src/umtprd.c */
+#define PARAMETER_CONF "-conf"
+...
+else { PRINT_ERROR("Unknown command line option: %s", argv[1]); exit(1); }
+```
+
+Ele saía com 1 **antes de tocar no FunctionFS**. E o efeito em cascata é o que
+torna isso caro:
+
+```
+giochi-usb: aviso: umtprd nao iniciou; MTP nao respondera
+udc fcc00000.usb: failed to start giochi: -19
+UDC core: giochi: couldn't find an available UDC or it's busy
+```
+
+O `-19` era o §3.96 (FunctionFS sem descritores) e a linha do UDC apontava para
+uma causa inexistente. Dois boots foram gastos assim.
+
+- `-c` → `-conf`. O comentário no helper cita `PARAMETER_CONF` para o próximo
+  leitor não precisar repetir a caçada.
+- `log()` do `giochi-mtpd` passou a escrever **no stderr** também (§3.92): com
+  `/user` no PC, o cartão não é instrumento disponível.
+- Quando o daemon morre ao iniciar, as últimas linhas de `/run/giochi/umtprd.log`
+  vão para o log de boot com o prefixo `umtprd:`. Antes elas existiam e ninguém
+  as lia.
+- Guardas (`MtpdChamaOUmtprdComAFlagCerta`, suíte `primeiro-boot`): proíbe
+  `"$BIN" -c `, exige `-conf "$CONF"`, exige o `tail -n 3 "$LOG"` e o log em
+  stderr. Testada ao contrário: voltar para `-c` reprova.
+- **Regra que fica**: daemon cuja saída vai toda para um arquivo de log precisa
+  que a **falha** volte para o canal que o operador tem em mãos. E opção de
+  linha de comando de ferramenta de terceiro se confere **no fonte baixado**
+  (`DL_DIR`/`build/`), não na memória — `-c` e `-conf` parecem equivalentes.
+
+### 3.100 O `ep0` do FunctionFS é ARQUIVO, não char device
+
+O `giochi-mtpd` recusava iniciar:
+
+```
+giochi-usb: rede USB = ecm (console 10.55.0.2/24)
+giochi-mtpd: FunctionFS nao montado em /dev/ffs-mtp (gadget fora do modo MTP?)
+```
+
+…e **não havia erro de mount nenhum**. A mensagem mandava investigar o mount,
+o mount estava certo. O guarda é que estava errado:
+
+```c
+/* drivers/usb/gadget/function/f_fs.c */
+ctx->perms.mode = S_IFREG | 0600;      /* ffs_fs_init_fs_context() */
+/* e em ffs_sb_fill: ffs_sb_create_file(sb, "ep0", ffs, &ffs_ep0_operations) */
+```
+
+Os endpoints do functionfs são **arquivos regulares** cujas `file_operations`
+fazem o trabalho. Quem cria `/dev/<nome>` como char device é o **gadgetfs**,
+outro subsistema. `[ -c "$FFS_DIR/ep0" ]` nunca é verdadeiro.
+
+- `[ -c ... ]` → `[ -e ... ]` no `giochi-mtpd`, e o helper confere o `ep0`
+  depois do mount (`[ ! -e ]` → `MTP_FALHOU=ep0`).
+- Guardas (`MeuCuidadoComOEp0DoFunctionfs`, suíte `primeiro-boot`). Testada ao
+  contrário: voltar para `-c` reprova.
+- **Regra que fica**: antes de culpar um passo externo, confira **o tipo** do
+  que o guarda exige. `-c`/`-b`/`-p`/`-S` entram na cabeça por analogia com
+  `/dev` de driver de bloco, e functionfs/gadgetfs são o caso em que a
+  analogia erra.
+
+### 3.101 `/sys/module/<nome>` não existe para código embutido sem parâmetros
+
+A sonda que escrevi para responder "a função `f_fs` está no kernel?" olhava
+`/sys/module/usb_f_fs` e respondeu
+
+```
+S50usb: sonda: usb_f_fs AUSENTE em /sys/module (CONFIG_USB_F_FS=y?)
+```
+
+com o `f_fs` **compilado dentro** do kernel:
+
+```
+$ nm dist/x55/build/build/linux-6.12/vmlinux | grep -c ffs_alloc   -> 2
+$ grep CONFIG_USB_F_FS dist/x55/build/build/linux-6.12/.config     -> =y
+$ find ... -name 'usb_f_fs.ko'                                     -> (nada, é =y)
+```
+
+Uma sonda errada é pior que sonda nenhuma: ela manda investigar o `kconfig`,
+que estava correto, e o defeito real (§3.100) ficou mais uma rodada escondido.
+
+- A sonda passou a olhar `/sys/bus/usb-function/drivers/ffs` (o registro do
+  driver no barramento de funções USB), com `/sys/module/usb_f_fs` só como
+  alternativa para o caso de módulo.
+- Guarda: `test_sonda_nao_usa_sys_module`.
+- **Regra que fica**: `/sys/module/<nome>` só aparece para `=y` quando o
+  código declara parâmetros (`module_param`). Para "esta função está no
+  kernel?", use o barramento/driver que ela registra, ou meça o artefato
+  (`nm vmlinux`, `built-in.a`).
+
+### 3.102 `authorized_keys` em `/etc/dropbear` — o dropbear nunca leu esse arquivo
+
+Primeiro boot com tudo no ar: MTP (`mtp=1`), rede USB com `ping` em 0,47 ms e
+dropbear escutando. E mesmo assim:
+
+```
+$ ssh root@10.55.0.2
+root@10.55.0.2: Permission denied (publickey,password).
+```
+
+O dropbear procura a chave **no home do usuário**:
+
+```
+$ strings dist/x55/build/target/usr/sbin/dropbear | grep -i authorized
+/authorized_keys
+%s/.ssh/authorized_keys
+```
+
+`%s` vem do `getpwnam()`, e para root isso é `/root`. O `S62sshd` instalava em
+`/etc/dropbear/authorized_keys` (`/etc/dropbear` é symlink para `/user/.ssh`),
+registrava "authorized_keys instalada" — e o dropbear nem olhava para lá.
+Dois boots de `Permission denied` com o log afirmando sucesso.
+
+Complicação: `/root` está no SquashFS (somente leitura), então `mkdir
+/root/.ssh` em runtime falha.
+
+- O script resolve o home com `getpwnam` via `awk -F: '$1=="root"{print $6}'`
+  em `/etc/passwd`; se não for gravável, monta **tmpfs** sobre o home (o
+  `/root` da imagem está vazio, nada se perde) e avisa que as autorizadas
+  passam a ser voláteis. O caminho fica exatamente o que o dropbear espera.
+- A chave é copiada **de onde estiver**: `/user/ssh/authorized_keys` (padrão)
+  ou o espelho de `/run` (modo `mass`, §3.98).
+- O gate final ("sem chave e sem senha: SSH não sobe") passou a olhar
+  `$HomeRoot/.ssh/authorized_keys`, não o diretório antigo.
+- `HOME_ROOT` existe só para o teste não escrever no `/root` da máquina.
+- Guardas: `test_authorized_keys_vai_para_o_home_do_root` e as demais da suíte
+  `modo-dev-no-cartao` (12 testes). Testada ao contrário: voltar a instalar em
+  `$AuthDir` reprova **quatro** testes.
+- **Regra que fica**: "instalar no lugar que o programa espera" não se deduz
+  do nome do diretório. `strings` no binário da imagem é barato e respondeu em
+  segundos uma pergunta que custou dois ciclos de cartão.
+
+### 3.103 O BusyBox saiu sem `nc -U` — e é ele quem fala com o `control.sock`
+
+Com o SSH e o MTP funcionando, o `tools/giochi-ctl.py ctl PING` respondeu:
+
+```
+giochi-ctl: falha ao falar com o control.sock: ...
+sh: nc: not found
+```
+
+O console não tem Python; o único jeito de um script do PC falar com
+`/run/giochi/control.sock` é `printf ... | nc -U ...` **dentro** do console.
+O `giochi-ctl.py` documenta essa dependência desde que foi escrito, e o
+`busybox.fragment` **não mencionava `CONFIG_NC`** — o default do BusyBox
+1.36.1 é desligado:
+
+```
+dist/x55/build/build/busybox-1.36.1/.config
+# CONFIG_NC is not set
+```
+
+Mesma classe do §3.2 (símbolo que o kconfig descarta em silêncio), agora no
+BusyBox em vez do Buildroot.
+
+- `CONFIG_NC=y` + `CONFIG_NC_UNIX=y`. O segundo é o que habilita `-U`
+  (soquete de domínio Unix); só `CONFIG_NC` dá TCP/UDP e **não resolve**.
+- **Regra que fica**: ferramenta do PC que depende de um utilitário dentro do
+  console precisa de guarda no fragmento **e** de um teste que olhe o
+  `.config` do BusyBox. Documentar a dependência no help do script não a cria.
+
+### 3.104 NetworkManager desfaz o IP manual da interface USB
+
+`tools/giochi-ctl.py preparar` atribuía `10.55.0.1/24` com `ip addr add` e
+saía com sucesso. Na execução seguinte, `Connection timed out` — e o
+endereço **não estava mais na interface**:
+
+```
+$ nmcli device status
+enx0247696f6369  ethernet  conectando (obtendo configuração de IP)  Conexão cabeada 4
+```
+
+O NM vê uma ethernet sem DHCP (o console **não tem DHCP por projeto**,
+§4.6.1), fica em "obtendo configuração" e limpa o endereço manual. O sintoma
+é cruel: funciona uma vez, falha na seguinte, e parece intermitência do
+gadget.
+
+- `preparar` agora marca a interface como **não gerenciada**
+  (`nmcli device set <if> managed no`) **antes** de atribuir o IP, e espera
+  1,5 s para o NM soltar o device. Sem `nmcli` instalado, nada muda.
+- Guarda: `test_preparar_solta_a_interface_do_networkmanager`
+  (`tests/test_giochi_ctl.py`), que também exige a ordem (soltar antes de
+  atribuir). Testada ao contrário: remover o bloco reprova.
+- **Regra que fica**: interface de rede de bancada em desktop com NM precisa
+  sair do gerenciamento. Verificar "tem IP agora" uma vez não prova nada —
+  provar é medir **depois** de alguns segundos, ou depois de outro comando.
+
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):

@@ -61,19 +61,49 @@ giochi_other_disk() {
     return 1
 }
 
-# Particao C (/user): p4 do mesmo disco da raiz; fallback por LABEL.
+# No' de bloco da particao C (/user).
+#
+# NAO devolve PARTUUID: o f_mass_storage do kernel nao resolve esse formato e
+# recusa a midia em silencio, deixando o PC ver um disco de 0 setores. Medido
+# no serial da X55:
+#
+#   mass_storage.0/lun.0: unable to open backing file: PARTUUID=47494f43-04
+#   -> no PC: sde 0B (File-Stor Gadget anuncia a funcao, sem midia)
+#
+# A versao anterior montava "PARTUUID=47494f43-02" + "4" e entregava isso ao
+# gadget — o formato que o `mount` aceita (fstab usa LABEL=GIOCHI_USER), nao
+# o que o bloco aceita. Quem for montar continua usando o label do fstab.
 giochi_user_part() {
-    _root=$(giochi_root_part)
-    if [ -n "${_root:-}" ]; then
-        _disk=$(giochi_disk_of "$_root" | head -n1)
-        case "$_root" in
-            *p[0-9]*) echo "${_disk}p4" ;;
-            *)        echo "${_disk}4" ;;
-        esac
+    # 1. /user montado: /proc/mounts guarda o dispositivo ja' resolvido (o
+    #    fstab usa LABEL, mas o ponto de montagem conhece o no' de bloco).
+    _mnt=$(awk '$2 == "/user" { print $1; exit }' /proc/mounts 2>/dev/null)
+    if [ -n "${_mnt:-}" ] && [ -b "$_mnt" ]; then
+        echo "$_mnt"
         return 0
     fi
-    _label=/dev/disk/by-label/GIOCHI_USER
-    [ -e "$_label" ] && readlink -f "$_label"
+    # 2. root= como caminho de dispositivo: mesma numeracao de particao.
+    _root=$(giochi_root_part)
+    case "${_root:-}" in
+        /dev/*)
+            _disk=$(giochi_disk_of "$_root")
+            for _cand in "${_disk}p4" "${_disk}4"; do
+                if [ -b "$_cand" ]; then echo "$_cand"; return 0; fi
+            done ;;
+    esac
+    # 3. by-label: so' existe com udev, mas e' caminho curto quando existe.
+    if [ -L /dev/disk/by-label/GIOCHI_USER ]; then
+        _cand=$(readlink -f /dev/disk/by-label/GIOCHI_USER 2>/dev/null)
+        if [ -n "${_cand:-}" ] && [ -b "$_cand" ]; then echo "$_cand"; return 0; fi
+    fi
+    # 4. O layout A/B fixa p4 como particao de dados (genimage.cfg), entao o
+    #    glob e' honesto: cobre root=PARTUUID com /user desmontado, que e'
+    #    exatamente o caso do segundo USB_MODE MASS numa sessao.
+    for _cand in /dev/mmcblk*p4 /dev/sd?4; do
+        [ -b "$_cand" ] || continue
+        echo "$_cand"
+        return 0
+    done
+    return 1
 }
 
 # Slot inativo (A/B): raiz em p2 => p3; raiz em p3 => p2.
@@ -126,4 +156,111 @@ giochi_active_slot() {
         *p3) echo 3 ;;
         *)   sed -n 's/.*giochi\.slot=\([23]\).*/\1/p' /proc/cmdline 2>/dev/null ;;
     esac
+}
+
+# --- settings.json: espelho em /run -------------------------------------
+# O modo `mass` do gadget DESMONTA /user para entregar a particao ao PC
+# (dois donos do mesmo ext4 corrompem). A partir dai' /user/settings.json
+# nao existe mais, e quem decide o Modo Desenvolvedor e' justamente esse
+# arquivo — que roda DEPOIS do S50usb.
+#
+# Medido na X55 (imagem de 01/11), no serial:
+#
+#   [1.794] EXT4-fs (mmcblk1p4): mounted filesystem ... r/w
+#   [5.737] EXT4-fs (mmcblk1p4): unmounting filesystem ...
+#   [5.753] configfs-gadget.giochi gadget.0: HOST MAC 02:47:69:6f:63:69
+#
+# e o efeito no PC: `enx0247696f6369` em NO-CARRIER, sem 10.55.0.2 e sem
+# sshd — o S55usbnet nao achou settings nenhum e concluiu "desligado".
+# Ou seja: o modo de USB decidia lendo o arquivo que ele mesmo destruia.
+#
+# O espelho corta a dependencia de ordem: o dono do dado continua sendo
+# /user/settings.json (so' o Launcher escreve), e /run guarda o ultimo
+# estado conhecido, refeito por quem le o arquivo original antes de
+# qualquer coisa desmontar /user.
+GIOCHI_SETTINGS_CACHE=${GIOCHI_SETTINGS_CACHE:-$GIOCHI_RUN_DIR/settings.json}
+
+# Copia o settings do usuario para /run. Silencioso quando nao existe.
+giochi_settings_snapshot() {
+    _src=${1:-/user/settings.json}
+    [ -r "$_src" ] || return 1
+    giochi_ensure_run_dir
+    cp "$_src" "$GIOCHI_SETTINGS_CACHE" 2>/dev/null || return 1
+    chmod 600 "$GIOCHI_SETTINGS_CACHE" 2>/dev/null || true
+    return 0
+}
+
+# Caminho do settings a LER: o do usuario quando existe, senao o espelho.
+# Devolve 1 (sem imprimir nada) quando nao ha nenhum dos dois.
+giochi_settings_path() {
+    _pedido=${1:-/user/settings.json}
+    if [ -r "$_pedido" ]; then
+        echo "$_pedido"
+        return 0
+    fi
+    [ -r "$GIOCHI_SETTINGS_CACHE" ] || return 1
+    echo "$GIOCHI_SETTINGS_CACHE"
+}
+
+# --- chaves do dropbear: o MESMO problema do settings, um passo pior -------
+# Em modo `mass` a particao /user vai inteira para o PC. /etc/dropbear e' um
+# symlink para /user/.ssh/dropbear, entao TODAS as chaves (de host e
+# authorized_keys) ficam penduradas num alvo que nao esta' montado:
+#
+#   S50usb: modo USB: mass (origem: /user/settings.json)
+#   S62sshd: ERRO: /etc/dropbear nao e' gravavel (particao /user montada?)
+#
+# Ou seja: o adendo 4.6.1 diz "a rede USB esta' sempre presente", e ela esta'
+# (usb0 com 10.55.0.2/24, medido) — mas sem chave o dropbear nao sobe, e o PC
+# fica com interface UP e nenhum servico para acessar.
+#
+# O espelho em /run resolve a LEITURA. A geracao de chave de host, quando nao
+# ha nenhuma copia, acontece em /run tambem: as chaves passam a ser volateis
+# naquele boot (mudam a cada reinicio, o `known_hosts` do PC reclama), o que
+# e' honestamente melhor que "SSH nao sobe". O log diz qual dos dois casos.
+GIOCHI_SSH_CACHE=${GIOCHI_SSH_CACHE:-$GIOCHI_RUN_DIR/dropbear}
+
+# Copia o diretorio de chaves do usuario para /run. Silencioso quando nao
+# existe — quem chama decide o que fazer com o resultado.
+giochi_ssh_snapshot() {
+    _src=${1:-/user/.ssh/dropbear}
+    [ -d "$_src" ] || return 1
+    mkdir -p "$(dirname "$GIOCHI_SSH_CACHE")" 2>/dev/null || return 1
+    mkdir -p "$GIOCHI_SSH_CACHE" 2>/dev/null || return 1
+    # Cada arquivo por vez: `cp -r` de um diretorio que pode estar sendo
+    # desmontado deixa lixo pela metade e o erro e' engolido.
+    _ok=0
+    for _f in "$_src"/*; do
+        [ -f "$_f" ] || continue
+        cp "$_f" "$GIOCHI_SSH_CACHE/" 2>/dev/null && _ok=1
+    done
+    [ "$_ok" = "1" ]
+}
+
+# Diretorio de chaves a USAR. Devolve o do usuario quando gravavel; senao o
+# espelho de /run (criado se preciso). Devolve 1 quando nenhum serve.
+giochi_ssh_dir() {
+    _pedido=${1:-/etc/dropbear}
+    # Resolve o symlink: /etc/dropbear -> /user/.ssh/dropbear. `readlink -f`
+    # funciona mesmo com o alvo ausente, desde que o diretorio pai exista —
+    # e' exatamente o caso da particao recem-formatada.
+    _alvo=$_pedido
+    if [ -L "$_pedido" ]; then
+        _alvo=$(readlink -f "$_pedido" 2>/dev/null) || _alvo=
+        [ -n "${_alvo:-}" ] || _alvo=$_pedido
+    fi
+    # Criar o alvo e' a PRIMEIRA tentativa: numa particao nova o diretorio
+    # ainda nao existe, mas o pai (a particao) esta' montado e gravavel.
+    # Tratar "nao existe" como "nao serve" jogava o sistema para o espelho
+    # volátil sem precisar — e o teste de cartao recem-formatado pegou isso.
+    if mkdir -p "$_alvo" 2>/dev/null && [ -w "$_alvo" ]; then
+        echo "$_alvo"
+        return 0
+    fi
+    if mkdir -p "$GIOCHI_SSH_CACHE" 2>/dev/null && \
+       [ -w "$GIOCHI_SSH_CACHE" ]; then
+        echo "$GIOCHI_SSH_CACHE"
+        return 0
+    fi
+    return 1
 }

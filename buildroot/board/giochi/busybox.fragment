@@ -45,3 +45,16 @@ CONFIG_FEATURE_IP_ADDRESS=y
 CONFIG_FEATURE_IP_LINK=y
 CONFIG_MOUNTPOINT=y
 CONFIG_DROPBEAR=n
+# --- nc -U: o cliente do control.sock (docs/APP-SDK.md / giochi-ctl) ----
+# O console nao tem Python, e o unico jeito de um script do PC falar com
+# /run/giochi/control.sock (via `ssh ... "printf ... | nc -U ..."`) e' o nc
+# do BusyBox com soquetes Unix. O default do 1.36.1 e' DESLIGADO e nada no
+# fragmento pedia: o `tools/giochi-ctl.py` documentava a dependencia e o
+# binario nao existia na imagem. Medido no aparelho:
+#
+#   $ ssh root@10.55.0.2 'printf "PING\n" | nc -U /run/giochi/control.sock'
+#   sh: nc: not found
+#
+# NC_UNIX e' o que habilita -U (soquete de dominio Unix), nao so' TCP/UDP.
+CONFIG_NC=y
+CONFIG_NC_UNIX=y

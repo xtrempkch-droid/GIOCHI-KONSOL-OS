@@ -42,7 +42,16 @@ if [ -f /etc/giochi/usb-net.conf ]; then
     [ -n "${_net:-}" ] && NET_FUNCTION=$_net
 fi
 
-log() { logger -t "$TAG" -- "$*" 2>/dev/null || echo "$TAG: $*" >&2; }
+# Log em DOIS lugares de proposito: o syslog (que o S00bootlog grava no
+# cartao) e o stderr — e o rcS roda os scripts com `2>&1 | tee -a $bootlog`,
+# entao o stderr chega tambem no serial. Medido nesta sessao: quando o modo
+# `mass` desmonta /user, o unico instrumento que sobra e' o serial; um
+# "por que o USB nao subiu" que so' existe no cartao custa desligar o
+# aparelho e tirar o cartao a cada tentativa.
+log() {
+    logger -t "$TAG" -- "$*" 2>/dev/null || true
+    echo "$TAG: $*" >&2
+}
 
 case "$MODE" in
     mtp|mass|off) ;;
@@ -132,29 +141,77 @@ else
 fi
 
 # --- funcao de dados: MTP (ffs) ou Mass Storage --------------------------
+# A escolha entre MTP e Mass Storage tem de ficar no log COM O MOTIVO. Antes,
+# a queda para Mass Storage era uma linha solta ("kernel sem CONFIG_USB_F_FS")
+# que nao distinguia "o kernel nao tem F_FS" de "o configfs recusou" nem de
+# "o functionfs nao montou" — e o efeito no PC e' o mesmo em tres casos
+# diferentes (modo mass, /user desmontada, midia de 0 setores).
+#
+# QUEM QUEBROU O MTP (medido na X55, 01/11): nao era o kernel sem F_FS — o
+# .config tem USB_F_FS=y e USB_CONFIGFS_F_FS=y. Era CONFIG_USB_FUNCTIONFS=y,
+# o gadget LEGADO g_ffs: no boot ele chama ffs_single_dev() e marca o unico
+# dispositivo FunctionFS como reservado; a partir dai' _ffs_alloc_dev()
+# devolve -EBUSY em QUALQUER `mkdir functions/ffs.*`. Ver o fragmento de
+# kernel e AGENTS.md §3.94.
 MTP_OK=0
 if [ "$MODE" = "mtp" ]; then
     if mkdir -p "functions/ffs.$FFS_NAME" 2>/dev/null; then
-        ln -sf "functions/ffs.$FFS_NAME" configs/c.1/ 2>/dev/null
-        # FunctionFS precisa estar montado ANTES do bind no UDC.
         if [ "$DRY" = "1" ]; then
             MTP_OK=1
         else
             mkdir -p "$FFS_DIR"
-            if mount -t functionfs "$FFS_NAME" "$FFS_DIR" 2>/dev/null; then
-                MTP_OK=1
+            # Quando o mount FALHA o kernel diz por que; `2>/dev/null` era o
+            # que transformava "functionfs nao montou" numa linha sem causa.
+            if _erro=$(mount -t functionfs "$FFS_NAME" "$FFS_DIR" 2>&1); then
+                # Os ep* (e o ep0) so' aparecem depois do mount; conferir aqui
+                # evita passar adiante um MTP que o daemon nao vai conseguir
+                # abrir, e o log diz exatamente o que faltou.
+                if [ ! -e "$FFS_DIR/ep0" ]; then
+                    log "aviso: functionfs montou em $FFS_DIR mas sem ep0; segue so' com a rede"
+                    MTP_FALHOU=ep0
+                else
+                    MTP_OK=1
+                fi
             else
-                log "aviso: falha ao montar functionfs em $FFS_DIR"
+                log "aviso: functionfs nao montou em $FFS_DIR (${_erro:-sem mensagem}); segue so' com a rede"
+                MTP_FALHOU=mount
             fi
         fi
+        if [ "$MTP_OK" = "1" ]; then
+            ln -sf "functions/ffs.$FFS_NAME" configs/c.1/ 2>/dev/null
+        else
+            rmdir "functions/ffs.$FFS_NAME" 2>/dev/null
+        fi
     else
-        log "kernel sem CONFIG_USB_F_FS; caindo para mass storage"
-        MODE=mass
+        log "aviso: configfs recusou ffs.$FFS_NAME (CONFIG_USB_FUNCTIONFS=y reserva o FunctionFS?); segue so' com a rede"
+        MTP_FALHOU=configfs
+    fi
+    # NAO cair para Mass Storage automaticamente. O modo `mass` DESMONTA
+    # /user (necessario: dois donos do mesmo ext4 corrompem), e isso derruba
+    # junto as chaves do dropbear (/etc/dropbear -> /user/.ssh), a biblioteca
+    # e a musica. Medido: com a queda automatica, o boot terminava com
+    # `S62sshd: falha ao gerar chave ed25519` e `sem chave e sem senha`,
+    # mesmo com o Modo Desenvolvedor ligado e o usb0 com IP.
+    #
+    # Mass Storage e' ESCOLHA do usuario (menu do Launcher / USB_MODE MASS).
+    # Um fallback automatico no boot nunca deve trocar "nao tem MTP" por
+    # "perdeu a particao de dados".
+    if [ "${MTP_FALHOU:-}" != "" ]; then
+        MODO_SEM_DADOS=1
+        log "MTP indisponivel ($MTP_FALHOU): gadget so' com rede (Mass Storage exigiria desmontar /user)"
     fi
 fi
 
 if [ "$MODE" = "mass" ]; then
     user_part=$(giochi_user_part 2>/dev/null)
+    # Tem de ser um NO' DE BLOCO: o kernel recusa PARTUUID com "unable to
+    # open backing file" e o resultado no PC e' um disco de 0 setores, sem
+    # erro em lugar nenhum. Conferir o tipo aqui e' a diferenca entre "o
+    # cartao nao aparece" e "o cartao nao aparece por este motivo".
+    if [ -z "${user_part:-}" ] || [ ! -b "$user_part" ]; then
+        log "Mass Storage indisponivel: particao /user nao resolvida ('${user_part:-vazio}'); mantendo rede"
+        user_part=
+    fi
     if [ -n "${user_part:-}" ] && mkdir -p functions/mass_storage.0 2>/dev/null; then
         # Mass Storage exige a particao DESMONTADA enquanto conectado: o host
         # monta o sistema de arquivos dela, e dois donos do mesmo ext4
@@ -183,9 +240,42 @@ if [ "$MODE" = "mass" ]; then
         fi
         echo 0 > functions/mass_storage.0/stall
         echo 1 > functions/mass_storage.0/lun.0/removable
-        echo "$user_part" > functions/mass_storage.0/lun.0/file
-        ln -sf functions/mass_storage.0 configs/c.1/ || {
-            log "nao foi possivel vincular f_mass_storage"; exit 1; }
+        # O `echo > arquivo` do sysfs falha sem barulho quando o no' nao
+        # aceita o valor (particao ainda ocupada, caminho inexistente), e o
+        # resultado e' um disco de 0 setores anunciado ao PC — medido na X55:
+        # `lsusb` mostrava Mass Storage e `lsblk` mostrava `sde 0B`, sem uma
+        # linha de erro em lugar nenhum. Conferir aqui troca "o cartao nao
+        # aparece no PC" por "o cartao falhou por este motivo".
+        if ! echo "$user_part" > functions/mass_storage.0/lun.0/file 2>/dev/null; then
+            log "ERRO: nao foi possivel anexar $user_part ao Mass Storage"
+            MASS_FALHOU=1
+        elif [ "$(cat functions/mass_storage.0/lun.0/file 2>/dev/null)" != "$user_part" ]; then
+            log "ERRO: Mass Storage nao aceitou $user_part (leitura de volta vazia)"
+            MASS_FALHOU=1
+        fi
+        if [ "${MASS_FALHOU:-0}" = "1" ]; then
+            # Sem midia o PC ve um disco de 0 setores: melhor nao anunciar
+            # funcao nenhuma e ficar so' com a rede (que ja' esta ligada).
+            # configfs nao aceita rmdir de diretorio com subdiretorio: lun.0
+            # sai primeiro, senao o `rmdir` falha calado e a funcao fica.
+            rmdir functions/mass_storage.0/lun.0 2>/dev/null
+            rmdir functions/mass_storage.0 2>/dev/null
+            log "Mass Storage desativado; mantendo MTP/rede"
+            # Nada vai ser entregue ao PC: devolver /user agora, senao o
+            # desmonte feito acima deixa o sistema sem a particao de dados
+            # sem nenhum ganho.
+            if [ "${USUARIO_DESMONTADO:-0}" = "1" ]; then
+                if mount /user 2>/dev/null; then
+                    USUARIO_DESMONTADO=0
+                    log "/user remontada (Mass Storage falhou)"
+                else
+                    log "ERRO: /user continua desmontada; reinicie o aparelho"
+                fi
+            fi
+        else
+            ln -sf functions/mass_storage.0 configs/c.1/ || {
+                log "nao foi possivel vincular f_mass_storage"; exit 1; }
+        fi
     else
         log "sem particao /user para Mass Storage; mantendo apenas rede"
     fi
@@ -207,6 +297,36 @@ restaura_user() {
     fi
 }
 
+# --- responder MTP: OBRIGATORIAMENTE antes do bind no UDC -----------------
+# FunctionFS nao aceita bind sem descritores: `ffs_func_bind` chama
+# `ffs_do_functionfs_bind()`, que faz
+#
+#     ret = ffs_opts->dev->desc_ready ? 0 : -ENODEV;
+#
+# e `desc_ready` so' fica verdadeiro depois que o daemon do userspace
+# escreve os descritores no ep0. Subir o umtprd DEPOIS do `echo > UDC` da'
+# exatamente -19, e o log do kernel nao ajuda em nada:
+#
+#   udc fcc00000.usb: failed to start giochi: -19
+#   UDC core: giochi: couldn't find an available UDC or it's busy
+#   sh: write error: Resource busy
+#
+# (a ultima linha e' o nosso `echo`, e "busy" e' falso: o UDC estava livre).
+# Medido na X55 na primeira imagem com o ffs funcionando (01/11).
+if [ "$MODE" = "mtp" ] && [ "$MTP_OK" = "1" ] && [ "$DRY" != "1" ]; then
+    if [ -x "$MTPSVC" ]; then
+        if "$MTPSVC" start; then
+            MTPD_OK=1
+        else
+            log "aviso: umtprd nao iniciou; MTP nao respondera"
+            MTP_OK=0
+        fi
+    else
+        log "aviso: giochi-mtpd ausente; MTP nao respondera"
+        MTP_OK=0
+    fi
+fi
+
 # --- anexa ao controlador -------------------------------------------------
 udc=${GIOCHI_UDC:-$(ls /sys/class/udc 2>/dev/null | head -n1)}
 if [ -z "${udc:-}" ]; then
@@ -219,19 +339,16 @@ if [ "$DRY" = "1" ]; then
 else
     if ! echo "$udc" > UDC; then
         log "falha ao anexar ao UDC $udc"
+        # -19 aqui e' "o FunctionFS nao tem descritores" (ver acima); o daemon
+        # morreu entre o start e o bind, ou o ep0 nao aceitou o descritor.
+        if [ "$MODE" = "mtp" ] && [ "${MTPD_OK:-0}" = "1" ]; then
+            log "  causa provavel: o umtprd nao escreveu os descritores em $FFS_DIR/ep0 (ver /run/giochi/umtprd.log)"
+        fi
+        [ -x "$MTPSVC" ] && "$MTPSVC" stop >/dev/null 2>&1
         restaura_user
         exit 1
     fi
-    log "gadget anexado em $udc (modo $MODE, rede=$NET_OK, mtp=$MTP_OK)"
-fi
-
-# --- inicia o responder MTP (depois do bind) -----------------------------
-if [ "$MODE" = "mtp" ] && [ "$MTP_OK" = "1" ] && [ "$DRY" != "1" ]; then
-    if [ -x "$MTPSVC" ]; then
-        "$MTPSVC" start || log "aviso: umtprd nao iniciou"
-    else
-        log "aviso: giochi-mtpd ausente; MTP nao respondera"
-    fi
+    log "gadget anexado em $udc (modo efetivo: $([ "${MODO_SEM_DADOS:-0}" = "1" ] && echo rede || echo "$MODE"), rede=$NET_OK, mtp=$MTP_OK)"
 fi
 
 exit 0

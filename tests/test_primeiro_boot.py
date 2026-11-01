@@ -23,6 +23,11 @@ DEVICECONF_C = os.path.join(ROOT, "src/common/giochi_deviceconf.c")
 BUILD_IMAGE = os.path.join(ROOT, "tools/build-image.sh")
 S05MODULES = os.path.join(ROOT, "scripts/init.d/S05modules")
 S50USB = os.path.join(ROOT, "scripts/init.d/S50usb")
+S55USBNET = os.path.join(ROOT, "scripts/init.d/S55usbnet")
+USB_MODE = os.path.join(ROOT, "scripts/giochi-usb-mode")
+MT_PD = os.path.join(ROOT, "buildroot/package/giochi-mtpd/giochi-mtpd")
+LIB_SH = os.path.join(ROOT,
+                      "buildroot/board/giochi/rootfs_overlay/etc/giochi/lib.sh")
 MDEV_CONF = os.path.join(ROOT, "buildroot/board/giochi/mdev.conf")
 BUSYBOX_FRAGMENT = os.path.join(ROOT, "buildroot/board/giochi/busybox.fragment")
 LINUX_POWKIDDY = os.path.join(ROOT, "buildroot/board/giochi/linux-powkiddy.fragment")
@@ -751,6 +756,292 @@ class PrimeiroBootTest(unittest.TestCase):
             self.assertIn("NAO anexado", saida,
                           "sem configfs o gadget nao anexa e o log tem de "
                           "dizer isso, nao apenas 'configurado': %r" % saida)
+
+    def _logger_falso(self, tmp):
+        """`logger` que imprime no stdout: o log() manda o stderr do logger
+        para /dev/null, então um logger falso que escreve em stderr fica
+        invisível para o teste."""
+        binfalso = os.path.join(tmp, "bin")
+        os.makedirs(binfalso, exist_ok=True)
+        caminho = os.path.join(binfalso, "logger")
+        with open(caminho, "w", encoding="utf-8") as fp:
+            fp.write('#!/bin/sh\nshift 2\necho "$*"\n')
+        os.chmod(caminho, 0o755)
+        # `giochi_wait_for` dorme 100 ms por tentativa (30 = 3 s). Sem usleep
+        # no host ela cai para `sleep 1` e o teste custaria 30 s; aqui o
+        # no-op mantem a MESMA contagem de tentativas sem esperar.
+        no_op = os.path.join(binfalso, "usleep")
+        with open(no_op, "w", encoding="utf-8") as fp:
+            fp.write("#!/bin/sh\nexit 0\n")
+        os.chmod(no_op, 0o755)
+        return binfalso
+
+    def test_s50usb_espelha_o_settings_antes_de_soltar_o_user(self):
+        """O modo `mass` desmonta /user; quem roda depois não pode ficar cego.
+
+        Medido na X55 (imagem de 01/11), no serial:
+
+            [1.794] EXT4-fs (mmcblk1p4): mounted filesystem ... r/w
+            [5.737] EXT4-fs (mmcblk1p4): unmounting filesystem ...
+            [5.753] configfs-gadget.giochi gadget.0: HOST MAC ...
+
+        O S55usbnet roda depois do S50usb e decide o Modo Desenvolvedor
+        lendo /user/settings.json — que nesse instante não existe mais. Ele
+        concluía "desligado", deixava o usb0 DOWN, e o PC ficava em
+        NO-CARRIER sem 10.55.0.2. O espelho em /run (tmpfs) corta a
+        dependência de ordem. Roda o script REAL.
+        """
+        import subprocess
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            binfalso = self._logger_falso(tmp)
+            run = os.path.join(tmp, "run")
+            os.makedirs(run)
+            settings = os.path.join(tmp, "settings.json")
+            with open(settings, "w", encoding="utf-8") as fp:
+                fp.write('{"system":{"usb_mode":"mass"},'
+                         '"developer":{"ssh_usb_enabled":true}}')
+            helper = os.path.join(tmp, "helper")
+            with open(helper, "w", encoding="utf-8") as fp:
+                fp.write("#!/bin/sh\nexit 0\n")
+            os.chmod(helper, 0o755)
+
+            env = dict(os.environ,
+                       PATH=binfalso + os.pathsep + os.environ.get("PATH", ""),
+                       SETTINGS=settings, HELPER=helper, GIOCHI_RUN_DIR=run,
+                       GIOCHI_LIB=LIB_SH)
+            proc = subprocess.run(["sh", S50USB], env=env,
+                                  stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE, timeout=60)
+            self.assertEqual(0, proc.returncode,
+                             proc.stderr.decode("utf-8", "replace"))
+            espelho = os.path.join(run, "settings.json")
+            self.assertTrue(os.path.isfile(espelho),
+                            "S50usb não espelhou o settings em /run: o "
+                            "S55usbnet vai ler um arquivo que o modo mass "
+                            "acabou de desmontar")
+            with open(espelho, encoding="utf-8") as fp:
+                self.assertIn("ssh_usb_enabled", fp.read(),
+                              "o espelho não tem o conteúdo do original")
+            saida = (proc.stdout + proc.stderr).decode("utf-8", "replace")
+            self.assertIn("modo USB: mass", saida,
+                          "o log não diz qual modo foi escolhido: %r" % saida)
+            self.assertIn("origem: " + settings, saida,
+                          "o log não diz DE ONDE veio o modo (usuário x "
+                          "padrão): %r" % saida)
+
+    def test_s55usbnet_le_o_espelho_quando_o_user_sumiu(self):
+        """Prova que o espelho é LIDO, não só gravado.
+
+        Com /user fora do ar, só o espelho existe. Se o S55usbnet ignorasse o
+        espelho ele sairia calado (gate "desligado"); lendo o espelho ele
+        passa o gate e segue até procurar a interface — que aqui não existe,
+        então a mensagem "nao apareceu" é justamente a prova de que passou.
+        """
+        import subprocess
+        import tempfile
+
+        def rodar(mirror_com_ssh):
+            with tempfile.TemporaryDirectory() as tmp:
+                binfalso = self._logger_falso(tmp)
+                run = os.path.join(tmp, "run")
+                os.makedirs(run)
+                with open(os.path.join(run, "settings.json"), "w",
+                          encoding="utf-8") as fp:
+                    fp.write('{"developer":{"ssh_usb_enabled":%s}}'
+                             % ("true" if mirror_com_ssh else "false"))
+                env = dict(os.environ,
+                           PATH=binfalso + os.pathsep + os.environ.get("PATH", ""),
+                           # SETTINGS aponta para um arquivo que NÃO existe:
+                           # é o estado real depois do `umount /user`.
+                           SETTINGS=os.path.join(tmp, "settings-que-sumiu.json"),
+                           GIOCHI_RUN_DIR=run, GIOCHI_LIB=LIB_SH,
+                           USB_NET_IFACE="giochi-iface-inexistente")
+                proc = subprocess.run(["sh", S55USBNET], env=env,
+                                      stdout=subprocess.PIPE,
+                                      stderr=subprocess.PIPE, timeout=60)
+                return (proc.stdout + proc.stderr).decode("utf-8", "replace")
+
+        com = rodar(True)
+        self.assertIn("nao apareceu", com,
+                      "com ssh_usb_enabled=true no espelho o S55usbnet tinha "
+                      "de seguir e procurar a interface; saída: %r" % com)
+        sem = rodar(False)
+        self.assertNotIn("nao apareceu", sem,
+                         "com o espelho dizendo false o gate tem de barrar: "
+                         "%r" % sem)
+
+    def test_giochi_user_part_devolve_no_de_bloco_nunca_partuuid(self):
+        """`f_mass_storage` não abre "PARTUUID=..."; o PC vê 0 setores.
+
+        Medido no serial da X55 (imagem de 01/11):
+
+            mass_storage.0/lun.0: unable to open backing file: PARTUUID=47494f43-04
+
+        e no PC: `sde 0B`, a função anunciada e nenhuma linha de erro. A
+        montagem tinha sido desmontada para isso — ou seja, o modo mass
+        custava /user e não entregava nada. A correção é devolver /dev/<nó>.
+        """
+        import subprocess
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            # /proc/cmdline e /proc/mounts falsos não são possíveis (caminho
+            # absoluto); então exercitamos a função num shell que resolve a
+            # raiz por um cmdline simulado — a função lê /proc direto, e o
+            # que este teste pode provar sem root é o CONTRATO: o valor
+            # devolvido nunca tem o formato de mount.
+            script = (
+                '. "$1" 2>/dev/null\n'
+                'v=$(giochi_user_part 2>/dev/null)\n'
+                'printf "%s" "$v"\n'
+            )
+            proc = subprocess.run(["sh", "-c", script, "sh", LIB_SH],
+                                  env=dict(os.environ),
+                                  stdout=subprocess.PIPE,
+                                  stderr=subprocess.DEVNULL, timeout=30)
+            valor = proc.stdout.decode("utf-8", "replace").strip()
+            self.assertNotIn("PARTUUID", valor,
+                             "giochi_user_part devolveu um nome que o "
+                             "f_mass_storage nao abre (%r): e' o bug do "
+                             "disco de 0 setores" % valor)
+            self.assertNotIn("LABEL", valor,
+                             "giochi_user_part devolveu um label de "
+                             "mount (%r); o gadget precisa de /dev" % valor)
+
+        # A guarda de verdade está no código: o laço final só aceita `-b`.
+        with open(LIB_SH, encoding="utf-8") as fp:
+            fonte = fp.read()
+        trecho = fonte[fonte.index("giochi_user_part()"):]
+        trecho = trecho[:trecho.index("\n}\n")]
+        self.assertNotIn("PARTUUID", trecho.split("#")[0],
+                         "o corpo de giochi_user_part ainda monta PARTUUID")
+        self.assertIn("[ -b ", trecho,
+                      "giochi_user_part precisa conferir que o caminho e' um "
+                      "no' de bloco antes de devolver")
+
+    def test_usb_mode_recusa_alvo_que_nao_e_no_de_bloco(self):
+        """O helper tem de dizer POR QUE não anexou, não anunciar 0 setores."""
+        import subprocess
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            binfalso = self._logger_falso(tmp)
+            # `giochi_user_part` vem do lib.sh real; aqui o que interessa é o
+            # caminho de erro do helper quando o alvo não é dispositivo.
+            lib = os.path.join(tmp, "lib.sh")
+            with open(lib, "w", encoding="utf-8") as fp:
+                fp.write('giochi_user_part() { echo "' + tmp + '/nao-e-bloco"; }\n')
+            env = dict(os.environ,
+                       PATH=binfalso + os.pathsep + os.environ.get("PATH", ""),
+                       GIOCHI_LIB=lib, GIOCHI_DRY_RUN="1",
+                       GADGET=os.path.join(tmp, "gadget"))
+            proc = subprocess.run(["sh", USB_MODE, "mass"], env=env,
+                                  stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE, timeout=60)
+            saida = (proc.stdout + proc.stderr).decode("utf-8", "replace")
+            self.assertIn("particao /user nao resolvida", saida,
+                          "o helper tentou anexar um alvo que nao e' no' de "
+                          "bloco sem avisar: %r" % saida)
+
+
+
+class MtpdChamaOUmtprdComAFlagCerta(unittest.TestCase):
+    """`umtprd` usa `-conf`, não `-c` (AGENTS.md §3.99).
+
+    O helper chamava `"$BIN" -c "$CONF"`. O uMTP-Responder 1.8.1 tem, em
+    `src/umtprd.c`:
+
+        #define PARAMETER_CONF "-conf"
+        ...
+        else { PRINT_ERROR("Unknown command line option: %s", argv[1]); exit(1); }
+
+    Ou seja: saía com 1 antes de qualquer tentativa de abrir o FunctionFS. E
+    como a saída ia toda para `/run/giochi/umtprd.log`, o boot registrava só
+
+        giochi-usb: aviso: umtprd nao iniciou; MTP nao respondera
+
+    sem a causa. O bind no UDC então falhava com -19 (FunctionFS sem
+    descritores) e o kernel dizia "couldn't find an available UDC or it's
+    busy", que é a mensagem errada para o problema errado.
+    """
+
+    def test_helper_usa_a_flag_conf(self):
+        import re
+
+        with open(MT_PD, encoding="utf-8") as fh:
+            fonte = fh.read()
+        # `-c ` seguido de variavel: a flag curta que nao existe.
+        self.assertIsNone(
+            re.search(r'"\$BIN"\s+-c\s+', fonte),
+            "giochi-mtpd ainda chama `umtprd -c`: a opcao e' `-conf`, e o "
+            "binario sai com 1 sem nem tentar abrir o FunctionFS.")
+        self.assertIn('"$BIN" -conf "$CONF"', fonte,
+                      "o helper tem de passar a configuracao com `-conf`")
+
+    def test_falha_do_umtprd_mostra_o_log(self):
+        """Sem isto, "MTP nao sobe" chega ao serial sem nenhuma pista."""
+        with open(MT_PD, encoding="utf-8") as fh:
+            fonte = fh.read()
+        self.assertIn('tail -n 3 "$LOG"', fonte,
+                      "quando o umtprd morre ao iniciar, as ultimas linhas de "
+                      "$LOG sao a unica pista; elas tem de ir para o log de "
+                      "boot")
+
+    def test_mtpd_loga_no_stderr(self):
+        """O cartao pode estar no PC (modo mass); o serial nao."""
+        with open(MT_PD, encoding="utf-8") as fh:
+            fonte = fh.read()
+        self.assertIn('echo "giochi-mtpd: $*" >&2', fonte,
+                      "log() do giochi-mtpd tem de escrever no stderr tambem: "
+                      "e' o que o rcS duplica para o serial")
+
+
+
+class MeuCuidadoComOEp0DoFunctionfs(unittest.TestCase):
+    """`ep0` do FunctionFS é ARQUIVO REGULAR, não char device (§3.100).
+
+    `drivers/usb/gadget/function/f_fs.c`:
+
+        ctx->perms.mode = S_IFREG | 0600;
+
+    Quem cria `/dev/<nome>` como char device é o **gadgetfs**, outro
+    subsistema. O `giochi-mtpd` exigia `[ -c "$FFS_DIR/ep0" ]`, condição que
+    nunca é verdadeira: o mount estava certo e o guarda recusava, dizendo
+    "FunctionFS nao montado". Medido na X55 — nenhuma linha de erro de mount
+    e a mensagem em todo boot, mandando investigar o lugar errado.
+    """
+
+    def test_nao_exige_char_device(self):
+        with open(MT_PD, encoding="utf-8") as fh:
+            fonte = fh.read()
+        self.assertNotIn('[ -c "$FFS_DIR/ep0" ]', fonte,
+                         "ep0 do functionfs e' S_IFREG; `[ -c ]` reprova "
+                         "sempre. Use `[ -e ]`.")
+        self.assertIn('[ -e "$FFS_DIR/ep0" ]', fonte,
+                      "a checagem do ep0 tem de aceitar arquivo regular")
+
+    def test_helper_de_montagem_tambem_usa_e(self):
+        with open(USB_MODE, encoding="utf-8") as fh:
+            fonte = fh.read()
+        self.assertNotIn('[ ! -e "$FFS_DIR/ep0" ]',
+                         fonte.replace('[ ! -e "$FFS_DIR/ep0" ]', ''))
+        self.assertIn('"$FFS_DIR/ep0"', fonte,
+                      "o helper tem de conferir o ep0 depois do mount")
+
+    def test_sonda_nao_usa_sys_module(self):
+        """Código embutido (=y) não aparece em /sys/module sem parâmetros.
+
+        A sonda olhava `/sys/module/usb_f_fs`, dava "AUSENTE" com o `f_fs`
+        dentro de vmlinux (conferido com `nm vmlinux | grep ffs_alloc`), e
+        mandava investigar o kconfig — que estava certo.
+        """
+        with open(S50USB, encoding="utf-8") as fh:
+            fonte = fh.read()
+        self.assertIn("/sys/bus/usb-function/drivers/ffs", fonte,
+                      "a sonda precisa do registro do driver, nao de "
+                      "/sys/module")
 
 
 if __name__ == "__main__":

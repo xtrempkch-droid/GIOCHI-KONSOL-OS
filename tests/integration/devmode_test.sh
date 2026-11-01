@@ -122,7 +122,8 @@ EOF
     USB_NET_IFACE=usb0
     USB_SSH_BIND=10.55.0.2
     USB_SSH_PORT=22
-    export USB_SSH_AUTHKEYS USB_SSH_AUTHKEYS_DIR USB_SSH_KEYS USB_SSH_PIDFILE
+    HOME_ROOT="$T/root"
+    export USB_SSH_AUTHKEYS USB_SSH_AUTHKEYS_DIR USB_SSH_KEYS USB_SSH_PIDFILE HOME_ROOT
     export USB_NET_IFACE USB_SSH_BIND USB_SSH_PORT
 }
 
@@ -188,8 +189,8 @@ check "dropbear escuta SO em 10.55.0.2:22" \
     "$(grep -q '^dropbear .*-p 10.55.0.2:22' "$CALLS" && echo 1)"
 check "dropbear usa as chaves de host persistentes" \
     "$(grep -q -- '-r .*dropbear_ed25519_host_key' "$CALLS" && echo 1)"
-check "authorized_keys instalada para o dropbear" \
-    "$([ -s "$USB_SSH_AUTHKEYS_DIR/authorized_keys" ] && echo 1)"
+check "authorized_keys instalada onde o dropbear le (\$HOME/.ssh)" \
+    "$([ -s "$HOME_ROOT/.ssh/authorized_keys" ] && echo 1)"
 rm -rf "$T"
 
 # ---------------------------------------------------------------------

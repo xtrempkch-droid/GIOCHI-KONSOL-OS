@@ -32,6 +32,17 @@ for ultimo; do :; done
 exec sh -c "$ultimo"
 """
 
+# `ip` falso: a maquina de desenvolvimento TEM interface de gadget quando o
+# console esta' plugado (foi assim que este teste comecou a falhar — ele
+# assumia "nenhuma interface USB no host"). A deteccao continua sendo a real;
+# o que e' fixo e' o ambiente: sem nenhuma usb*/enp0s*/enx* na lista.
+IP_FALSO = """#!/bin/sh
+cat <<'FIM'
+lo               UNKNOWN        127.0.0.1/8
+wlp6s0           UP             192.168.1.4/24
+FIM
+"""
+
 
 class CtlTest(unittest.TestCase):
     @classmethod
@@ -50,6 +61,10 @@ class CtlTest(unittest.TestCase):
         cls.ssh = base / "bin" / "ssh"
         cls.ssh.write_text(SSH_FALSO)
         cls.ssh.chmod(0o755)
+
+        cls.ip = base / "bin" / "ip"
+        cls.ip.write_text(IP_FALSO)
+        cls.ip.chmod(0o755)
 
         profile = base / "profile.json"
         profile.write_text(
@@ -120,6 +135,29 @@ class CtlTest(unittest.TestCase):
         r = self.rodar("preparar", "--wait", "1")
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("interface USB", r.stderr)
+
+
+    def test_preparar_solta_a_interface_do_networkmanager(self):
+        """O NM apaga o IP manual: a rede USB fica intermitente.
+
+        Medido numa X55, com o gadget funcionando: `ping` respondendo numa
+        execucao e "Connection timed out" na seguinte, com `ip addr` mostrando
+        que o 10.55.0.1/24 tinha DESAPARECIDO. O NetworkManager via uma
+        ethernet sem DHCP (o console nao tem DHCP por projeto, §4.6.1), ficava
+        em "conectando (obtendo configuracao de IP)" e limpava o endereco.
+        """
+        import pathlib
+
+        fonte = pathlib.Path(CTL).read_text()
+        self.assertIn("nmcli", fonte,
+                      "preparar tem de saber do NetworkManager")
+        self.assertIn('"device", "set", iface, "managed", "no"', fonte,
+                      "e' isso que impede o NM de desfazer o IP")
+        # A chamada tem de acontecer ANTES de atribuir o endereco.
+        self.assertLess(fonte.index("nm_gerencia(iface)"),
+                        fonte.index('"addr", "add"'),
+                        "soltar o NM depois de atribuir o IP nao resolve: o "
+                        "NM ja' apagou")
 
     def test_comandos_lista_o_protocolo(self):
         r = self.rodar("comandos")

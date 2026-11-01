@@ -144,6 +144,25 @@ def iface_preferida() -> str | None:
     return candidatas[0] if candidatas else None
 
 
+def nm_gerencia(iface: str) -> bool:
+    """O NetworkManager esta' com esta interface?
+
+    Importa porque ele desfaz o IP manual: a interface e' ethernet, o console
+    nao tem DHCP e o NM fica em "conectando" apagando o endereco. Sem
+    `nmcli` (ou sem NM) devolve False e nada muda.
+    """
+    if not shutil.which("nmcli"):
+        return False
+    r = roda(["nmcli", "-t", "-f", "DEVICE,STATE", "device", "status"])
+    if r.returncode != 0:
+        return False
+    for linha in (r.stdout or "").splitlines():
+        partes = linha.split(":")
+        if len(partes) >= 2 and partes[0] == iface:
+            return partes[1] not in ("unmanaged", "unavailable")
+    return False
+
+
 def tem_pc_ip(iface: str) -> bool:
     saida = roda(["ip", "-br", "addr", "show", iface]).stdout
     return PC_IP in saida
@@ -158,6 +177,23 @@ def cmd_preparar(args) -> int:
         return 2
 
     log(f"interface do PC: {iface}")
+
+    # Num desktop com NetworkManager o `ip addr add` e' DESFEITO: o NM ve
+    # uma interface ethernet sem DHCP, entra em "obtendo configuracao de IP"
+    # e limpa o endereco manual alguns segundos depois. O console nao tem
+    # DHCP por projeto (§4.6.1), entao o NM nunca vai conseguir nada ali.
+    # Medido numa X55: ping funcionando numa execucao e "Connection timed
+    # out" na seguinte, com o IP desaparecido da interface.
+    if nm_gerencia(iface):
+        log(f"{iface} esta' sob NetworkManager; marcando como nao gerenciada")
+        r = privilegiado(["nmcli", "device", "set", iface, "managed", "no"])
+        if r.returncode != 0:
+            erro(f"nao consegui marcar {iface} como nao gerenciada: "
+                 f"{(r.stderr or '').strip()}")
+            erro("  rode: sudo nmcli device set %s managed no" % iface)
+        else:
+            # O NM demora um instante para soltar o device.
+            time.sleep(1.5)
 
     if not tem_pc_ip(iface):
         log(f"atribuindo {PC_IP}/24 em {iface} (precisa de root)")

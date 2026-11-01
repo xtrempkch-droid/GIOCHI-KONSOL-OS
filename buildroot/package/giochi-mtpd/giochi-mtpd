@@ -18,7 +18,13 @@ FFS_DIR=${FFS_DIR:-/dev/ffs-mtp}
 BIN=${MTPD_BIN:-/usr/sbin/umtprd}
 LOG=${MTPD_LOG:-/run/giochi/umtprd.log}
 
-log() { logger -t giochi-mtpd -- "$*" 2>/dev/null || echo "giochi-mtpd: $*" >&2; }
+# Log no syslog E no stderr: o rcS roda os scripts com `2>&1 | tee -a $bootlog`,
+# entao o stderr chega ao serial e ao cartao. Quando o /user esta' fora (modo
+# `mass`) o cartao fica no PC e o SERIAL e' o unico instrumento que sobra.
+log() {
+    logger -t giochi-mtpd -- "$*" 2>/dev/null || true
+    echo "giochi-mtpd: $*" >&2
+}
 
 running_pid() {
     [ -f "$PIDFILE" ] || return 1
@@ -35,13 +41,29 @@ do_start() {
     fi
 
     [ -x "$BIN" ] || { log "binario ausente: $BIN"; return 1; }
-    [ -c "$FFS_DIR/ep0" ] || {
+    # O ep0 do FunctionFS e' um ARQUIVO REGULAR, nao um char device:
+    #
+    #   drivers/usb/gadget/function/f_fs.c : ffs_fs_init_fs_context()
+    #       ctx->perms.mode = S_IFREG | 0600;
+    #
+    # (os endpoints do functionfs sao arquivos cujas file_operations fazem o
+    # trabalho; quem cria /dev/<nome> e' o gadgetfs, outro subsistema). A
+    # versao anterior exigia `[ -c ... ]` e portanto NUNCA passava — o mount
+    # estava certo e o guarda recusava, com a mensagem "FunctionFS nao
+    # montado", que mandava investigar o mount. Medido na X55: nenhuma linha
+    # de erro de mount e mesmo assim esta mensagem, em todo boot.
+    [ -e "$FFS_DIR/ep0" ] || {
         log "FunctionFS nao montado em $FFS_DIR (gadget fora do modo MTP?)"
         return 1
     }
 
     mkdir -p "$(dirname "$PIDFILE")" 2>/dev/null || true
-    "$BIN" -c "$CONF" >>"$LOG" 2>&1 &
+    # A opcao de configuracao do uMTP-Responder e' `-conf <arquivo>`, NAO
+    # `-c` (`src/umtprd.c`: PARAMETER_CONF "-conf"). Com `-c` ele imprime
+    # "Unknown command line option: -c" e sai com 1 — e como a saida ia
+    # toda para $LOG, o boot registrava apenas "umtprd nao iniciou", sem
+    # causa. Dois boots perdidos por causa de uma letra.
+    "$BIN" -conf "$CONF" >>"$LOG" 2>&1 &
     pid=$!
     echo "$pid" > "$PIDFILE"
 
@@ -50,6 +72,12 @@ do_start() {
     while [ "$i" -lt 20 ]; do
         kill -0 "$pid" 2>/dev/null || {
             log "umtprd terminou ao iniciar (ver $LOG)"
+            # As ultimas linhas do log do daemon sao a unica pista quando ele
+            # morre antes de abrir o ep0. Mostrar aqui evita "o MTP nao sobe"
+            # sem motivo no serial.
+            [ -r "$LOG" ] && tail -n 3 "$LOG" 2>/dev/null | while IFS= read -r _l; do
+                log "  umtprd: $_l"
+            done
             rm -f "$PIDFILE"
             return 1
         }

@@ -27,16 +27,35 @@ AuthKeysDir=${USB_SSH_AUTHKEYS_DIR:-/etc/dropbear}
 
 # POSIX: '.' que falha ABORTA shells nao-interativos (o '|| true' nao
 # protege). Sem o lib.sh o script segue com os defaults propria.
-if [ -r /etc/giochi/lib.sh ]; then
-    . /etc/giochi/lib.sh
+# GIOCHI_LIB permite apontar para outra copia (teste de host roda o script
+# real sem /etc/giochi). No aparelho o caminho e' sempre o padrao.
+GIOCHI_LIB=${GIOCHI_LIB:-/etc/giochi/lib.sh}
+if [ -r "$GIOCHI_LIB" ]; then
+    . "$GIOCHI_LIB"
 fi
 
-log() { logger -t "$TAG" -- "$*" 2>/dev/null || echo "$TAG: $*" >&2; }
+# Log em DOIS lugares de proposito: o syslog (que o S00bootlog grava no
+# cartao) e o stderr — e o rcS roda os scripts com `2>&1 | tee -a $bootlog`,
+# entao o stderr chega tambem no serial. Medido nesta sessao: quando o modo
+# `mass` desmonta /user, o unico instrumento que sobra e' o serial; um
+# "por que o USB nao subiu" que so' existe no cartao custa desligar o
+# aparelho e tirar o cartao a cada tentativa.
+log() {
+    logger -t "$TAG" -- "$*" 2>/dev/null || true
+    echo "$TAG: $*" >&2
+}
 
 [ -f /etc/giochi/usb_gadget_disabled ] && exit 0
 
+# Mesmo motivo do S55usbnet: com o modo `mass` do gadget /user sai do ar e
+# o settings some. Ler o espelho de /run mantem a decisao (AGENTS.md §3.91).
+# Sem o lib.sh (teste de host, imagem incompleta) vale o caminho pedido.
+if command -v giochi_settings_path >/dev/null 2>&1; then
+    Settings=$(giochi_settings_path "$Settings" 2>/dev/null) || Settings=${SETTINGS:-/user/settings.json}
+fi
+
 dev_enabled=0
-if [ -f "$Settings" ]; then
+if [ -n "${Settings:-}" ] && [ -f "$Settings" ]; then
     if command -v jq >/dev/null 2>&1; then
         [ "$(jq -r '.developer.ssh_usb_enabled // false' "$Settings" 2>/dev/null)" = "true" ] && dev_enabled=1
     else
@@ -71,6 +90,64 @@ giochi_wait_for "/sys/class/net/$Iface" 30 2>/dev/null || {
 mkdir -p "$KeysDir" "$(dirname "$AuthKeys")" 2>/dev/null || true
 chmod 700 "$KeysDir" 2>/dev/null || true
 
+# /etc/dropbear e' um SYMLINK para /user/.ssh/dropbear (post-build.sh), e o
+# alvo nao existe numa particao recem-formatada. `install -d` sobre um link
+# pendente falha com EEXIST (o link existe; o diretorio, nao) — e a versao
+# anterior imprimia "authorized_keys instalada" mesmo assim, porque nao
+# olhava o resultado. Medido na X55 (01/11): a linha da instalacao aparecia
+# e, tres linhas depois, "sem chave e sem senha: SSH nao sobe".
+# Resolver o link e criar o ALVO e' o que faz o resto funcionar.
+#
+# E quando o alvo NAO PODE existir? Em modo `mass` a particao /user esta' no
+# PC: `/etc/dropbear` -> `/user/.ssh/dropbear` fica pendurado para sempre, e
+# nao ha' o que criar. Antes isso virava "SSH nao sobe" — com a rede USB no
+# ar e o usuario sem nenhuma pista. Agora cai para o espelho de /run
+# (giochi_ssh_dir), e o log diz que as chaves sao VOLATEIS naquele boot.
+# Dois diretorios com o mesmo problema, resolvidos pela mesma funcao:
+#   KeysDir    -> chaves de HOST (usadas com `-r` na linha do dropbear)
+#   AuthKeysDir-> authorized_keys (e' o alvo do symlink /etc/dropbear)
+_resolver() {
+    _pedido=$1
+    if command -v giochi_ssh_dir >/dev/null 2>&1; then
+        _r=$(giochi_ssh_dir "$_pedido" 2>/dev/null) || _r=
+        if [ -n "${_r:-}" ]; then printf '%s' "$_r"; return 0; fi
+        return 1
+    fi
+    # Sem o lib.sh (teste de host): resolve o symlink e cria o alvo, que era
+    # o comportamento antes do espelho existir.
+    _alvo=$_pedido
+    if [ -L "$_pedido" ]; then
+        _alvo=$(readlink -f "$_pedido" 2>/dev/null) || _alvo=
+        [ -n "${_alvo:-}" ] || _alvo=$_pedido
+    fi
+    mkdir -p "$_alvo" 2>/dev/null || return 1
+    printf '%s' "$_alvo"
+}
+
+AuthDir=$AuthKeysDir
+if command -v giochi_ssh_dir >/dev/null 2>&1; then
+    AuthDir=$(_resolver "$AuthKeysDir") || AuthDir=
+    KeysDir=$(_resolver "$KeysDir") || KeysDir=
+fi
+if [ -z "${AuthDir:-}" ] || [ -z "${KeysDir:-}" ]; then
+    log "ERRO: sem diretorio gravavel para as chaves (particao /user montada?)"
+    log "  sem as chaves de host o dropbear nao sobe"
+    exit 1
+fi
+if [ "$AuthDir" = "${GIOCHI_SSH_CACHE:-/run/giochi/dropbear}" ]; then
+    log "aviso: $AuthKeysDir inacessivel (particao /user fora); usando $AuthDir"
+    log "  as chaves de host sao VOLATEIS: mudam a cada boot"
+fi
+for _d in "$AuthDir" "$KeysDir"; do
+    if ! ( mkdir -p "$_d" && : > "$_d/.giochi-escrita" ) 2>/dev/null; then
+        log "ERRO: $_d nao e' gravavel (particao /user montada? 'mount | grep /user')"
+        log "  sem as chaves de host o dropbear nao sobe"
+        exit 1
+    fi
+    rm -f "$_d/.giochi-escrita" 2>/dev/null || true
+    chmod 700 "$_d" 2>/dev/null || true
+done
+
 # Chaves de host: geradas na primeira vez (particao rw, persistem).
 for key in ed25519 rsa; do
     [ -f "$KeysDir/dropbear_${key}_host_key" ] || \
@@ -78,11 +155,46 @@ for key in ed25519 rsa; do
             >/dev/null 2>&1 || log "aviso: falha ao gerar chave $key"
 done
 
-# authorized_keys para onde o dropbear le.
-if [ -f "$AuthKeys" ]; then
-    install -d -m 0700 "$AuthKeysDir" 2>/dev/null || true
-    install -m 0600 "$AuthKeys" "$AuthKeysDir/authorized_keys" 2>/dev/null
-    log "authorized_keys instalada ($(wc -l <"$AuthKeys") chave(s))"
+# --- authorized_keys: onde o DROPBEAR le', nao onde e' conveniente --------
+# O dropbear procura `<home do usuario>/.ssh/authorized_keys` (conferido no
+# proprio binario: as strings sao "/.ssh" e "/authorized_keys", formatadas
+# com "%s/.ssh/authorized_keys"; `getpwnam()` da' o home). Para root isso e'
+# /root/.ssh/authorized_keys.
+#
+# Instalar em /etc/dropbear/authorized_keys — que era o que este script
+# fazia — NUNCA autenticou ninguem: o arquivo ficava la', correto, e o
+# dropbear nem olhava. Medido na X55: `ping` ok, dropbear escutando em
+# 10.55.0.2:22, chave instalada e "Permission denied (publickey,password)".
+#
+# E /root esta' no SquashFS (somente leitura), entao nao da' para criar
+# /root/.ssh em runtime. Duas saidas, e a escolhida e' a primeira:
+#   1. montar tmpfs sobre /root (o /root da imagem esta' vazio; nada se
+#      perde e o caminho fica exatamente o que o dropbear espera);
+#   2. mudar o home do root no /etc/passwd — mas /etc tambem e' somente
+#      leitura, e isso mudaria o comportamento de todo programa.
+# HOME_ROOT permite que o teste rode sem escrever no /root da maquina.
+HomeRoot=${HOME_ROOT:-$(awk -F: '$1 == "root" { print $6; exit }' /etc/passwd 2>/dev/null)}
+: "${HomeRoot:=/root}"
+if ! ( mkdir -p "$HomeRoot/.ssh" && : > "$HomeRoot/.ssh/.giochi" ) 2>/dev/null; then
+    if mount -t tmpfs -o "mode=0700,size=1M" tmpfs "$HomeRoot" 2>/dev/null; then
+        log "aviso: $HomeRoot era somente leitura; montado tmpfs (autorizadas volateis)"
+        mkdir -p "$HomeRoot/.ssh" 2>/dev/null || true
+    fi
+fi
+rm -f "$HomeRoot/.ssh/.giochi" 2>/dev/null || true
+
+# Fonte da chave: a do usuario quando /user esta' montada; senao o espelho
+# de /run (modo `mass`, onde /user foi para o PC).
+Origem=$AuthKeys
+[ -f "$Origem" ] || Origem=$AuthDir/authorized_keys
+if [ -f "$Origem" ]; then
+    if install -m 0600 "$Origem" "$HomeRoot/.ssh/authorized_keys" 2>/dev/null; then
+        log "authorized_keys instalada em $HomeRoot/.ssh (de $Origem, $(wc -l <"$Origem") chave(s))"
+    else
+        log "ERRO: falha ao instalar $Origem em $HomeRoot/.ssh/authorized_keys"
+    fi
+else
+    log "aviso: nenhuma authorized_keys encontrada ($AuthKeys nem $AuthDir)"
 fi
 
 # Senha de root: aplicada se o arquivo existir (imagem de desenvolvimento).
@@ -95,9 +207,10 @@ if [ -f /etc/giochi/root_password ]; then
 fi
 : "${password_ok:=0}"
 
-if [ ! -s "$AuthKeysDir/authorized_keys" ] && [ "$password_ok" != "1" ]; then
+if [ ! -s "$HomeRoot/.ssh/authorized_keys" ] && [ "$password_ok" != "1" ]; then
     log "Modo Desenvolvedor ativo, mas sem chave e sem senha: SSH nao sobe"
-    log "  chave: /user/ssh/authorized_keys | senha: /etc/giochi/root_password"
+    log "  chave: $AuthKeys (instalada em $HomeRoot/.ssh/authorized_keys)"
+    log "  senha: /etc/giochi/root_password"
     exit 0
 fi
 

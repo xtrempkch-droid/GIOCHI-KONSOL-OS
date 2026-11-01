@@ -18,22 +18,44 @@ SETTINGS=${SETTINGS:-/user/settings.json}
 
 # POSIX: '.' que falha ABORTA shells nao-interativos (o '|| true' nao
 # protege). Sem o lib.sh o script segue com os defaults propria.
-if [ -r /etc/giochi/lib.sh ]; then
-    . /etc/giochi/lib.sh
+# GIOCHI_LIB permite apontar para outra copia (teste de host roda o script
+# real sem /etc/giochi). No aparelho o caminho e' sempre o padrao.
+GIOCHI_LIB=${GIOCHI_LIB:-/etc/giochi/lib.sh}
+if [ -r "$GIOCHI_LIB" ]; then
+    . "$GIOCHI_LIB"
 fi
 
-log() { logger -t "$TAG" -- "$*" 2>/dev/null || echo "$TAG: $*" >&2; }
+# Log em DOIS lugares de proposito: o syslog (que o S00bootlog grava no
+# cartao) e o stderr — e o rcS roda os scripts com `2>&1 | tee -a $bootlog`,
+# entao o stderr chega tambem no serial. Medido nesta sessao: quando o modo
+# `mass` desmonta /user, o unico instrumento que sobra e' o serial; um
+# "por que o USB nao subiu" que so' existe no cartao custa desligar o
+# aparelho e tirar o cartao a cada tentativa.
+log() {
+    logger -t "$TAG" -- "$*" 2>/dev/null || true
+    echo "$TAG: $*" >&2
+}
 
 [ -f /etc/giochi/usb_gadget_disabled ] && exit 0
 
 # --- gate do Modo Desenvolvedor (adendo 4.6.1) --------------------------
+# O settings pode ter saido do ar: o modo `mass` do S50usb desmonta /user
+# para entregar a particao ao PC. Ler o espelho de /run mantem a decisao
+# do Modo Desenvolvedor valida nesse caso (AGENTS.md §3.91).
+# Sem o lib.sh (teste de host, imagem incompleta) vale o caminho pedido:
+# "funcao ausente" nunca pode virar "desenvolvedor desligado".
+Settings=$SETTINGS
+if command -v giochi_settings_path >/dev/null 2>&1; then
+    Settings=$(giochi_settings_path "$SETTINGS" 2>/dev/null) || Settings=$SETTINGS
+fi
+
 dev_enabled=0
-if [ -f "$SETTINGS" ]; then
+if [ -n "${Settings:-}" ] && [ -f "$Settings" ]; then
     if command -v jq >/dev/null 2>&1; then
-        [ "$(jq -r '.developer.ssh_usb_enabled // false' "$SETTINGS" 2>/dev/null)" = "true" ] && dev_enabled=1
+        [ "$(jq -r '.developer.ssh_usb_enabled // false' "$Settings" 2>/dev/null)" = "true" ] && dev_enabled=1
     else
         sed -n 's/.*"ssh_usb_enabled"[[:space:]]*:[[:space:]]*true.*/1/p' \
-            "$SETTINGS" 2>/dev/null | grep -q 1 && dev_enabled=1
+            "$Settings" 2>/dev/null | grep -q 1 && dev_enabled=1
     fi
 fi
 
