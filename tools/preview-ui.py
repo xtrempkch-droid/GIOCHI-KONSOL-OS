@@ -348,7 +348,66 @@ def main() -> int:
         elif geo["tab_id"] == "home":
             linhas = [textos["home_tip1"], textos["home_tip2"]]
         elif geo["tab_id"] == "music":
-            linhas = [textos["music_empty"], ""]
+            # A LISTA: os numeros (row_h, rows, first, contagem, tempos) vem do
+            # dump-geometry, que os calcula com music_list_layout — o mesmo
+            # modulo do aparelho. O preview nao recalcula rolagem nem altura de
+            # linha; so' posiciona com o que recebeu.
+            musica = geo.get("music") or {}
+            faixas = musica.get("tracks") or []
+            if not faixas:
+                linhas = [textos["music_empty"], ""]
+            else:
+                base += atlas.face(tok["font_body"])["line_height"] + tok["gap"] // 2
+                contagem = musica.get("count") or ""
+                if contagem:
+                    largura = atlas.measure(contagem, tok["font_body"])
+                    atlas.draw_now(draw, contagem,
+                                   width - tok["margin"] - largura,
+                                   base, tok["font_body"],
+                                   theme["text_secondary"])
+                estado = textos.get("music_playing", "tocando")
+                if musica.get("time"):
+                    estado = f"{estado}  {musica['time']}"
+                atlas.draw_now(draw, estado, x0, base, tok["font_body"],
+                               theme["text_secondary"], tw)
+                base += atlas.face(tok["font_body"])["line_height"] + tok["gap"] // 2
+
+                row_h = musica["row_h"]
+                primeira = musica["first"]
+                atual = musica["current"]
+                visiveis = min(musica["rows"], len(faixas) - primeira)
+                for i in range(visiveis):
+                    idx = primeira + i
+                    faixa = faixas[idx]
+                    y = base + i * row_h
+                    if idx == atual:
+                        fill = theme["surface"]
+                        draw.rounded_rectangle(
+                            [tok["margin"], y, width - tok["margin"],
+                             y + row_h], radius=tok["corner"], fill=fill)
+                        draw.rectangle(
+                            [tok["margin"], y + tok["gap"] // 2,
+                             tok["margin"] + tok["accent"] - 1,
+                             y + row_h - tok["gap"] // 2], fill=theme["accent"])
+                    linha_base = (y + (row_h + atlas.face(tok["font_body"])["ascent"]) // 2
+                                  - tok["font_body"] // 8)
+                    dur = faixa.get("dur") or ""
+                    dur_w = atlas.measure(dur, tok["font_body"]) + tok["margin"] if dur else 0
+                    rotulo = faixa["title"]
+                    if faixa.get("artist") and faixa["artist"] != "Desconhecido":
+                        rotulo += "  -  " + faixa["artist"]
+                    cor = theme["text_primary"] if idx == atual else theme["text_secondary"]
+                    peso_faixa = "bold" if idx == atual else "regular"
+                    atlas.draw_now(draw, rotulo, tok["margin"] + tok["accent"] + tok["margin"] // 2,
+                                   linha_base, tok["font_body"], cor,
+                                   width - 2 * tok["margin"] - dur_w,
+                                   peso_faixa)
+                    if dur_w:
+                        atlas.draw_now(draw, dur,
+                                       width - tok["margin"] - dur_w + tok["margin"],
+                                       linha_base, tok["font_body"],
+                                       theme["text_secondary"])
+                linhas = []
         elif geo["tab_id"] == "store":
             linhas = [textos["store_missing"], ""]
         else:

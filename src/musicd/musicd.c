@@ -294,6 +294,10 @@ static void app_status(appender *a, const giochi_player *p)
     app_json_string(a, status_name(p));
     app_raw(a, ",\"track\":");
     app_json_string(a, current_title(p));
+    /* `index` e' o que o Launcher usa para marcar a faixa atual na lista. Sem
+     * ele so' havia o titulo, e casar por titulo erra quando duas faixas tem o
+     * mesmo nome ("01 A Quadrilha" duas vezes) — a lista destacaria a errada. */
+    app_fmt(a, ",\"index\":%zu,\"count\":%zu", p->current, p->count);
     app_fmt(a, ",\"pos\":%u,\"dur\":%u,\"decoder_available\":%s,\"queue\":[",
             p->pos_s, current_duration(p),
             p->decoder_ready ? "true" : "false");

@@ -62,5 +62,9 @@
   "error.reason": "Motivo",
   "error.where": "Diagnóstico completo na partição GIOCHI_BOOT, arquivo giochi-boot.log — procure as linhas 'sonda:' e 'render:'.",
   "hint.keyboard": "navegar",
-  "settings.theme": "Tema"
+  "settings.theme": "Tema",
+  "music.empty.hint": "Copie pelo cabo USB ou pelo cartão; a lista se atualiza ao abrir esta aba.",
+  "music.paused": "pausado",
+  "music.unavailable": "Serviço de música sem resposta",
+  "music.no_decoder": "sem decodificador de áudio nesta imagem"
 }

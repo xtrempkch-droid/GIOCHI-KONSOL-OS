@@ -205,6 +205,7 @@ LAUNCHER_SRC := \
 	apps/launcher/font.cpp \
 	apps/launcher/i18n.cpp \
 	apps/launcher/status.cpp \
+	apps/launcher/music.cpp \
 	apps/launcher/render.cpp \
 	apps/launcher/render_null.cpp
 
@@ -249,7 +250,8 @@ TESTS_CXX := \
 	tests/test_deviceconf.cpp \
 	tests/test_ui_geometry.cpp \
 	tests/test_i18n.cpp \
-	tests/test_status.cpp
+	tests/test_status.cpp \
+	tests/test_music_ui.cpp
 
 TEST_BINS := $(patsubst tests/%.c,$(BIN)/%,$(TESTS_C)) \
              $(patsubst tests/%.cpp,$(BIN)/%,$(TESTS_CXX))
@@ -395,13 +397,17 @@ $(BIN)/test_settings: $(OBJ)/tests/test_settings.o $(OBJ)/launcher/settings.o $(
 	@mkdir -p $(BIN)
 	$(CXX) $^ -o $@ $(LDFLAGS) $(EXTRA_LDFLAGS) $(CRYPTO_LIBS)
 
-$(BIN)/dump-geometry: $(OBJ)/tools/dump-geometry.o $(OBJ)/launcher/ui_geometry.o $(OBJ)/launcher/layout.o $(OBJ)/launcher/i18n.o $(OBJ)/launcher/settings.o $(OBJ)/launcher/theme.o $(OBJ)/launcher/overlay.o $(COMMON_OBJ)
+$(BIN)/dump-geometry: $(OBJ)/tools/dump-geometry.o $(OBJ)/launcher/ui_geometry.o $(OBJ)/launcher/layout.o $(OBJ)/launcher/i18n.o $(OBJ)/launcher/settings.o $(OBJ)/launcher/theme.o $(OBJ)/launcher/overlay.o $(OBJ)/launcher/music.o $(COMMON_OBJ)
 	@mkdir -p $(BIN)
 	$(CXX) $^ -o $@ $(LDFLAGS) $(EXTRA_LDFLAGS) $(CRYPTO_LIBS)
 
 $(BIN)/test_i18n: $(OBJ)/tests/test_i18n.o $(OBJ)/launcher/i18n.o $(OBJ)/launcher/settings.o $(COMMON_OBJ)
 	@mkdir -p $(BIN)
 	$(CXX) $^ -o $@ $(LDFLAGS) $(EXTRA_LDFLAGS) $(CRYPTO_LIBS)
+
+$(BIN)/test_music_ui: $(OBJ)/tests/test_music_ui.o $(OBJ)/launcher/music.o $(OBJ)/common/giochi_json.o
+	@mkdir -p $(BIN)
+	$(CXX) $^ -o $@ $(LDFLAGS) $(EXTRA_LDFLAGS)
 
 $(BIN)/test_status: $(OBJ)/tests/test_status.o $(OBJ)/launcher/status.o $(COMMON_OBJ)
 	@mkdir -p $(BIN)
@@ -470,6 +476,10 @@ ui-preview: $(BIN)/dump-geometry
 		--out docs/proposta/ui-config-1280x720.png
 	@python3 tools/preview-ui.py --size 1280x720 --lang en --tab 1 --items 15 \
 		--out docs/proposta/ui-1280x720-en.png
+	@python3 tools/preview-ui.py --size 1280x720 --tab 0 \
+		--out docs/proposta/ui-musica-1280x720.png
+	@python3 tools/preview-ui.py --size 640x480 --tab 0 \
+		--out docs/proposta/ui-musica-640x480.png
 
 # Galeria dos temas (docs/temas/): uma imagem por tema e por painel, mais o
 # contato 2x3 para comparar. Nada aqui e' desenhado pelo script: ele chama o

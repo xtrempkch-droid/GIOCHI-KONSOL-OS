@@ -62,5 +62,9 @@
   "error.reason": "Reason",
   "error.where": "Full diagnostics in the GIOCHI_BOOT partition, file giochi-boot.log — look for the 'sonda:' and 'render:' lines.",
   "hint.keyboard": "navigate",
-  "settings.theme": "Theme"
+  "settings.theme": "Theme",
+  "music.empty.hint": "Copy over the USB cable or the card; the list refreshes when you open this tab.",
+  "music.paused": "paused",
+  "music.unavailable": "Music service not responding",
+  "music.no_decoder": "no audio decoder in this image"
 }

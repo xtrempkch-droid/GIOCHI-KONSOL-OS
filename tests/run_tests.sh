@@ -9,9 +9,13 @@ total=0
 
 export GIOCHI_LOG_LEVEL=error
 
+RAN=" "
+
 for t in test_json test_sha256 test_hotkey test_musicd test_transition \
          test_layout test_metadata test_settings test_buttonsmap \
-         test_deviceconf; do
+         test_deviceconf test_ui_geometry test_i18n test_status \
+         test_music_ui; do
+    RAN="$RAN$t "
     total=$((total + 1))
     if [ ! -x "$BIN/$t" ]; then
         echo "FALTA  $t"
@@ -440,5 +444,26 @@ if [ -x "$ROOT/tools/giochi-dev-mode.sh" ] && command -v python3 >/dev/null 2>&1
 fi
 
 echo "----"
+
+# Guarda: TODO binario test_* construido tem de ser executado aqui. Um binario
+# que existe e nao roda e' suite que ninguem ve — foi assim que test_i18n
+# passou tempo com uma asercao obsoleta ("7 pacotes", quando o catalogo ja'
+# dizia "7 jogos") e que test_ui_geometry/test_status/test_music_ui nunca
+# rodaram em CI nenhum. Custo: alguns ms; o defeito que evita e' silencioso.
+if [ -d "$BIN" ]; then
+    for f in "$BIN"/test_*; do
+        [ -x "$f" ] || continue
+        nome=$(basename "$f")
+        case "$RAN" in
+            *" $nome "*) ;;
+            *)
+                echo "ORFA   $nome (construido, mas fora da lista deste runner)"
+                total=$((total + 1))
+                fail=$((fail + 1))
+                ;;
+        esac
+    done
+fi
+
 echo "$((total - fail))/$total suites OK"
 [ "$fail" -eq 0 ]

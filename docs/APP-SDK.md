@@ -202,6 +202,11 @@ escrever nele — dois escritores intercalam mensagens e o init lê lixo.
 | `QUEUE` | a fila completa |
 | **`RESCAN`** | `{"status":"ok","tracks":N}` — revarre `/user/music` |
 
+O `STATUS` carrega a fila INTEIRA e por isso responde em até 8 KB: inclui
+`index` (faixa atual) e `count`. O `index` existe para não casar por
+título — duas faixas podem ter o mesmo nome e a lista destacaria a errada.
+Não há capa: o daemon não extrai APIC (TODO em `musicd.c`).
+
 > **`RESCAN` existe porque o daemon varre a pasta UMA VEZ, quando sobe.**
 > Música copiada depois (MTP, SSH, cartão no PC) ficava invisível até
 > reiniciar o aparelho — medido no console: `0 faixas` no boot e `1 faixas`

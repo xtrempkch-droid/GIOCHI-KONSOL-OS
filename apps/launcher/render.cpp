@@ -906,6 +906,153 @@ void paint_message_tab(SDL_Renderer *sdl, const Font &font,
     }
 }
 
+/* --- aba Musica ----------------------------------------------------------
+ *
+ * Antes esta aba era `paint_message_tab(..., "music.empty")`: o Launcher nem
+ * pedia a fila ao giochi-musicd. Com a musica ja' em /user/music a tela dizia
+ * "vazia" — foi o sintoma que o mantenedor relatou (AGENTS.md §3.129).
+ *
+ * O que a lista mostra, por faixa: titulo, artista e duracao. A faixa ATUAL
+ * (indice vindo do STATUS, nunca casando por titulo) ganha o marcador de
+ * acento, e o cabecalho traz "02 / 07" + a posicao + o estado.
+ *
+ * Sem CAPA: o musicd nao extrai APIC (TODO declarado em musicd.c). Um quadrado
+ * vazio seria pior que a ausencia — a lista usa a largura toda.
+ */
+void paint_music_tab(SDL_Renderer *sdl, const Font &font,
+                     const UiGeometry &geo, const UiState &ui)
+{
+    const I18n &i18n = *ui.i18n;
+    const unsigned primary = giochi_theme_rgb(ui.theme->text_primary, 0xE5E5E5);
+    const unsigned secondary =
+        giochi_theme_rgb(ui.theme->text_secondary, 0xA0A0A0);
+    const unsigned accent = giochi_theme_rgb(ui.theme->accent, 0xE50914);
+    const unsigned surface = giochi_theme_rgb(ui.theme->surface, 0x181818);
+    const int pad = geo.margin;
+    const int text_w = geo.screen_w - 2 * pad;
+
+    const MusicInfo *m = ui.music;
+
+    if (m == nullptr || m->state == MusicState::Unavailable) {
+        paint_message_tab(sdl, font, geo, ui, i18n.tr("tab.music"),
+                          i18n.tr("music.unavailable"),
+                          m != nullptr ? m->detail.c_str() : nullptr);
+        return;
+    }
+    if (!m->has_tracks()) {
+        paint_message_tab(sdl, font, geo, ui, i18n.tr("tab.music"),
+                          i18n.tr("music.empty"), i18n.tr("music.empty.hint"));
+        return;
+    }
+
+    const FontWeight peso_titulo =
+        ui_text_weight(UI_TEXT_PANEL_TITLE) == UI_WEIGHT_BOLD ? FontWeight::Bold
+                                                             : FontWeight::Regular;
+    int y = geo.topbar.h;
+
+    /* Cabecalho: titulo da aba + "02 / 07" + estado/posicao. */
+    int baseline = y + pad + font.ascent(geo.font_tab, peso_titulo);
+
+    (void)font.draw(sdl, i18n.tr("tab.music"), geo.margin, baseline,
+                    geo.font_tab, primary, text_w, peso_titulo);
+
+    const std::string contagem = music_format_count(*m);
+
+    if (!contagem.empty()) {
+        const int w = font.measure(contagem, geo.font_body);
+
+        (void)font.draw(sdl, contagem, geo.screen_w - geo.margin - w, baseline,
+                        geo.font_body, secondary, 0);
+    }
+    y = baseline + font.line_height(geo.font_tab) + geo.gap / 2;
+
+    /* Linha de estado: "tocando  1:05 / 3:30" (ou "parado", "decodificador
+     * indisponivel"). E' o que responde "por que nao ouve nada". */
+    std::string estado;
+
+    switch (m->state) {
+    case MusicState::Playing:
+        estado = i18n.tr("music.playing");
+        if (m->duration() > 0) {
+            estado += "  " + music_format_time(m->pos_s) + " / " +
+                      music_format_time(m->duration());
+        }
+        break;
+    case MusicState::Paused:
+        estado = i18n.tr("music.paused");
+        break;
+    case MusicState::Stopped:
+        estado = i18n.tr("music.stopped");
+        break;
+    default:
+        break;
+    }
+    if (!m->decoder_ready) {
+        /* O protocolo ja' responde decoder_unavailable para PLAY/PAUSE. Dizer
+         * aqui evita o usuario apertar play e nada acontecer. */
+        estado += estado.empty() ? i18n.tr("music.no_decoder")
+                                 : std::string(" - ") + i18n.tr("music.no_decoder");
+    }
+    if (!estado.empty()) {
+        (void)font.draw(sdl, estado, geo.margin, y + font.ascent(geo.font_body),
+                        geo.font_body, secondary, text_w);
+        y += font.line_height(geo.font_body) + geo.gap / 2;
+    }
+
+    /* Fila. A geometria (altura da linha, quantas cabem, primeira visivel) vem
+     * de music_list_layout — o mesmo modulo que o dump-geometry publica, para o
+     * preview nao inventar uma rolagem que o aparelho nao faz. */
+    const int disponivel = geo.content.y + geo.content.h - y - pad;
+    const int total = static_cast<int>(m->tracks.size());
+    const giochi::MusicListLayout lista = giochi::music_list_layout(
+        font.line_height(geo.font_body), geo.gap, disponivel, total,
+        ui.music_focus);
+    const int row_h = lista.row_h;
+    const int linhas = lista.rows;
+    const int primeira = lista.first;
+
+    for (int i = 0; i < linhas && primeira + i < total; i++) {
+        const int index = primeira + i;
+        const MusicTrack &tr = m->tracks[static_cast<size_t>(index)];
+        const UiRect row{geo.margin, y, geo.screen_w - 2 * geo.margin, row_h};
+
+        if (index == ui.music_focus) {
+            fill_rounded(sdl, surface, row, geo.corner);
+        }
+        if (index == m->current) {
+            /* Marcador da faixa ATUAL, separado do foco: um e' "o que toca",
+             * o outro e' "onde estou". */
+            fill_rect(sdl, accent, row.x, row.y + geo.gap / 2, geo.accent_h,
+                      row_h - geo.gap);
+        }
+
+        const int row_baseline =
+            row.y + (row_h + font.ascent(geo.font_body)) / 2 - geo.font_body / 8;
+        const FontWeight peso = index == m->current ? FontWeight::Bold
+                                                   : FontWeight::Regular;
+        const unsigned cor = index == ui.music_focus ? primary : secondary;
+        /* A duracao ocupa a direita; o titulo fica com o resto. */
+        const std::string dur = music_format_time(tr.duration_s);
+        const int dur_w = tr.duration_s > 0
+                              ? font.measure(dur, geo.font_body) + pad
+                              : 0;
+        const int titulo_w = row.w - pad - dur_w;
+        std::string rotulo = tr.title;
+
+        if (!tr.artist.empty() && tr.artist != "Desconhecido") {
+            rotulo += "  -  " + tr.artist;
+        }
+        (void)font.draw(sdl, rotulo, row.x + geo.accent_h + pad / 2,
+                        row_baseline, geo.font_body, cor, titulo_w, peso);
+
+        if (dur_w > 0) {
+            (void)font.draw(sdl, dur, row.x + row.w - pad - dur_w + pad,
+                            row_baseline, geo.font_body, secondary, dur_w);
+        }
+        y += row_h;
+    }
+}
+
 void paint_ui(SDL_Renderer *sdl, const Font &font, const UiGeometry &geo,
               const UiState &ui)
 {
@@ -931,8 +1078,7 @@ void paint_ui(SDL_Renderer *sdl, const Font &font, const UiGeometry &geo,
                           tem_novidade ? ui.news_body.c_str()
                                        : i18n.tr("home.tip.usb"));
     } else if (std::strcmp(tab_id, "music") == 0) {
-        paint_message_tab(sdl, font, geo, ui, i18n.tr("tab.music"),
-                          i18n.tr("music.empty"), "");
+        paint_music_tab(sdl, font, geo, ui);
     } else if (std::strcmp(tab_id, "store") == 0) {
         paint_message_tab(sdl, font, geo, ui, i18n.tr("tab.store"),
                           i18n.tr("store.missing"), "");

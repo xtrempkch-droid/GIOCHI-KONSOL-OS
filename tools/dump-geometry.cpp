@@ -16,6 +16,7 @@
 #include "layout.hpp"
 #include "overlay.hpp"
 #include "status.hpp"
+#include "music.hpp"
 #include "ui_geometry.hpp"
 
 #include <cstdio>
@@ -289,6 +290,55 @@ int main(int argc, char **argv)
          * (scale_pct / 50). O preview desenhava 1 px fixo e ficava mais fino
          * que o aparelho — divergencia de 1 px na tela inteira. */
         g.scale_pct / 50);
+    /* Aba Musica: a fila de exemplo e a GEOMETRIA da lista (altura da linha,
+     * quantas cabem, primeira visivel) vem de music_list_layout — o mesmo
+     * modulo que o render.cpp usa. O preview so' desenha; nao recalcula. */
+    {
+        giochi::MusicInfo demo;
+        const char *titulos[] = {"A Quadrilha", "Asa Branca", "Xote das Meninas",
+                                 "Sabiá", "Baião", "Forró no Escuro"};
+        const char *artistas[] = {"Dominguinhos", "Luiz Gonzaga", "Dominguinhos",
+                                  "Desconhecido", "Luiz Gonzaga", "Desconhecido"};
+
+        for (int i = 0; i < 6; i++) {
+            giochi::MusicTrack tr;
+
+            tr.title = titulos[i];
+            tr.artist = artistas[i];
+            tr.duration_s = 150 + static_cast<unsigned>(i) * 23u;
+            demo.tracks.push_back(tr);
+        }
+        demo.state = giochi::MusicState::Playing;
+        demo.current = 2;
+        demo.pos_s = 65;
+        demo.decoder_ready = true;
+
+        const int disponivel = g.content.h - 2 * g.margin - g.font_tab * 2 -
+                               g.gap * 2;
+        const giochi::MusicListLayout pl =
+            giochi::music_list_layout(12, g.gap, disponivel,
+                                      static_cast<int>(demo.tracks.size()), 2);
+
+        std::printf("\"music\":{\"count\":\"%s\",\"time\":\"%s\","
+                    "\"row_h\":%d,\"rows\":%d,\"first\":%d,\"current\":%d,"
+                    "\"tracks\":[",
+                    giochi::music_format_count(demo).c_str(),
+                    giochi::music_format_time(demo.pos_s).c_str(),
+                    pl.row_h, pl.rows, pl.first, demo.current);
+        for (size_t i = 0; i < demo.tracks.size(); i++) {
+            std::string tit, art;
+
+            campo_json(&tit, demo.tracks[i].title.c_str());
+            campo_json(&art, demo.tracks[i].artist.c_str());
+            std::printf("%s{\"title\":\"%s\",\"artist\":\"%s\","
+                        "\"dur\":\"%s\"}",
+                        i > 0 ? "," : "", tit.c_str(), art.c_str(),
+                        giochi::music_format_time(demo.tracks[i].duration_s)
+                            .c_str());
+        }
+        std::printf("]},\n");
+    }
+
     put_rect("topbar", g.topbar);
     put_rect("hint_bar", g.hint_bar);
     put_rect("content", g.content);

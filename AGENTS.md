@@ -3675,6 +3675,57 @@ mostrar capa/posição é trabalho de UI (`cover_pct` foi removido justamente po
 não ter consumidor, §3.79b). E a correção só chega ao aparelho com **imagem
 nova** — `giochi-musicd` mora no SquashFS, que é somente leitura.
 
+### 3.130 A aba Música nunca pedia a fila — e "sem capa" é fato, não esquecimento
+
+A aba Música era `paint_message_tab(..., "music.empty")`. Nada no Launcher
+consultava o `giochi-musicd`: a tela dizia "nenhuma música" mesmo com a faixa
+em `/user/music` (§3.129). Agora ela mostra a fila de verdade.
+
+O que foi preciso, e por quê:
+
+- **`STATUS` ganhou `index` e `count`.** Antes só vinha o **título** da faixa
+  atual, e casar por título erra quando duas faixas têm o mesmo nome — comum em
+  "01 A Quadrilha" de discos diferentes. A lista destacaria a faixa errada.
+  Guarda: `test_duas_faixas_com_o_mesmo_titulo` (três faixas homônimas,
+  `index:2`, exige que a destacada seja a de artista "C").
+- **Módulo puro `apps/launcher/music.cpp`** (sem SDL): parsing do `STATUS`,
+  formatação de tempo/contagem e **`music_list_layout()`** — altura da linha,
+  quantas cabem, primeira visível. O `render.cpp` E o `dump-geometry` usam a
+  MESMA função; se cada lado calculasse a rolagem, o preview mostraria uma
+  lista que o aparelho não faz (classe §3.71). Guarda: `test_geometria_da_lista`
+  fixa os números (10 faixas em 90 px → 5 linhas; foco em 7 → `first=3`).
+- **Buffer de 512 → 8192 B.** O `giochi_ipc_request` do Launcher usava 512 e o
+  `STATUS` carrega a FILA INTEIRA (o `main.c` do daemon aloca 8192). Com fila
+  longa o JSON chegava truncado e o parsing falhava — parecendo "sem música",
+  que é exatamente o sintoma que se queria eliminar.
+- **JSON quebrado não vira lista vazia.** `music_parse_status` devolve
+  `Unavailable` + `detail` (motivo). "0 faixas" e "não consegui ler" são fatos
+  diferentes e a tela precisa distinguir.
+- **O Launcher pede `RESCAN` no startup e `STATUS` ao ENTRAR na aba**
+  (`tab_entrou`), porque a faixa atual muda com NEXT/PREV.
+- **Sem capa, de propósito.** O `musicd` não extrai APIC (`TODO(v1.2)` declarado
+  em `musicd.c`). Um quadrado vazio seria pior que a ausência — a lista usa a
+  largura toda. Quando o APIC entrar, o lugar é a coluna esquerda da linha.
+
+**Defeito meu que o próprio repositório pegou:** escrevi o texto de ajuda como
+"A aba lê /user/music; o daemon revarre ao abrir" e a suíte `primeiro-boot`
+reprovou — `test_textos_do_launcher_sem_jargao` recusa `/user/` em texto de
+UI. O mantenedor já havia pedido isso ("isso precisa ficar mais claro para o
+usuário"). Trocado por "Copie pelo cabo USB ou pelo cartão; a lista se atualiza
+ao abrir esta aba". **Regra**: caminho de sistema não vai para a tela.
+
+**Verificação**: `test_music_ui` **48 checagens** (parsing, título duplicado,
+fila vazia, JSON inválido, índice fora da faixa, formatação, geometria da
+lista); `make test` 42/42; `make lint` rc=0; `tools/check-sdl2-compile.sh` ok
+(ele pegou 2 chamadas de `font.draw` sem `max_w`, que o `make` do host não vê —
+§3.74 de novo). Previews: `docs/proposta/ui-musica-{1280x720,640x480}.png`,
+gerados do mesmo módulo; o dump publica a fila de exemplo + `row_h/rows/first`.
+
+**Aberto**: a lista não tem capa (APIC) e o Launcher não desenha barra de
+progresso — `pos_s` já vem no `STATUS` e está no `MusicInfo`, falta só a UI.
+Nada disso rodou no aparelho: `giochi-musicd` e `giochi-launcher` moram no
+SquashFS, então exige imagem nova.
+
 ### 3.104 NetworkManager desfaz o IP manual da interface USB
 
 `tools/giochi-ctl.py preparar` atribuía `10.55.0.1/24` com `ip addr add` e
@@ -4100,6 +4151,128 @@ apagar a linha de ignore do `.gitignore` → reprova.
 Buildroot tem flags próprias e continua sem banco (o editor não precisa dele).
 Se o editor ainda reclamar depois de um move, é sinal de que o `make` não
 rodou — o teste diz isso.
+
+### 2026-11-02 (35) — Copilot (aba Música de verdade; e os previews que estavam mentindo)
+
+O mantenedor pediu a aba Música depois do §3.129 (o `RESCAN`). Ela existia como
+`paint_message_tab(..., "music.empty")`: **nenhuma linha do Launcher falava com
+o `giochi-musicd`**. Mesmo com a faixa em `/user/music`, a tela dizia "nenhuma
+música" — e essa era a leitura que fazia o problema parecer do daemon.
+
+**O que a UI precisou que o protocolo não dava.** O `STATUS` devolvia só o
+**título** da faixa atual. Casar por título erra quando duas faixas têm o mesmo
+nome (normal em "01 A Quadrilha" de discos diferentes) e a lista destacaria a
+faixa errada. `STATUS` ganhou `index` e `count`; o `test_duas_faixas_com_o_mesmo_titulo`
+usa três faixas homônimas com `index:2` e cobra que a destacada seja a de
+artista "C".
+
+**Dois números que estavam errados e ninguém via:**
+
+- O buffer de resposta do Launcher era **512 B** e o `STATUS` carrega a FILA
+  INTEIRA (o daemon aloca 8192). Com fila longa o JSON chegava truncado, o
+  parsing falhava e a tela caía no mesmo "sem música" — o sintoma que se queria
+  eliminar, com uma causa a mais. Agora 8192.
+- `music_parse_status` distingue **`Empty` (0 faixas) de `Unavailable`
+  (JSON quebrado / daemon fora)**, com `detail`. Eram dois fatos diferentes
+  virando a mesma tela.
+
+**A geometria da lista nasceu como módulo puro.** `music_list_layout()` em
+`apps/launcher/music.cpp` (sem SDL) devolve altura da linha, quantas cabem e a
+primeira visível; o `render.cpp` e o `dump-geometry` chamam a **mesma** função.
+Se cada lado calculasse a rolagem, o preview desenharia uma lista que o aparelho
+não faz — a classe do §3.71/§3.76, que já custou duas sessões.
+
+**Dois defeitos meus, os dois pegos por instrumento:**
+
+1. `tools/check-sdl2-compile.sh` reprovou **duas** chamadas de `font.draw` sem
+   `max_w`. O `make` do host não vê o bloco `#ifdef GIOCHI_HAVE_SDL2` (§3.74) —
+   foi a guarda que existe exatamente para isso que pegou, não eu.
+2. Escrevi a ajuda da aba como *"A aba lê `/user/music`; o daemon revarre ao
+   abrir"* e a suíte `primeiro-boot` reprovou: `test_textos_do_launcher_sem_jargao`
+   recusa `/user/` em texto de UI. O mantenedor já tinha pedido isso. Virou
+   "Copie pelo cabo USB ou pelo cartão; a lista se atualiza ao abrir esta aba".
+   **Regra**: caminho de sistema não vai para a tela.
+
+**O achado que não era meu (e é o mais útil da entrada).** Ao regerar os
+previews, comparei com o `HEAD` e **três imagens antigas mudaram** sem que eu
+tivesse tocado no desenho delas. Investiguei antes de commitar: os valores de
+locale alterados eram só as 4 chaves novas de música, então o drift não vinha
+de mim. A causa estava no commit `cddf66e` ("tira o jargao da UI"), que trocou
+
+```
+ANTES:  O sistema varre a partição GIOCHI_USER a cada boot
+DEPOIS: Os jogos são lidos do armazenamento a cada boot
+```
+
+e **não regenerou** `docs/proposta/*.png`. Os previews vinham mostrando o texto
+com jargão desde então — ou seja, a documentação visual do projeto estava
+mostrando uma UI que o aparelho não tem mais. Regerar é **correção**, não
+efeito colateral. Registro aqui porque "regerar mudou pixels" é a assinatura de
+artefato derivado desatualizado (§3.33, §3.39, §3.63) e o próximo agente
+precisa saber que **este** caso já foi explicado.
+
+**Verificação (tudo rodado):** `test_music_ui` **48 checagens** (parsing, título
+duplicado, fila vazia, JSON inválido, índice fora da faixa, formatação de tempo
+e contagem, geometria da lista com 10 faixas → 5 linhas e `first=3` para foco
+em 7); `make test` **46/46**; `make lint` **rc=0**; `test_locales` **176
+checagens / 68 chaves** nos dois idiomas; `check-sdl2-compile.sh` ok. Previews
+novos: `docs/proposta/ui-musica-{1280x720,640x480}.png`.
+
+**O achado que valeu a sessão (§3.131):** ao procurar onde registrar
+`test_music_ui`, descobri que o `tests/run_tests.sh` **não a executava** — nem
+a `test_ui_geometry`, `test_i18n` ou `test_status`. Eram 589 checagens que
+nenhum CI rodava, com `make test` anunciando `42/42 OK`. A primeira execução à
+mão reprovou uma: `tr_n("library.count", 7) == "7 pacotes"`, com o catálogo
+dizendo `{n} jogos` desde o commit que tirou o jargão. A asserção ficava
+obsoleta a cada mudança de texto e ninguém via, **porque o teste não rodava**.
+Corrigido o valor, as quatro entraram na lista (**42/42 → 46/46**) e o runner
+ganhou uma guarda auto-mantida: varre `$BIN/test_*` no fim e reprova
+`ORFA <nome>` para qualquer binário construído que não tenha sido executado.
+Provada ao contrário (tirando `test_i18n` da lista: `ORFA test_i18n`, `45/46`).
+
+**Aberto:** sem capa de álbum (o `musicd` não extrai APIC — `TODO(v1.2)`
+declarado; um quadrado vazio seria pior que a ausência) e sem barra de
+progresso (`pos_s` já vem no `STATUS` e está no `MusicInfo`; falta só a UI).
+**Nada disto rodou no aparelho**: `giochi-musicd` e `giochi-launcher` moram no
+SquashFS, que é somente leitura — exige imagem nova.
+
+### 3.131 Binário de teste compilado e **nunca executado** é suíte que ninguém vê
+
+Esta é a quarta variação do mesmo furo neste repositório (§3.7 `make test` sem
+`all`, a suíte `temas` que sumia num build limpo, o `dump-geometry` fora do
+alvo `test`, e agora esta). O `Makefile` tinha **14** binários `test_*` em
+`TEST_BINS`, e o `tests/run_tests.sh` executava **10**. Os quatro de fora —
+`test_ui_geometry`, `test_i18n`, `test_status`, `test_music_ui` — somavam 589
+checagens que **nenhum CI rodava**, e o `make test` dizia `42/42 OK`.
+
+O preço apareceu na primeira vez que rodei um deles à mão:
+
+```
+test_ui_geometry   421 checagens, 0 falha(s)
+test_i18n           89 checagens, 1 falha(s)   <-- "7 pacotes"
+test_status         31 checagens, 0 falha(s)
+test_music_ui       48 checagens, 0 falha(s)
+```
+
+A asserção quebrada era `tr_n("library.count", 7) == "7 pacotes"`, e o catálogo
+diz `{n} jogos` desde o commit que tirou o jargão da UI. Ou seja: a asserção
+ficava obsoleta **a cada** mudança de texto, e ninguém sabia porque o teste não
+rodava. Um teste que não roda não protege nada — e, pior, **afirma** que
+protege.
+
+- A lista do runner ganhou as quatro. `make test` foi de **42/42** para
+  **46/46**.
+- Guarda estrutural (não uma segunda lista escrita à mão — essa é a armadilha
+  do §3.20): o runner acumula os nomes que executou e, no fim, varre
+  `$BIN/test_*`. Todo binário que existir e não estiver no acumulado vira
+  `ORFA <nome>` e reprova a suíte. Auto-mantida: suíte renomeada, criada ou
+  removida da lista aparece na hora, sem ninguém lembrar de atualizar guarda.
+- Testada ao contrário: tirando `test_i18n` da lista, sai
+  `ORFA test_i18n (construido, mas fora da lista deste runner)` e `45/46`.
+
+**Regra que fica**: `TEST_BINS` e a lista do runner são o **mesmo** dado em dois
+lugares. Se você precisa do mesmo número em dois arquivos, **gere o segundo** —
+e, enquanto não gerar, faça o runner provar que não sobrou ninguém de fora.
 
 ## 4. O que NÃO foi verificado
 

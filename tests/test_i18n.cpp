@@ -108,7 +108,7 @@ void test_substituicao(void)
 
     (void)i18n.load(asset_dir().c_str(), "pt-BR");
 
-    CHECK(i18n.tr_n("library.count", 7) == "7 pacotes");
+    CHECK(i18n.tr_n("library.count", 7) == "7 jogos");
     CHECK(i18n.tr_n("status.battery", 82) == "82%");
     CHECK(i18n.tr_n("settings.level", 80) == "80%");
 

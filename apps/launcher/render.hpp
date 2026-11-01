@@ -13,6 +13,7 @@
 #include "settings.hpp"
 #include "status.hpp"
 #include "theme.hpp"
+#include "music.hpp"
 #include "ui_geometry.hpp"
 
 namespace giochi {
@@ -53,6 +54,11 @@ struct UiState {
      * que ninguem escrevia esse arquivo; agora ha' produtor E consumidor. */
     std::string news_title;
     std::string news_body;
+
+    /* Estado da aba Musica: fila, faixa atual e posicao. Vazio quando
+     * o daemon nao respondeu — a tela entao diz o motivo. */
+    const MusicInfo *music = nullptr;
+    int music_focus = 0;
 
     /* Grade da Biblioteca (vazio nas outras abas). */
     const UiItem *items = nullptr;

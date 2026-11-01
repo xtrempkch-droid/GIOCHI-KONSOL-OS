@@ -14,6 +14,7 @@
 #include "i18n.hpp"
 #include "overlay.hpp"
 #include "status.hpp"
+#include "music.hpp"
 #include "render.hpp"
 #include "settings.hpp"
 #include "theme.hpp"
@@ -73,6 +74,9 @@ struct Launcher {
 
     std::string control_sock;
     std::string music_sock;
+    /* Estado da aba Musica (fila, faixa atual, posicao). Preenchido
+     * por music_refresh a partir do STATUS do giochi-musicd. */
+    giochi::MusicInfo music;
     std::string transition_fifo;
     int transition_fd = -1;
 };
@@ -176,9 +180,14 @@ void send_transition(Launcher &app, giochi_transition_cmd cmd,
     GLOG_INFO("transition: cmd=%u path='%s'", msg.cmd, msg.path);
 }
 
+/* Resposta do musicd: o `main.c` do daemon aloca 8192 para o STATUS, que
+ * carrega a fila INTEIRA. Com 512 a fila era truncada no meio do JSON e o
+ * parsing falharia — parecendo "sem musica". */
+static constexpr size_t kMusicReplyMax = 8192;
+
 void music_command(Launcher &app, const char *command)
 {
-    char reply[512];
+    char reply[kMusicReplyMax];
 
     if (app.music_sock.empty()) {
         return;
@@ -190,6 +199,45 @@ void music_command(Launcher &app, const char *command)
         return;
     }
     GLOG_DEBUG("musica: %s -> %s", command, reply);
+}
+
+/* Pede o STATUS e guarda a fila. Chamado no startup (depois do RESCAN) e ao
+ * entrar na aba Musica — a lista tem de refletir o que esta' tocando AGORA. */
+void music_refresh(Launcher &app)
+{
+    char reply[kMusicReplyMax];
+
+    if (app.music_sock.empty()) {
+        app.music.detail = "sem music.sock";
+        return;
+    }
+    if (giochi_ipc_request(app.music_sock.c_str(), "STATUS", reply,
+                           sizeof(reply), 500) != 0) {
+        app.music = giochi::MusicInfo{};
+        app.music.detail = "sem resposta do musicd";
+        GLOG_WARN("musica: STATUS sem resposta (%s)", app.music_sock.c_str());
+        return;
+    }
+    app.music = giochi::music_parse_status(reply);
+    if (!app.music.detail.empty()) {
+        GLOG_WARN("musica: STATUS ilegivel: %s", app.music.detail.c_str());
+    } else {
+        GLOG_DEBUG("musica: %zu faixa(s), atual %d, estado %d",
+                   app.music.tracks.size(), app.music.current,
+                   static_cast<int>(app.music.state));
+    }
+}
+
+/* Ao ENTRAR na aba Musica, rele' a fila: a faixa atual muda quando o usuario
+ * aperta NEXT/PREV e a lista tem de acompanhar. Sem isto a aba mostrava o
+ * estado do startup para sempre. */
+void tab_entrou(Launcher &app)
+{
+    const char *tab = giochi_layout_tab_id(&app.layout, app.current_tab);
+
+    if (tab != nullptr && std::strcmp(tab, "music") == 0) {
+        music_refresh(app);
+    }
 }
 
 void control_command(Launcher &app, const char *command)
@@ -530,6 +578,7 @@ void handle_action(Launcher &app, giochi::Action action)
             giochi_overlay_move(&app.overlay, -1);
         } else {
             app.current_tab = giochi_layout_prev(&app.layout, app.current_tab);
+            tab_entrou(app);
         }
         break;
     case giochi::ActionTabNext:
@@ -537,6 +586,7 @@ void handle_action(Launcher &app, giochi::Action action)
             giochi_overlay_move(&app.overlay, 1);
         } else {
             app.current_tab = giochi_layout_next(&app.layout, app.current_tab);
+            tab_entrou(app);
         }
         break;
     case giochi::ActionActivate:
@@ -755,6 +805,7 @@ bool init(Launcher &app)
      * nao mexe na faixa atual, entao tambem e' seguro ao voltar do jogo. */
     if (!app.music_sock.empty()) {
         music_command(app, "RESCAN");
+        music_refresh(app);
     }
 
     /* Idioma: GIOCHI_LANG -> settings.json -> padrao. Carregado ANTES de
@@ -894,6 +945,9 @@ int main(int argc, char **argv)
 
         app.ui.current_tab = app.current_tab;
         app.ui.focus_index = app.focus_index;
+        /* Aba Musica: a tela le' o estado que music_refresh carregou. */
+        app.ui.music = &app.music;
+        app.ui.music_focus = app.focus_index;
         app.ui.settings_open = app.overlay.open != 0;
         app.ui.settings_index = app.overlay.index;
         app.ui.focus_index = app.library_focus;
