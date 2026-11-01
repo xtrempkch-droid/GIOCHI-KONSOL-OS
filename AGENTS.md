@@ -1764,6 +1764,54 @@ quem desenha:
   `test_apresentacao_sem_rotacao`, `test_apresentacao_recusa_rotacao_incoerente`
   e `test_geometria_usa_o_layout_e_nao_a_saida_fisica`.
 
+### 3.70 Duas rotações independentes: concordar era sorte, não desenho
+
+Relato do mantenedor depois do boot com a UI girando: *"a orientação tá ok,
+apesar do terminal também ter girado — é como se a orientação do sistema
+mudou e levou junto o splash e o launcher, assim corrigindo com um erro"*.
+
+A leitura dele estava certa: havia **duas** rotações, cada uma com sua fonte.
+
+| Quem gira | Mecanismo | Fonte do valor |
+|---|---|---|
+| a UI | `ui_present()` → `SDL_RenderCopyEx` | `GIOCHI_ROTATION` exportado pelo `S20graphics` **a partir do device.conf** |
+| o console de vídeo | `fbcon=rotate:N` no bootargs | `setenv giochi_fbcon N` **à mão no U-Boot**, sem relação com o resto |
+
+Elas concordarem não era arquitetura: era coincidência com um env var salvo.
+E a divergência é fácil de produzir — `fbcon` numera 0..3 = 0/90/180/270,
+enquanto o `device.conf` diz `GIOCHI_ROTATION=270`; são **duas unidades** para
+o mesmo fato.
+
+- Correção: o `post-image.sh` substitui `@FBCON_ROTATE@` no `boot.cmd` por
+  `GIOCHI_ROTATION/90` (fbcon usa 0..3, a mesma convenção de sentido horário do
+  `SDL_RenderCopyEx`). A substituição vai para `boot.cmd.gerado` e é o
+  **arquivo gerado** que vira `boot.scr` — o `boot.cmd` versionado serve todos
+  os aparelhos e não é editado.
+- O valor continua sobreponível no U-Boot, mas agora o padrão é derivado: quem
+  não mexer em nada acerta.
+- **Sobre `console=tty0`**: o `bootargs` desta imagem tem **apenas**
+  `console=ttyS2`, então o `printk` não vai para a tela — re-bindar o `vtcon`
+  sozinho não mostra nada. A mensagem de falha do Launcher agora é **escrita
+  direto no `/dev/tty1`** com o motivo e o caminho do log, e é por isso que a
+  rotação do fbcon passou a importar de verdade: sem ela essa mensagem sai
+  deitada.
+- Regra que fica: **a mesma informação não pode ter duas fontes nem duas
+  unidades**. `270 graus` e `rotate:3` são o mesmo fato escrito de duas formas
+  (§3.20, §3.47) — derive o segundo.
+- Guardas: `test_rotacao_do_console_vem_do_device_conf`,
+  `test_launcher_le_rotacao_do_device_conf`,
+  `test_falha_de_video_avisa_na_tela`.
+
+**Descartado por medição:** cheguei a suspeitar que
+`tty1::respawn:/usr/bin/giochi-init` criasse um **segundo** supervisor, um deles
+sem `GIOCHI_ROTATION` — o que explicaria "funciona às vezes". Não acontece:
+`run_actions(SYSINIT)` faz `waitfor()` e o `rcS` nunca retorna (vira o
+supervisor por `exec`), então o laço `RESPAWN` nunca começa e aquela entrada
+**nunca roda** (`init/init.c` do BusyBox 1.36.1). Ficou registrado para ninguém
+repetir a caçada. Ainda assim, o Launcher passou a ler a rotação do
+`/etc/giochi/device.conf` (regra da §3.47) em vez do ambiente: o caminho de
+inicialização não deve decidir a orientação.
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):

@@ -12,6 +12,7 @@
 #include "render.hpp"
 
 #include "font.hpp"
+#include "giochi_deviceconf.h"
 #include "giochi_json.h"
 #include "giochi_log.h"
 #include "giochi_util.h"
@@ -675,11 +676,33 @@ private:
      * from device.conf by S20graphics). */
     int rotacao_pedida(const UiState &ui) const
     {
-        const char *manual = std::getenv("GIOCHI_ROTATE");
-
-        if (manual != nullptr && *manual != '\0') {
+        /* 1. /boot/rotate: o campo decide o sentido sem recompilar. O
+         *    S20graphics ja' leu e exportou; ler de novo aqui mantem o
+         *    contrato se alguem subir o Launcher a mao. */
+        if (const char *manual = std::getenv("GIOCHI_ROTATE");
+            manual != nullptr && *manual != '\0') {
             return std::atoi(manual);
         }
+
+        /* 2. /etc/giochi/device.conf: a MESMA fonte que o S20graphics usa, lida
+         *    do arquivo (nao do ambiente). Depender de variavel de ambiente
+         *    aqui significa "quem me iniciou decide a orientacao" — e o
+         *    giochi-init pode ser iniciado pelo rcS, pelo S99launcher ou pelo
+         *    inittab. Medido: foi assim que a UI saiu em pe' uma vez.
+         *    Regra da §3.47: dado que vive dentro da imagem se le' da imagem. */
+        {
+            char valor[16] = {0};
+            const char *cfg = std::getenv("GIOCHI_DEVICE_CONF");
+            const char *path = (cfg != nullptr && *cfg != '\0')
+                                   ? cfg : GIOCHI_DEVICECONF_PATH;
+
+            if (giochi_deviceconf_get(path, "GIOCHI_ROTATION", valor,
+                                      sizeof(valor)) == 0) {
+                return std::atoi(valor);
+            }
+        }
+
+        /* 3. Ultimo recurso: o ambiente (imagens antigas, teste de host). */
         const char *dev = std::getenv("GIOCHI_ROTATION");
 
         if (dev != nullptr && *dev != '\0') {
@@ -867,7 +890,7 @@ static Renderer *open_sdl(const giochi_layout &layout, std::string *err)
  * funciona, porque so' roda no caminho de falha.
  * GIOCHI_KEEP_FBCON=1 desliga (a tela fica preta de proposito).
  */
-void devolver_console_de_video()
+void devolver_console_de_video(const char *motivo)
 {
     const char *keep = std::getenv("GIOCHI_KEEP_FBCON");
 
@@ -887,11 +910,35 @@ void devolver_console_de_video()
         (void)std::fclose(fp);
     }
 
-    /* Sem console_loglevel alto o fbcon nao mostra nem o warning abaixo. */
-    FILE *printk = std::fopen("/proc/sys/kernel/printk", "w");
-    if (printk != nullptr) {
-        (void)std::fputs("7 4 1 7\n", printk);
-        (void)std::fclose(printk);
+    /* Escrever no VT e' o que realmente aparece: sem `console=tty0` no
+     * bootargs o printk vai so' para o serial, entao re-bindar o fbcon sozinho
+     * NAO mostra nada. Medido: o bootargs desta imagem tem apenas
+     * `console=ttyS2`. Por isso a mensagem vai direto para /dev/tty1 — que e'
+     * o que o usuario ve. */
+    const char *vts[] = {"/dev/tty1", "/dev/tty0", "/dev/console"};
+
+    for (const char *vt : vts) {
+        FILE *fp = std::fopen(vt, "w");
+
+        if (fp == nullptr) {
+            continue;
+        }
+        (void)std::fprintf(fp,
+                           "\n"
+                           "  Giochi Konsol OS v1.2\n"
+                           "\n"
+                           "  A interface grafica nao iniciou.\n"
+                           "  Motivo: %s\n"
+                           "\n"
+                           "  Diagnostico completo:\n"
+                           "    particao GIOCHI_BOOT (a primeira), arquivo\n"
+                           "    giochi-boot.log — procure as linhas 'sonda:'\n"
+                           "    e 'render:'.\n"
+                           "\n",
+                           (motivo != nullptr && *motivo != '\0') ? motivo
+                                                                 : "desconhecido");
+        (void)std::fclose(fp);
+        return;
     }
 }
 
@@ -906,7 +953,7 @@ Renderer *render_open(const giochi_layout &layout, std::string *err)
          * estava certo) em vez de na compilação do SDL2 — que saiu sem o
          * backend KMSDRM porque o Kconfig descartou o símbolo em silêncio
          * (AGENTS.md §3.55). */
-        devolver_console_de_video();
+        devolver_console_de_video(motivo.c_str());
         GLOG_WARN("render: SDL2 indisponivel (%s); usando backend headless",
                   motivo.empty() ? "motivo desconhecido" : motivo.c_str());
         if (err != nullptr) {

@@ -6,6 +6,24 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 ## [Não publicado]
 
 ### Corrigido
+- **Duas rotações independentes** (AGENTS.md §3.70). A UI girava por
+  `ui_present()` com o valor do `device.conf`; o console de vídeo girava por
+  `setenv giochi_fbcon N` **à mão no U-Boot**, sem relação com o resto. Elas
+  concordarem era coincidência, não desenho — e são duas unidades para o mesmo
+  fato (`270 graus` × `rotate:3`).
+  - `post-image.sh` substitui `@FBCON_ROTATE@` no `boot.cmd` por
+    `GIOCHI_ROTATION/90` e gera `boot.cmd.gerado` (o `boot.cmd` versionado
+    serve todos os aparelhos e não é editado). O U-Boot continua podendo
+    sobrepor, mas o padrão agora é derivado.
+- **Falha de vídeo não é mais tela preta.** O `bootargs` desta imagem tem
+  apenas `console=ttyS2`, então o `printk` não vai para a tela e re-bindar o
+  `vtcon` sozinho não mostrava nada. Agora o caminho de falha do Launcher
+  **escreve direto no `/dev/tty1`**: `A interface grafica nao iniciou`,
+  o motivo, e o caminho do `giochi-boot.log`.
+- **Launcher lê a rotação do `/etc/giochi/device.conf`**, não do ambiente
+  (regra da §3.47): o caminho de inicialização — `rcS`, `S99launcher` ou
+  `inittab` — não deve decidir a orientação.
+
 - **UI em pé na X55 e layout quebrado** (AGENTS.md §3.69). O painel é
   **720×1280 em retrato** com `rotation = <270>` no DTB, e o layout é 1280×720.
   O kernel não gira imagem (`rotation` só alimenta `panel-orientation` do

@@ -139,7 +139,7 @@ class PrimeiroBootTest(unittest.TestCase):
         self.assertIn("splash_frames_from_env(180)", render)
 
         # Falha de video tem de devolver o console: tela preta nao e' pista.
-        self.assertIn("devolver_console_de_video()", render)
+        self.assertIn("devolver_console_de_video(", render)
         self.assertIn("/sys/class/vtconsole/vtcon%d/bind", render)
 
         # O S20graphics liga o splash por 10 s (tempo de olhar e ver) e deixa
@@ -175,6 +175,63 @@ class PrimeiroBootTest(unittest.TestCase):
                       "sem exportar a rotacao o Launcher gira no sentido errado")
         # Escape hatch de campo: acertar 90 x 270 sem recompilar 40 min.
         self.assertIn("/boot/rotate", script)
+
+    def test_rotacao_do_console_vem_do_device_conf(self):
+        """Uma fonte para as duas rotacoes: UI e console de video.
+
+        Medido no aparelho: o mantenedor relatou "a orientacao ficou ok, mas o
+        terminal tambem girou" — porque a UI girava por um caminho (ui_present)
+        e o console por outro (`setenv giochi_fbcon` a mao, no U-Boot). Duas
+        rotacoes independentes que concordassem era sorte, nao desenho.
+        Agora o post-image.sh deriva `fbcon=rotate:N` de GIOCHI_ROTATION/90, a
+        MESMA fonte que alimenta o ui_present.
+        """
+        cmd = read(os.path.join(ROOT, "buildroot/board/giochi/boot.cmd"))
+        post = read(POST_BUILD.replace("post-build.sh", "post-image.sh"))
+
+        self.assertIn("@FBCON_ROTATE@", cmd,
+                      "boot.cmd sem o marcador: o console fica com rotacao fixa")
+        self.assertIn("@FBCON_ROTATE@", post,
+                      "post-image.sh nao substitui o marcador")
+        # A convencao: fbcon 0..3 = 0/90/180/270, igual ao SDL.
+        for graus, indice in (("90", "1"), ("180", "2"), ("270", "3")):
+            achou = re.search(
+                rf"^\s*{graus}\)\s+FBCON_ROTATE={indice}\b", post, re.M)
+            self.assertIsNotNone(
+                achou,
+                f"mapeamento {graus} graus -> rotate:{indice} sumiu")
+        # Substituicao num arquivo temporario: nunca editar o boot.cmd original
+        # (ele e' versionado e serve todos os aparelhos).
+        self.assertIn("boot.cmd.gerado", post)
+
+    def test_launcher_le_rotacao_do_device_conf(self):
+        """Quem inicia o Launcher NAO pode decidir a orientacao.
+
+        O giochi-init pode ser iniciado pelo rcS, pelo S99launcher ou pelo
+        inittab — e so' o caminho do rcS exportava GIOCHI_ROTATION. Ler do
+        /etc/giochi/device.conf (regra da §3.47) torna o resultado o mesmo
+        qualquer que seja o caminho.
+        """
+        render = read(os.path.join(ROOT, "src/launcher/render.cpp"))
+
+        self.assertIn("giochi_deviceconf_get", render)
+        self.assertIn("GIOCHI_ROTATION", render)
+        self.assertIn("GIOCHI_DEVICECONF_PATH", render)
+
+    def test_falha_de_video_avisa_na_tela(self):
+        """Tela preta nao e' diagnostico: a falha escreve no /dev/tty1.
+
+        Sem `console=tty0` no bootargs, o printk vai so' para o serial —
+        re-bindar o fbcon, sozinho, NAO mostra nada. Medido: o bootargs desta
+        imagem tem apenas `console=ttyS2`.
+        """
+        render = read(os.path.join(ROOT, "src/launcher/render.cpp"))
+
+        self.assertIn("/dev/tty1", render,
+                      "a mensagem de falha precisa ir para o VT")
+        self.assertIn("nao iniciou", render)
+        self.assertIn("giochi-boot.log", render,
+                      "a mensagem tem de dizer ONDE esta' o log")
 
     def test_sonda_reporta_render_node_e_drivers_dri(self):
         """A sonda tem de dizer o que o Mesa PODE carregar.

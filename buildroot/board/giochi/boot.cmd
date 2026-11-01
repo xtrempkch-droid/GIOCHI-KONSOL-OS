@@ -68,12 +68,25 @@ fi
 
 setenv bootargs "${bootargs_base} root=${giochi_root} giochi.slot=${giochi_slot} giochi.bootcount=${bootcount}"
 
-# Rotacao do console de video do kernel (so existe na imagem de diagnostico,
-# com fbcon; ver board/giochi/linux-debug.fragment). O painel da X55 e
-# 720x1280 com rotacao 270: sem isto o texto sai deitado. Opcional, porque
-# varia por aparelho:
-#   => setenv giochi_fbcon 1 ; saveenv
-if test -n "${giochi_fbcon}"; then
+# Rotacao do console de video do kernel.
+#
+# O painel da X55 e' 720x1280 em retrato: sem fbcon=rotate, qualquer texto na
+# tela sai deitado — inclusive a mensagem de falha que o Launcher escreve no
+# /dev/tty1 quando nao consegue abrir o video.
+#
+# O valor NAO e' escolhido a mao. O marcador abaixo e' substituido pelo
+# post-image.sh a partir de devices/<id>.conf (GIOCHI_ROTATION dividido por 90),
+# que e' a MESMA fonte que o Launcher usa para girar a UI (ui_present). Uma
+# fonte, uma derivacao: com duas rotacoes independentes, elas concordarem era
+# sorte — foi o relato "o terminal tambem girou".
+#
+# Continua sobreponivel para o campo (o U-Boot tem prioridade sobre o padrao):
+#   => setenv giochi_fbcon 1 ; saveenv     (forca um valor)
+#   => setenv giochi_fbcon ; saveenv        (volta ao valor derivado)
+if test -z "${giochi_fbcon}"; then
+  setenv giochi_fbcon @FBCON_ROTATE@
+fi
+if test -n "${giochi_fbcon}" && test "${giochi_fbcon}" != "0"; then
   setenv bootargs "${bootargs} fbcon=rotate:${giochi_fbcon}"
 fi
 

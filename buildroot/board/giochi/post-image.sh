@@ -133,9 +133,28 @@ if [ -x "$MKIMAGE" ] && [ -f "$BOOT_CMD" ]; then
         rk3326*) MK_ARCH=arm ;;
         *)       MK_ARCH=arm64 ;;
     esac
+    # @FBCON_ROTATE@: a rotacao do console de video do kernel vem do
+    # device.conf, que este script acabou de carregar. fbcon numera 0..3 =
+    # 0/90/180/270 graus no sentido horario, a mesma convencao do
+    # SDL_RenderCopyEx que o Launcher usa — entao o valor e' rotation/90.
+    # Assim o texto de diagnostico na tela (inclusive o "a interface nao
+    # iniciou", escrito pelo Launcher no /dev/tty1) sai legivel, e nao deitado.
+    FBCON_ROTATE=0
+    case "${GIOCHI_ROTATION:-0}" in
+        90)  FBCON_ROTATE=1 ;;
+        180) FBCON_ROTATE=2 ;;
+        270) FBCON_ROTATE=3 ;;
+        *)   FBCON_ROTATE=0 ;;
+    esac
+    BOOT_CMD_TMP="$BINARIES_DIR/boot.cmd.gerado"
+    if ! sed "s/@FBCON_ROTATE@/$FBCON_ROTATE/g" "$BOOT_CMD" \
+            >"$BOOT_CMD_TMP"; then
+        echo "post-image: ERRO: falha ao preparar boot.cmd" >&2
+        exit 1
+    fi
     if "$MKIMAGE" -C none -A "$MK_ARCH" -T script \
-            -d "$BOOT_CMD" "$BINARIES_DIR/boot.scr" >/dev/null 2>&1; then
-        echo "post-image: boot.scr regerado de boot.cmd ($(wc -c <"$BOOT_CMD") B)"
+            -d "$BOOT_CMD_TMP" "$BINARIES_DIR/boot.scr" >/dev/null 2>&1; then
+        echo "post-image: boot.scr regerado de boot.cmd ($(wc -c <"$BOOT_CMD") B, fbcon=rotate:$FBCON_ROTATE)"
     else
         echo "post-image: ERRO: mkimage falhou ao gerar boot.scr" >&2
         exit 1
