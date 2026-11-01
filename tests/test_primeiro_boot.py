@@ -11,6 +11,8 @@ AGENTS.md §3.44) e se o cartão grava bem (tests/test_verify_card.py).
 
 import os
 import re
+import subprocess
+import tempfile
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -1114,6 +1116,75 @@ class ArmazenamentoDoUsuario(unittest.TestCase):
                         termo, valor,
                         f"{lang}.json:{chave} mostra '{termo}' ao usuario: "
                         f"{valor!r}")
+
+
+class SegundoCartaoEGlobPorTipoDeDispositivo(unittest.TestCase):
+    """`giochi_other_disk` tem de achar particao em mmc E em sd.
+
+    Medido: o laco procurava "$_blk/$_nome"p* para os DOIS tipos, entao
+    /sys/block/sda/sdap* nunca existia e todo leitor de cartao USB (sd*) era
+    descartado calado. O sintoma no aparelho e' "o segundo cartao nao e'
+    reconhecido", sem mensagem nenhuma.
+
+    O teste roda a funcao REAL contra uma arvore /sys falsa: `giochi_boot_disk`
+    e' substituido e o `[ -b ]` e' neutralizado (no host /dev/mmcblk2 nao
+    existe). O que se verifica e' a escolha da particao, que era o defeito.
+    """
+
+    def _rodar(self, discos):
+        with open(LIB_SH, encoding="utf-8") as fh:
+            corpo = fh.read()
+        with tempfile.TemporaryDirectory() as tmp:
+            bloco = os.path.join(tmp, "block")
+            os.makedirs(bloco)
+            for nome, removivel, partes in discos:
+                base = os.path.join(bloco, nome)
+                os.makedirs(base)
+                with open(os.path.join(base, "removable"), "w") as fh:
+                    fh.write("%d\n" % removivel)
+                with open(os.path.join(base, "size"), "w") as fh:
+                    fh.write("1000\n")
+                for parte in partes:
+                    with open(os.path.join(base, parte), "w"):
+                        pass
+            corpo = corpo.replace("/sys/block", bloco)
+            # No host nao ha' /dev/mmcblk2; o que importa e' a particao.
+            corpo = corpo.replace('[ -b "$_dev" ] || continue', ":")
+            lib = os.path.join(tmp, "lib.sh")
+            with open(lib, "w", encoding="utf-8") as fh:
+                fh.write(corpo)
+                # Redefinicao depois do source: vence em tempo de execucao.
+                fh.write("\ngiochi_boot_disk() { echo /dev/mmcblk1; }\n")
+            r = subprocess.run(
+                ["sh", "-c", '. "$1"; giochi_other_disk', "sh", lib],
+                capture_output=True, text=True, timeout=30)
+            return r
+
+    def test_leitor_usb_sd_e_reconhecido(self):
+        # So' sda tem particao; e' o segundo cartao. Antes da correcao,
+        # sdap* nao existia e a funcao devolvia vazio.
+        r = self._rodar([("mmcblk1", 1, ["mmcblk1p1", "mmcblk1p2"]),
+                         ("sda", 1, ["sda1"])])
+        self.assertEqual("/dev/sda", r.stdout.strip(),
+                         "o leitor USB (sd*) tem de ser aceito: %r" % r.stderr)
+
+    def test_leitor_vazio_e_ignorado(self):
+        r = self._rodar([("mmcblk1", 1, ["mmcblk1p1", "mmcblk1p2"]),
+                         ("sdb", 1, [])])
+        self.assertEqual("", r.stdout.strip(),
+                         "leitor sem cartao nao tem particao")
+
+    def test_emmc_nunca_e_o_segundo_cartao(self):
+        r = self._rodar([("mmcblk0", 0, ["mmcblk0p1"]),
+                         ("mmcblk1", 1, ["mmcblk1p1"])])
+        self.assertEqual("", r.stdout.strip(),
+                         "mmcblk0 e' o eMMC, nao um slot de cartao")
+
+    def test_o_proprio_cartao_de_boot_nao_conta(self):
+        r = self._rodar([("mmcblk1", 1, ["mmcblk1p1", "mmcblk1p2"]),
+                         ("mmcblk2", 1, ["mmcblk2p1"])])
+        self.assertEqual("/dev/mmcblk2", r.stdout.strip(),
+                         "o slot 2 e' o que NAO e' o de boot")
 
 
 class MtpdChamaOUmtprdComAFlagCerta(unittest.TestCase):

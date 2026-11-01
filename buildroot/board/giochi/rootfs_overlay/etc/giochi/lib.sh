@@ -95,10 +95,22 @@ giochi_other_disk() {
         [ "$_dev" = "$_disco" ] && continue
         [ -b "$_dev" ] || continue
         # Precisa de ao menos uma particao: leitor sem cartao tem size=0.
+        #
+        # O padrao depende do TIPO de dispositivo: mmcblk2 -> mmcblk2p1, mas
+        # sda -> sda1 (nao sdap1). A versao anterior usava
+        # "$_blk/$_nome"p* para os dois, entao todo leitor de cartao USB era
+        # descartado calado.
         _tem_part=0
-        for _p in "$_blk"/"$_nome"p*; do
-            [ -e "$_p" ] && { _tem_part=1; break; }
-        done
+        case "$_nome" in
+            mmcblk*)
+                for _p in "$_blk"/"$_nome"p*; do
+                    [ -e "$_p" ] && { _tem_part=1; break; }
+                done ;;
+            *)
+                for _p in "$_blk"/"$_nome"[0-9] "$_blk"/"$_nome"[0-9][0-9]; do
+                    [ -e "$_p" ] && { _tem_part=1; break; }
+                done ;;
+        esac
         [ "$_tem_part" = "1" ] || continue
         echo "$_dev"
         return 0
@@ -106,8 +118,6 @@ giochi_other_disk() {
     return 1
 }
 
-# Primeira particao de um disco, com o nome certo para o tipo de dispositivo
-# (/dev/mmcblk2p1 x /dev/sda1). Vazio se nao houver.
 # p1 do MESMO disco da raiz: /dev/mmcblk1p2 -> /dev/mmcblk1p1, /dev/sda2 ->
 # /dev/sda1. Nunca assume mmcblk0: o cartao SD e' mmcblk1 nestes aparelhos e
 # mmcblk0 e' o eMMC, que a X55 nao tem (AGENTS.md 3.29).
@@ -131,6 +141,8 @@ giochi_boot_part() {
     esac
 }
 
+# Primeira particao de um disco, com o nome certo para o tipo de dispositivo
+# (/dev/mmcblk2p1 x /dev/sda1). Vazio se nao houver.
 giochi_first_part() {
     _d=$1
     _n=$(basename "$_d")

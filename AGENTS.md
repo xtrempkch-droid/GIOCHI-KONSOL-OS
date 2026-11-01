@@ -3013,6 +3013,10 @@ Não é cosmético — três coisas quebram:
 - Ordem de preferência: (1) época salva em `/user/.giochi/relogio`, que é a
   mais precisa; (2) data do cartão; (3) deixa como está. As duas fontes passam
   pela mesma faixa de sanidade.
+- **Segundo cartão**: `giochi_other_disk` procurava `sda` + `p*` →
+  `/sys/block/sda/sdap*`, que nunca existe. Todo leitor de cartão USB era
+  descartado calado e só slot `mmc` funcionava (§3.113). O teste antigo
+  passava porque só procurava a **palavra** `_tem_part` no arquivo.
 - `giochi_boot_part` foi para o `lib.sh` em vez de repetir o `case` que o
   `S00bootlog` já tinha — é a regra do §3.20 (dado em dois arquivos). Ele
   **recusa caminho que não comece com `/dev/`**: sem essa guarda,
@@ -3077,6 +3081,32 @@ log() {
   aparecer; os dois aparecem no lugar certo.
 - Guarda: os testes de `S01relogio` afirmam a mensagem em `stdout + stderr` e
   reprovam com a versão quebrada (testado ao contrário: 3 falhas).
+
+### 3.113 Partição de disco `sd*` é `sda1`, não `sdap1`
+
+`giochi_other_disk` procurava a partição com um glob só para os dois tipos de
+nome:
+
+```sh
+for _p in "$_blk"/"$_nome"p*; do      # /sys/block/sda/sdap* -> nunca existe
+```
+
+`mmcblk2` → `mmcblk2p1` está certo, mas `sda` → `sda1`. Resultado: **todo
+leitor de cartão USB era descartado em silêncio**, e a função só funcionava
+para slot em `mmc`. O sintoma no aparelho é "o segundo cartão não é
+reconhecido", sem nenhuma mensagem — o mesmo tipo de defeito do §3.104.
+
+- Correção: `case "$_nome" in mmcblk*) … p* ;; *) … [0-9] [0-9][0-9] ;; esac`,
+  igual ao que o `giochi_first_part` já fazia três funções abaixo.
+- **Regra que fica**: nome de dispositivo não é uniforme; `mmcblk` e `sd`
+  diferem no separador da partição. Sempre que houver glob de partição,
+  confira os dois formatos — e não confie em teste que só procura o texto no
+  arquivo: o teste antigo fazia `assertIn("_tem_part", trecho)` e passava com
+  o glob errado.
+- Guarda: `SegundoCartaoEGlobPorTipoDeDispositivo` (4 testes) roda a função
+  **real** contra uma árvore `/sys/block` falsa, com `giochi_boot_disk`
+  substituído. Testada ao contrário: com o glob antigo, `test_leitor_usb_sd_e_reconhecido`
+  reprova com `/dev/sda` esperado e vazio recebido.
 
 ### 3.104 NetworkManager desfaz o IP manual da interface USB
 
@@ -3146,6 +3176,10 @@ fonte de tempo.
   `debugfs -w -R "ssv mtime <2026>"` + `ssv lastcheck <2017>` → `resize2fs`
   falha com a **mesma** mensagem; `resize2fs -f` cresce. É o teste
   `RelogioAtrasDoPC`, e ele afirma os dois lados.
+- `SegundoCartaoEGlobPorTipoDeDispositivo` (4 testes) roda
+  `giochi_other_disk` de verdade contra um `/sys/block` falso — mmc, sd,
+  leitor vazio, eMMC e o próprio disco de boot. Ao contrário (glob antigo)
+  reprova.
 - `tests/test_relogio.py` novo (14 testes): restauração, primeiro boot sem
   arquivo, lixo no arquivo, época fora de faixa, `/user` fora do ar, gravação
   pelo `rcK`, `rcK` **antes** do `umount`, relógio implausível não salvo,
