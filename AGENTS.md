@@ -3521,6 +3521,53 @@ classe do §3.20 e do §3.124.
 - O `tools/check-tracked.sh` (§3.1) reprovou o arquivo gerado até ele entrar na
   lista de permitidos — funcionou como projetado.
 
+### 3.127 `LAUNCH_APP` não serve para jogo nativo: o Launcher suspenso segura o DRM
+
+Primeiro teste do port C++ do Arcade Volleyball **no aparelho** (X55, imagem
+nova). Instalado em `/apps/arcade-volleyball` e lançado pelo caminho natural:
+
+```
+$ giochi-ctl LAUNCH_APP arcade-volleyball
+OK launch arcade-volleyball
+```
+
+…e o processo morreu em 9 ms:
+
+```
+[  212.945] I: launcher suspenso (SIGSTOP) para arcade-volleyball
+[  212.945] I: arcade-volleyball iniciado (pid 639)
+arcade-volleyball: SDL_Init: No available video device
+[  212.954] W: arcade-volleyball terminou com codigo 1
+```
+
+**Não era o binário.** As quatro bibliotecas (`libSDL2`, `libstdc++`,
+`libgcc_s`, `libc`) estavam no rootfs, e o Launcher roda em KMSDRM no mesmo
+aparelho. A causa é a **semântica de cada tipo de lançamento** no supervisor
+(`supervisor.c:491`):
+
+| Tipo | O que faz com o Launcher | DRM master |
+|---|---|---|
+| `LAUNCH_KIND_APP` (`LAUNCH_APP`) | `SIGSTOP` — **suspende** | continua com o Launcher (o fd segue aberto) |
+| `LAUNCH_KIND_GAME` (FIFO `transition`, cmd `LAUNCH`) | `SIGTERM` + `waitpid` — **encerra** | liberado |
+
+Um app de verdade (PortMaster, que desenha no **terminal**) precisa do Launcher
+vivo para voltar rápido — daí o `SIGSTOP`, que é o que a spec §4.7 pede. Mas um
+jogo que abre `/dev/dri/card0` por conta própria **não consegue** ser DRM master
+enquanto outro processo tem o dispositivo: o SDL desiste com "No available
+video device", que parece falta de driver e é falta de **posse do DRM**.
+
+- Caminho correto para app nativo fullscreen: FIFO `/run/giochi/transition`,
+  cmd `GIOCHI_TRANS_LAUNCH` (1). `giochi_game_prepare` executa binário cru
+  direto quando o caminho não termina em `.giochi` (`game.c:82`), então o mesmo
+  caminho serve para port e para pacote.
+- Mensagem na FIFO (**1288 B**, struct **sem `packed`**):
+  `<IHH>` magic `0x31435447` ("GTC1") + version 1 + cmd 1, depois `path[256]` e
+  `metadata[1024]` com NUL. Medido: mandar isso por `ssh 'cat > fifo'` funciona
+  e o log diz `transition: lancar jogo '/apps/arcade-volleyball'`.
+- **Regra que fica**: "o app abre e morre na hora" com erro de vídeo, num
+  aparelho onde o **Launcher desenha**, é disputa de DRM master — não é driver,
+  não é lib faltando. Confira **por qual tipo** o processo foi lançado.
+
 ### 3.104 NetworkManager desfaz o IP manual da interface USB
 
 `tools/giochi-ctl.py preparar` atribuía `10.55.0.1/24` com `ip addr add` e

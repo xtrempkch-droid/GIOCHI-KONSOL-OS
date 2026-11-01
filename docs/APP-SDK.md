@@ -91,6 +91,14 @@ Regras que o teste cobra:
 | `SET_DATE <epoch>` | `OK date <epoch>` / `ERR invalid_date` / `ERR missing_date` / `ERR date_failed` | acerta o relógio e persiste em `/user/.giochi/relogio` (docs/RELÓGIO.md). Época fora de 2020..2100 é **recusada** |
 | `SET_THEME <id>` | **`ERR not_implemented`** | ver abaixo |
 
+> **`LAUNCH_APP` não serve para jogo nativo que abre `/dev/dri`.** Ele
+> **suspende** o Launcher (`SIGSTOP`), e o Launcher suspenso continua sendo
+> dono do DRM: o SDL do jogo responde `SDL_Init: No available video device` e
+> morre. App que desenha no terminal (PortMaster) é o caso do `LAUNCH_APP`;
+> app fullscreen precisa do caminho de **jogo**, que **encerra** o Launcher
+> antes (FIFO `transition`, cmd `LAUNCH`). Detalhes e a mensagem binária em
+> AGENTS.md §3.127.
+
 **`SET_DATE` é a porta para corrigir a data sem cabear o aparelho.** O console
 não tem RTC (docs/RELÓGIO.md); quando a bateria do RTC é trocada, a época
 salva fica velha e o TLS da Loja passa a falhar com erro de data. O app da
