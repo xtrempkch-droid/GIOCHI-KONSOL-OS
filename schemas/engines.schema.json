@@ -1,0 +1,150 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://giochi.local/schemas/engines.schema.json",
+  "title": "Giochi Konsol OS v1.2 — assets/engines.json",
+  "description": "Catalogo de engines. Somar uma engine e acrescentar um objeto em 'engines'; nao ha enum no codigo para mudar.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "backends",
+    "engines"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "$comment": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$"
+    },
+    "backends": {
+      "type": "object",
+      "description": "Backends conhecidos. Um modo so pode usar um destes.",
+      "minProperties": 1,
+      "properties": {
+        "$comment": {
+          "type": "string"
+        }
+      },
+      "patternProperties": {
+        "^[a-z][a-z0-9_]*$": {
+          "type": "object",
+          "properties": {
+            "requires": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "engines": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "license",
+          "modes",
+          "evidence"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "license": {
+            "type": "string",
+            "minLength": 1
+          },
+          "runtime": {
+            "description": "Se a engine e' um runtime de .giochi, precisa existir em schemas/metadata.schema.json. null = nao e'.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "godot",
+              "retroarch",
+              "proton",
+              null
+            ]
+          },
+          "buildroot_package": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "distribution": {
+            "description": "binary = binario pronto; source = compilar; project = projeto que precisa export.",
+            "enum": [
+              "binary",
+              "source",
+              "project"
+            ]
+          },
+          "ram_min_mb": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "disk_mb": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "verified_on_device": {
+            "description": "true so quando rodou num aparelho de verdade.",
+            "type": "boolean"
+          },
+          "evidence": {
+            "description": "De onde vem o numero. Sem isto, o dado e' boato.",
+            "type": "string",
+            "minLength": 8
+          },
+          "modes": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Formas de rodar, da melhor para a pior. O recomendador usa a primeira que o aparelho atende.",
+            "items": {
+              "type": "object",
+              "required": [
+                "backend"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "backend": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "gles_min": {
+                  "type": "string",
+                  "pattern": "^[0-9]+\\.[0-9]+$"
+                },
+                "gl_desktop_min": {
+                  "type": "string",
+                  "pattern": "^[0-9]+\\.[0-9]+$"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "partial": {
+                  "description": "Serve, mas com ressalva (vira veredito 'parcial' com este texto).",
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

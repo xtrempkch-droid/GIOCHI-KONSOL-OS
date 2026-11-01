@@ -92,6 +92,33 @@ não passam:
 > engine da Rockstar e o codinome da id Tech 5. As duas são fechadas; não vale
 > a pena discutir qual foi pedida.
 
+### O teto é dado, não código
+
+A capacidade de cada aparelho vive em **três** lugares que precisam concordar:
+`buildroot/board/giochi/devices/<id>.conf` (fonte), a tabela por SoC em
+`src/init/device_profile.c` (o que o aparelho publica em runtime) e os perfis
+manuais do `giochi-forge`. Quem cruza os três é `tools/check-engines.py`, que
+roda no `make lint` e na suíte `engines`.
+
+```console
+$ tools/check-engines.py --device x55
+== x55 (rk3566/panfrost, GL 3.1, GLES 3.1)
+  OK  godot            gles 3.0
+  ~   chocolate-doom   software; nao verificado em aparelho
+  ~   gzdoom           gles 2.0 (caminho HAVE_GLES2); nao verificado em aparelho
+  --  melonds          exige gl_desktop 3.2; aparelho tem GL 3.1 / GLES 3.1
+```
+
+A engine é **dado** em [assets/engines.json](../assets/engines.json) — somar uma
+engine nova é acrescentar um objeto, sem tocar em enum nenhum. Cada engine
+declara seus **modos** (backend + versão mínima) e a evidência do número. O
+recomendador usa o primeiro modo que o aparelho atende; "possível mas não
+verificado" vira `parcial`, nunca `roda`.
+
+O catálogo já carrega a diferença entre gerações de engine: o Godot tem dois
+modos — `gles 3.0` (4.x) e `gles 2.0` com ressalva (3.5 LTS, que é o que o
+RK3326 alcança pelo ADR-07, mas os três jogos padrão são 4.3 e não abrem nele).
+
 ### O teto gráfico, medido (é o que decide tudo)
 
 Do `features.txt` oficial do Mesa (a fonte que os próprios drivers usam):

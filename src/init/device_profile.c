@@ -102,6 +102,40 @@ static const giochi_device_values g_devices[] = {
       "vulkan_absent" },
 };
 
+/* Capacidade grafica e' do SoC, nao do aparelho: o mesmo RK3566 (Mali-G52,
+ * panfrost) tem o mesmo teto em qualquer gabinete. Valores medidos no
+ * features.txt do Mesa -- panfrost chega a GL 3.1 desktop e GLES 3.1; lima
+ * (RK3326, Mali-G31) fica em GL 2.1 e GLES 2.0.
+ *
+ * Antes desta tabela o JSON emitia "driver": "panfrost", "gles_max": "3.2" e
+ * gles3=true para TODO aparelho, inclusive o RK3326 -- ou seja, o perfil
+ * mentia sobre o aparelho que usava lima, e a Loja recomendaria engine que nao
+ * roda. Guarda: tools/check-engines.py confere esta tabela contra
+ * buildroot/board/giochi/devices/<id>.conf. */
+typedef struct {
+    const char *soc;
+    const char *driver;
+    const char *gl_desktop_max;
+    const char *gles_max;
+    int vulkan;
+} giochi_soc_graphics;
+
+static const giochi_soc_graphics g_soc_graphics[] = {
+    { "rk3566", "panfrost", "3.1", "3.1", 0 },
+    { "rk3326", "lima",     "2.1", "2.0", 0 },
+};
+
+static giochi_soc_graphics soc_graphics(const char *soc)
+{
+    size_t i;
+    for (i = 0; i < sizeof(g_soc_graphics) / sizeof(g_soc_graphics[0]); i++) {
+        if (strcmp(g_soc_graphics[i].soc, soc) == 0)
+            return g_soc_graphics[i];
+    }
+    /* SoC desconhecido: o mais conservador (GLES 2.0), nunca o mais otimista. */
+    return g_soc_graphics[sizeof(g_soc_graphics) / sizeof(g_soc_graphics[0]) - 1];
+}
+
 static giochi_device_values device_values(void)
 {
     size_t i;
@@ -151,6 +185,8 @@ static int developer_ssh_usb_active(const char *settings_path)
 int giochi_device_profile_write(const char *path)
 {
     giochi_device_values d = device_values();
+    giochi_soc_graphics sg;
+    int gles3_ok;
     char device_id[96];
     char settings[512];
     int ssh_usb = 0;
@@ -171,18 +207,24 @@ int giochi_device_profile_write(const char *path)
         ssh_usb = developer_ssh_usb_active(settings);
     }
 
+    /* GLES 3.x so quando o driver chega la: lima/RK3326 fica em 2.0. */
+    sg = soc_graphics(d.soc);
+    gles3_ok = sg.gles_max[0] == '3';
+
     n = snprintf(buf, sizeof(buf),
         "{\n"
         "  \"schema_version\": \"1.0\",\n"
         "  \"device_id\": \"%s\",\n"
         "  \"soc\": \"%s\",\n"
         "  \"cpu\": { \"arch\": \"aarch64\", \"cores\": 4, \"model\": \"%s\", \"max_mhz\": %d },\n"
-        "  \"gpu\": { \"model\": \"%s\", \"driver\": \"panfrost\", \"gles_max\": \"3.2\" },\n"
+        "  \"gpu\": { \"model\": \"%s\", \"driver\": \"%s\", "
+        "\"gl_desktop_max\": \"%s\", \"gles_max\": \"%s\" },\n"
         "  \"ram_mb\": %d,\n"
         "  \"vram_mb\": %d,\n"
         "  \"storage\": { \"system_mb\": 160, \"user_free_mb\": 12000 },\n"
         "  \"os\": { \"name\": \"Giochi Konsol OS\", \"version\": \"%s\", \"kernel\": \"%s\" },\n"
-        "  \"graphics_api\": { \"gles3\": true, \"gles2\": true, \"vulkan\": false },\n"
+        "  \"graphics_api\": { \"gles3\": %s, \"gles2\": true, \"vulkan\": %s,\n"
+        "                    \"gl_desktop\": \"%s\" },\n"
         "  \"audio\": { \"alsa\": true, \"dmix\": true, \"sample_rate\": 48000 },\n"
         "  \"input\": { \"evdev\": true, \"gamepad\": true, \"touchscreen\": false },\n"
         "  \"display\": { \"width\": %d, \"height\": %d, \"refresh_hz\": %d },\n"
@@ -193,7 +235,11 @@ int giochi_device_profile_write(const char *path)
         "  \"proton\": { \"supported\": false, \"reason\": \"%s\", \"min_ram_mb\": 4096, \"min_vulkan\": \"1.1\", \"fex_required\": true }\n"
         "}\n",
         device_id, d.soc, d.cpu_model, d.cpu_max_mhz, d.gpu_model,
+        sg.driver, sg.gl_desktop_max, sg.gles_max,
         d.ram_mb, d.vram_mb, GIOCHI_OS_VERSION, GIOCHI_KERNEL_VERSION,
+        gles3_ok ? "true" : "false",
+        sg.vulkan ? "true" : "false",
+        sg.gl_desktop_max,
         d.display_width, d.display_height, d.display_refresh_hz,
         d.integrated_radio ? "true" : "false",
         d.usb_gadget_ok ? "true" : "false",

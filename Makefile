@@ -360,6 +360,12 @@ lint:
 	done; echo "ok"
 	@echo "== jogos padrao =="
 	@python3 tools/check-default-games.py
+	@echo "== engines =="
+	@# Catalogo de engines + recomendacao por aparelho. Tambem confere que
+	@# devices/<id>.conf, a tabela por SoC do device_profile.c e os perfis
+	@# manuais do forge dizem a MESMA capacidade grafica: quando discordavam,
+	@# o RK3326 saia como panfrost/GLES 3.2 e a Loja recomendava engine errada.
+	@python3 tools/check-engines.py --quiet
 	@echo "== json =="
 	@python3 -c 'import glob,json,sys; [json.load(open(p)) for p in glob.glob("assets/*.json")+glob.glob("assets/devices/*/*.json")+glob.glob("schemas/*.json")]; print("ok")'
 	@echo "== defconfigs =="

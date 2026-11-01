@@ -1,0 +1,367 @@
+{
+  "$comment": "Catalogo de engines do Giochi Konsol OS. FONTE UNICA da capacidade de cada engine: quem recomenda e' tools/check-engines.py, nao uma lista escrita a mao. Para somar uma engine nova basta acrescentar um objeto aqui -- nao ha enum no codigo para mudar (os `runtime` precisam existir em schemas/metadata.schema.json, e o checker cobra isso).",
+  "schema_version": "1.0",
+  "backends": {
+    "$comment": "O que cada backend exige do aparelho. `software` nao exige GPU nenhuma.",
+    "software": {
+      "requires": "nenhuma GPU; renderiza na CPU"
+    },
+    "gles": {
+      "requires": "OpenGL ES >= gles_min"
+    },
+    "gl_desktop": {
+      "requires": "OpenGL desktop >= gl_desktop_min"
+    },
+    "vulkan": {
+      "requires": "Vulkan"
+    }
+  },
+  "engines": [
+    {
+      "id": "godot",
+      "title": "Godot",
+      "license": "MIT",
+      "runtime": "godot",
+      "distribution": "project",
+      "modes": [
+        {
+          "backend": "gles",
+          "gles_min": "3.0"
+        },
+        {
+          "backend": "gles",
+          "gles_min": "2.0",
+          "partial": "Godot 3.5 LTS (ADR-07); os tres jogos padrao sao 4.3 e nao abrem no 3.5"
+        }
+      ],
+      "ram_min_mb": 320,
+      "verified_on_device": true,
+      "evidence": "ADR-07: RK3566 usa 4.x Compatibility-GLES3; RK3326 fica no 3.5 LTS. Tres jogos padrao medidos no host (187 MB / 18-24 MB VRAM)"
+    },
+    {
+      "id": "chocolate-doom",
+      "title": "Chocolate Doom",
+      "license": "GPL-2.0",
+      "runtime": null,
+      "buildroot_package": "chocolate-doom",
+      "distribution": "binary",
+      "modes": [
+        {
+          "backend": "software"
+        }
+      ],
+      "ram_min_mb": 64,
+      "verified_on_device": false,
+      "evidence": "pacote existe no Buildroot 2024.02 (sondado por caminho)"
+    },
+    {
+      "id": "prboom-plus",
+      "title": "PrBoom+",
+      "license": "GPL-2.0",
+      "runtime": null,
+      "buildroot_package": "prboom",
+      "distribution": "binary",
+      "modes": [
+        {
+          "backend": "software"
+        },
+        {
+          "backend": "gl_desktop",
+          "gl_desktop_min": "1.2"
+        }
+      ],
+      "ram_min_mb": 64,
+      "verified_on_device": false,
+      "evidence": "pacote `prboom` existe no Buildroot 2024.02"
+    },
+    {
+      "id": "solarus",
+      "title": "Solarus",
+      "license": "GPL-2.0",
+      "runtime": null,
+      "buildroot_package": "solarus",
+      "distribution": "binary",
+      "modes": [
+        {
+          "backend": "software"
+        }
+      ],
+      "ram_min_mb": 128,
+      "verified_on_device": false,
+      "evidence": "pacote existe no Buildroot 2024.02; usa SDL2 (GL/software)"
+    },
+    {
+      "id": "minetest",
+      "title": "Minetest / Luanti",
+      "license": "LGPL-2.1",
+      "runtime": null,
+      "buildroot_package": "minetest",
+      "distribution": "binary",
+      "modes": [
+        {
+          "backend": "gl_desktop",
+          "gl_desktop_min": "2.0"
+        }
+      ],
+      "ram_min_mb": 512,
+      "verified_on_device": false,
+      "evidence": "pacote existe no Buildroot 2024.02; 18,1 MB instalados no Alpine aarch64"
+    },
+    {
+      "id": "easyrpg",
+      "title": "EasyRPG Player",
+      "license": "MIT",
+      "runtime": null,
+      "distribution": "binary",
+      "modes": [
+        {
+          "backend": "software"
+        }
+      ],
+      "ram_min_mb": 128,
+      "verified_on_device": false,
+      "evidence": "3,4 MB instalados no Alpine aarch64 (MIT)"
+    },
+    {
+      "id": "devilutionx",
+      "title": "DevilutionX (Diablo)",
+      "license": "Unlicense",
+      "runtime": null,
+      "distribution": "binary",
+      "modes": [
+        {
+          "backend": "software"
+        }
+      ],
+      "ram_min_mb": 256,
+      "verified_on_device": false,
+      "evidence": "port no PortMaster (ports/devilutionx); exige os dados do jogo"
+    },
+    {
+      "id": "scummvm",
+      "title": "ScummVM",
+      "license": "GPL-2.0",
+      "runtime": null,
+      "distribution": "binary",
+      "modes": [
+        {
+          "backend": "software"
+        }
+      ],
+      "ram_min_mb": 128,
+      "verified_on_device": false,
+      "evidence": "motor de aventuras classicas; roda por software"
+    },
+    {
+      "id": "tic80",
+      "title": "TIC-80",
+      "license": "MIT",
+      "runtime": null,
+      "distribution": "binary",
+      "modes": [
+        {
+          "backend": "software"
+        },
+        {
+          "backend": "gl_desktop",
+          "gl_desktop_min": "2.1"
+        }
+      ],
+      "ram_min_mb": 64,
+      "verified_on_device": false,
+      "evidence": "tic80-v1.4-linux-arm64.zip 4,9 MB; cartuchos de 18-100 KB"
+    },
+    {
+      "id": "love",
+      "title": "LOVE",
+      "license": "Zlib",
+      "runtime": null,
+      "distribution": "binary",
+      "modes": [
+        {
+          "backend": "gl_desktop",
+          "gl_desktop_min": "2.1"
+        }
+      ],
+      "ram_min_mb": 128,
+      "verified_on_device": false,
+      "evidence": "3,8 MB instalados no Alpine aarch64 (Zlib); caminho GLES existe no fonte, nao testado"
+    },
+    {
+      "id": "raylib",
+      "title": "raylib",
+      "license": "Zlib",
+      "runtime": null,
+      "distribution": "source",
+      "modes": [
+        {
+          "backend": "gles",
+          "gles_min": "2.0"
+        }
+      ],
+      "ram_min_mb": 64,
+      "verified_on_device": false,
+      "evidence": "1,4 MB (Zlib); backend GLES2/ES3 explicito em rlgl.h (145 ocorrencias)"
+    },
+    {
+      "id": "retroarch",
+      "title": "RetroArch + libretro cores",
+      "license": "GPL-2.0",
+      "runtime": "retroarch",
+      "distribution": "binary",
+      "modes": [
+        {
+          "backend": "gles",
+          "gles_min": "3.0"
+        },
+        {
+          "backend": "gl_desktop",
+          "gl_desktop_min": "2.1"
+        }
+      ],
+      "ram_min_mb": 256,
+      "verified_on_device": false,
+      "evidence": "runtime ja previsto no schema; 11,5 MB + 42 cores no Alpine aarch64"
+    },
+    {
+      "id": "dhewm3",
+      "title": "dhewm3 (id Tech 4)",
+      "license": "GPL-3.0",
+      "runtime": null,
+      "distribution": "binary",
+      "modes": [
+        {
+          "backend": "gl_desktop",
+          "gl_desktop_min": "2.0"
+        }
+      ],
+      "ram_min_mb": 512,
+      "verified_on_device": false,
+      "evidence": "ports/doom3 no PortMaster (dhewm3 37,8 MB + base.so 33,2 MB)"
+    },
+    {
+      "id": "ioquake3",
+      "title": "ioquake3 (id Tech 3)",
+      "license": "GPL-2.0",
+      "runtime": null,
+      "distribution": "source",
+      "modes": [
+        {
+          "backend": "gl_desktop",
+          "gl_desktop_min": "1.1"
+        }
+      ],
+      "ram_min_mb": 256,
+      "verified_on_device": false,
+      "evidence": "fonte oficial GPL-2.0; sem backend GLES confirmado no fonte"
+    },
+    {
+      "id": "melonds",
+      "title": "melonDS",
+      "license": "GPL-3.0",
+      "runtime": null,
+      "distribution": "binary",
+      "modes": [
+        {
+          "backend": "gl_desktop",
+          "gl_desktop_min": "3.2"
+        }
+      ],
+      "ram_min_mb": 512,
+      "verified_on_device": false,
+      "evidence": "3,2 MB no Alpine; exige GL 3.2 -- acima do panfrost (3.1)"
+    },
+    {
+      "id": "ppsspp",
+      "title": "PPSSPP",
+      "license": "GPL-2.0",
+      "runtime": null,
+      "distribution": "binary",
+      "modes": [
+        {
+          "backend": "gles",
+          "gles_min": "2.0"
+        }
+      ],
+      "ram_min_mb": 1024,
+      "verified_on_device": false,
+      "evidence": "33,8 MB no Alpine aarch64; emular PSP em 2 GB e' duvida de desempenho"
+    },
+    {
+      "id": "gzdoom",
+      "title": "GZDoom",
+      "license": "GPL-3.0",
+      "runtime": null,
+      "distribution": "binary",
+      "modes": [
+        {
+          "backend": "gl_desktop",
+          "gl_desktop_min": "3.3"
+        },
+        {
+          "backend": "gles",
+          "gles_min": "2.0",
+          "note": "caminho HAVE_GLES2 (Android); nao verificado"
+        }
+      ],
+      "ram_min_mb": 512,
+      "verified_on_device": false,
+      "evidence": "CMake tem option(HAVE_GLES2); 25,9 MB no Alpine. O caminho GL desktop pede 3.3, que o panfrost nao tem"
+    },
+    {
+      "id": "openmw",
+      "title": "OpenMW",
+      "license": "GPL-3.0",
+      "runtime": null,
+      "distribution": "binary",
+      "modes": [
+        {
+          "backend": "gl_desktop",
+          "gl_desktop_min": "3.3"
+        },
+        {
+          "backend": "gles",
+          "gles_min": "2.0",
+          "note": "via gl4es (OPENMW_GL4ES_MANUAL_INIT); nao verificado"
+        }
+      ],
+      "ram_min_mb": 1024,
+      "verified_on_device": false,
+      "evidence": "26,1 MB no Alpine; caminho gl4es existe no CMake"
+    },
+    {
+      "id": "supertux",
+      "title": "SuperTux",
+      "license": "GPL-3.0",
+      "runtime": null,
+      "distribution": "binary",
+      "modes": [
+        {
+          "backend": "gl_desktop",
+          "gl_desktop_min": "2.0"
+        }
+      ],
+      "ram_min_mb": 256,
+      "disk_mb": 250,
+      "verified_on_device": false,
+      "evidence": "supertux-data = 244 MB instalados para 5 MB de binario (Alpine aarch64)"
+    },
+    {
+      "id": "supertuxkart",
+      "title": "SuperTuxKart",
+      "license": "GPL-3.0",
+      "runtime": null,
+      "distribution": "binary",
+      "modes": [
+        {
+          "backend": "gl_desktop",
+          "gl_desktop_min": "2.1"
+        }
+      ],
+      "ram_min_mb": 1024,
+      "disk_mb": 730,
+      "verified_on_device": false,
+      "evidence": "supertuxkart-data = 717,3 MB instalados (Alpine aarch64)"
+    }
+  ]
+}

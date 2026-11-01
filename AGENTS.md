@@ -3098,3 +3098,61 @@ fonte onde havia caminho válido (raylib, GZDoom, LÖVE, OpenMW) e marcados "nã
 verificado" onde não confirmei (ioquake3, dhewm3, minetest/irrlicht).
 `make lint` rc=0 e `tests/run_tests.sh` **26/26**. **Não rodou:** nenhuma dessas
 engines em aparelho — a coluna "backend" é leitura de fonte, não medição em GPU.
+
+### 2026-10-31 (28) — Copilot (o teto deixou de ser prosa: catálogo de engines + perfil honesto)
+
+O mantenedor apontou o certo: "o app tem que entender a realidade de cada
+dispositivo para recomendar o teto", e o projeto terá aparelhos mais potentes.
+Traduzindo: o teto gráfico que eu tinha escrito **em prosa** no `docs/GAMES.md`
+não serve para um app — tem de ser **dado**, por aparelho, e engine nova tem de
+ser dado também, não enum.
+
+**Bug de dado encontrado no caminho (e é o que mais importa aqui):**
+`src/init/device_profile.c` emitia `"driver": "panfrost"`, `"gles_max": "3.2"` e
+`gles3: true` para **todos** os aparelhos, inclusive o RK3326 — que usa
+**lima** (GL 2.1 / GLES 2.0 no `features.txt` do Mesa). O perfil publicado pelo
+aparelho mentia, e a Loja recomendaria jogo que não roda. O mesmo erro estava
+nos perfis manuais do forge, e o `rk3566` ainda dizia GLES 3.2 quando o Mesa diz
+3.1.
+
+**Entregue:**
+
+1. **`GIOCHI_GPU_DRIVER` / `GIOCHI_GL_DESKTOP` / `GIOCHI_GLES` / `GIOCHI_VULKAN`
+   em `devices/<id>.conf`** (a fonte única, como manda o §6.1), preenchidos com a
+   medição do Mesa: rk3566 = panfrost 3.1/3.1; rk3326 = lima 2.1/2.0.
+2. **Tabela `g_soc_graphics` por SoC** em `device_profile.c` (capacidade é do
+   SoC, não do gabinete) + emissão honesta de `gpu.driver`,
+   `gpu.gl_desktop_max`, `graphics_api.gles3` e `graphics_api.gl_desktop`. SoC
+   desconhecido cai no **mais conservador**, nunca no mais otimista.
+3. **`assets/engines.json`** — 20 engines como **dado**: licença, modos
+   (backend + versão mínima), RAM, distribuição, `verified_on_device` e
+   `evidence` (de onde veio o número).
+4. **`schemas/engines.schema.json`**.
+5. **`tools/check-engines.py`** — valida o catálogo, **confere a coerência dos
+   três lugares** que descrevem o aparelho e imprime a matriz de recomendação
+   (`roda` / `parcial` / `nao` com motivo). No `make lint` e na suíte `engines`.
+
+**Detalhe que só apareceu na matriz:** Godot 4.x é GLES3 e **não roda no
+RK3326** (lima = GLES 2.0) — o que bate com o ADR-07 (RK3326 fica no 3.5 LTS).
+Modelado como dois modos no catálogo, o segundo com `partial`: "Godot 3.5 LTS;
+os três jogos padrão são 4.3 e não abrem no 3.5".
+
+**Dois testes do `classify` codificavam a mentira.** Eles pediam
+`graphics_api_min="gles3"` no RK3326 e esperavam "Compatível" — passavam só
+porque o perfil dizia `gles3: true`. Corrigidos para `gles2` (o que Godot 3.5
+de fato pede) e acrescentado `test_gles3_nao_roda_no_lima`, que trava a
+correção. Lição: teste que passa por causa de dado errado **é** o dado errado.
+
+**Verificação (tudo rodado):**
+
+- `tests/test_engines.py` — **19 testes** (coerência dos três lugares, lima
+  nunca com GLES 3, catálogo inválido, backend inventado, runtime fora do
+  enum do schema, nada acima do teto em nenhum aparelho, CLI).
+- **Testado ao contrário**: devolvi `rk3326 = panfrost/3.2` na tabela C →
+  **5 problemas** e rc=1; restaurado → `ok (20 engine(s), 5 aparelho(s))`.
+- Suíte `forge` 37 → **38 testes** (o novo `test_gles3_nao_roda_no_lima`).
+- `make lint` rc=0 (seção `engines` nova) e `tests/run_tests.sh` **27/27**.
+
+**Aberto:** a matriz diz "não verificado em aparelho" para 19 das 20 engines —
+só o Godot tem medição real. E o recomendador ainda não está ligado ao
+`giochi-store`; hoje é ferramenta de linha de comando.

@@ -71,6 +71,20 @@ if command -v python3 >/dev/null 2>&1; then
     fi
 fi
 
+# Catalogo de engines: os tres lugares que descrevem a capacidade do aparelho
+# (devices/<id>.conf, a tabela por SoC do device_profile.c e os perfis manuais
+# do forge) tem de concordar. Quando discordavam, o RK3326 aparecia como
+# panfrost/GLES 3.2 e a Loja recomendava engine que nao roda nele.
+if command -v python3 >/dev/null 2>&1; then
+    total=$((total + 1))
+    if (cd "$ROOT" && python3 -m unittest tests.test_engines) >/dev/null 2>&1; then
+        echo "OK     engines (python)"
+    else
+        echo "FALHA  engines (python)"
+        fail=$((fail + 1))
+    fi
+fi
+
 # Layout do cartao (genimage.cfg): o u-boot tem de caber na regiao raw e as
 # particoes nao podem se sobrepor. Sem isso o build morre no genimage depois de
 # 1-3 h compilando (foi o que aconteceu com a regiao de 8 MiB).
