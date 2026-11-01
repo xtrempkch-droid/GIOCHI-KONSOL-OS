@@ -68,6 +68,7 @@ exit 0
 echo "date $*" >> "%s"
 case "$1" in
     -s) exit 0 ;;
+    -r) exec /usr/bin/stat -c %%Y "$2" ;;
     +%%s) echo "%d"; exit 0 ;;
 esac
 exit 0
@@ -82,6 +83,10 @@ exit 0
 """)
         self._shim("sync", "#!/bin/sh\nexit 0\n")
         self._shim("swapoff", "#!/bin/sh\nexit 0\n")
+        # `mount`/`umount` fingidos: os arquivos do "cartao" ja' existem no
+        # diretorio apontado por GIOCHI_RELOGIO_BOOT_MNT.
+        self._shim("mount", "#!/bin/sh\nexit 0\n")
+        self._shim("mkdir", "#!/bin/sh\nexec /usr/bin/mkdir \"$@\"\n")
         self._shim("umount", "#!/bin/sh\nexit 0\n")
         self._shim("tr", "#!/bin/sh\nexec /usr/bin/tr \"$@\"\n")
         open(os.path.join(self.dir, "montado"), "w").close()
@@ -96,7 +101,7 @@ exit 0
             fh.write(corpo)
         os.chmod(caminho, os.stat(caminho).st_mode | stat.S_IEXEC)
 
-    def _rodar(self, script, alvo_user=None):
+    def _rodar(self, script, extra_env=None):
         """Roda o script com /user e /user2 redirecionados para o tmp."""
         with open(script, encoding="utf-8") as fh:
             fonte = fh.read()
@@ -110,10 +115,11 @@ exit 0
         with open(alvo, "w", encoding="utf-8") as fh:
             fh.write(fonte)
         os.chmod(alvo, 0o755)
+        env = {"PATH": self.bin + ":/usr/bin:/bin"}
+        env.update(extra_env or {})
         return subprocess.run(
             ["sh", alvo, "start"],
-            capture_output=True, text=True, timeout=60,
-            env={"PATH": self.bin + ":/usr/bin:/bin"},
+            capture_output=True, text=True, timeout=60, env=env,
         )
 
     def _chamadas_date(self):
@@ -162,6 +168,71 @@ class RelogioRestaura(RelogioBase):
         self.assertEqual(0, r.returncode,
                          "sem /user o boot NAO pode abortar: %r" % r.stderr)
         self.assertIn("particao de dados fora do ar", r.stdout + r.stderr)
+
+
+
+class DataDoCartaoNoPrimeiroBoot(RelogioBase):
+    """Sem epoca salva, a hora vem dos arquivos que o PC gravou no cartao.
+
+    No primeiro boot depois de gravar o cartao, /user nasce VAZIO (o
+    post-image.sh cria user.ext4 vazio), entao nao ha' nada ali de onde tirar
+    a hora. Mas a particao de boot foi escrita pelo PC: o mtime mais novo dali
+    e' uma data real.
+
+    Sem este recurso o conserto nao se sustentava: o rcK recusa salvar 2017
+    (fora de faixa), entao nunca existiria uma epoca plausivel para restaurar
+    e o relogio ficaria errado para sempre.
+    """
+
+    def _cartao(self, mtimes):
+        d = os.path.join(self.dir, "cartao")
+        os.makedirs(os.path.join(d, "dtbs"), exist_ok=True)
+        caminhos = []
+        for i, quando in enumerate(mtimes):
+            caminho = os.path.join(d, "arquivo%d" % i)
+            with open(caminho, "w") as fh:
+                fh.write("x")
+            os.utime(caminho, (quando, quando))
+            caminhos.append(caminho)
+        return d
+
+    def test_usa_o_mtime_mais_novo(self):
+        # Um arquivo com data de 2017 (criado no proprio aparelho) e outros
+        # dois com a data real do PC (2026). O MAIOR tem de vencer: o de 2017
+        # e' justamente o que nao serve.
+        d = self._cartao([EPOCA_2017, EPOCA_2026, EPOCA_2026 - 3600])
+        r = self._rodar(S01, {
+            "GIOCHI_RELOGIO_BOOT_DEV": os.path.join(d, "arquivo0"),
+            "GIOCHI_RELOGIO_BOOT_MNT": d,
+        })
+        self.assertEqual(0, r.returncode, r.stderr)
+        self.assertIn("date -s @%d" % EPOCA_2026, self._chamadas_date(),
+                      "tinha de usar o mtime MAIS NOVO do cartao: %r"
+                      % self._chamadas_date())
+
+    def test_data_do_cartao_tambem_precisa_ser_plausivel(self):
+        # Cartao com data absurda nao pode virar relogio.
+        d = self._cartao([EPOCA_2017])
+        r = self._rodar(S01, {
+            "GIOCHI_RELOGIO_BOOT_DEV": os.path.join(d, "arquivo0"),
+            "GIOCHI_RELOGIO_BOOT_MNT": d,
+        })
+        self.assertEqual(0, r.returncode, r.stderr)
+        self.assertNotIn("date -s @%d" % EPOCA_2017,
+                         " ".join(self._chamadas_date()))
+        self.assertIn("sem data utilizavel", r.stdout + r.stderr)
+
+    def test_epoca_salva_tem_prioridade_sobre_o_cartao(self):
+        with open(os.path.join(self.user, ".giochi", "relogio"), "w") as fh:
+            fh.write("%d\n" % (EPOCA_2026 + 86400))
+        d = self._cartao([EPOCA_2026])
+        self._rodar(S01, {
+            "GIOCHI_RELOGIO_BOOT_DEV": os.path.join(d, "arquivo0"),
+            "GIOCHI_RELOGIO_BOOT_MNT": d,
+        })
+        self.assertIn("date -s @%d" % (EPOCA_2026 + 86400),
+                      self._chamadas_date(),
+                      "a epoca salva e' mais precisa que a data do cartao")
 
 
 class RcKGuarda(RelogioBase):

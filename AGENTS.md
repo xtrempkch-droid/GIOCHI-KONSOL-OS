@@ -3002,13 +3002,29 @@ Não é cosmético — três coisas quebram:
 - Ambos os lados recusam época implausível (`< 2020` ou `> 2100`). Salvar um
   relógio errado perpetuaria o erro; restaurar lixo jogaria o sistema para
   1970, pior que 2017.
-- **Limite honesto**: no primeiro boot depois de gravar o cartão não há
-  arquivo salvo, então o relógio continua errado até o primeiro desligamento.
-  É o preço de não ter RTC; se a placa ganhar um, o script passa a `hwclock -s`
-  e o arquivo vira só fallback.
-- Guarda: suíte `relogio` (`tests/test_relogio.py`, 11 testes), com
-  `mountpoint`/`date`/`logger` simulados no `PATH`. Testada ao contrário: tirar
-  a faixa de sanidade reprova 2, voltar o `log()` quebrado reprova 3.
+- **O primeiro boot precisa de uma terceira fonte, e isto quase passou**: sem
+  arquivo salvo o relógio fica em 2017, o `rcK` **recusa** salvar (fora de
+  faixa) e então nunca existiria época plausível para restaurar — o relógio
+  ficaria errado **para sempre**. O conserto se morderia. Por isso há o
+  degrau 3: montar a partição de boot (p1, FAT) e usar o **maior** mtime dos
+  arquivos dali. Esses arquivos foram escritos pelo PC ao gerar a imagem, logo
+  carregam a data real; e o maior (não o do arquivo principal) é o critério
+  porque os arquivos criados no aparelho carregam 2017.
+- Ordem de preferência: (1) época salva em `/user/.giochi/relogio`, que é a
+  mais precisa; (2) data do cartão; (3) deixa como está. As duas fontes passam
+  pela mesma faixa de sanidade.
+- `giochi_boot_part` foi para o `lib.sh` em vez de repetir o `case` que o
+  `S00bootlog` já tinha — é a regra do §3.20 (dado em dois arquivos). Ele
+  **recusa caminho que não comece com `/dev/`**: sem essa guarda,
+  `root=UUID=…5431` casava em `*[0-9]` e a função devolvia o UUID truncado
+  como se fosse nó de bloco.
+- Se a placa um dia ganhar RTC, o script passa a `hwclock -s` e o arquivo
+  vira só fallback.
+- Guarda: suíte `relogio` (`tests/test_relogio.py`, 14 testes), com
+  `mountpoint`/`date`/`logger`/`mount` simulados no `PATH`. Testada ao
+  contrário: tirar a faixa de sanidade reprova 2, voltar o `log()` quebrado
+  reprova 3, pegar o primeiro mtime em vez do maior reprova 2, tirar a faixa
+  do fallback reprova 2.
 
 ### 3.111 `resize2fs` recusa quando `lastcheck < mtime` — e o console não consegue inverter isso
 
@@ -3130,11 +3146,13 @@ fonte de tempo.
   `debugfs -w -R "ssv mtime <2026>"` + `ssv lastcheck <2017>` → `resize2fs`
   falha com a **mesma** mensagem; `resize2fs -f` cresce. É o teste
   `RelogioAtrasDoPC`, e ele afirma os dois lados.
-- `tests/test_relogio.py` novo (11 testes): restauração, primeiro boot sem
+- `tests/test_relogio.py` novo (14 testes): restauração, primeiro boot sem
   arquivo, lixo no arquivo, época fora de faixa, `/user` fora do ar, gravação
   pelo `rcK`, `rcK` **antes** do `umount`, relógio implausível não salvo,
-  `S01relogio` antes do `S00bootlog`, `continue` no laço do `rcS` (a armadilha
-  do §3.45) e presença nas duas listas obrigatórias.
+  data do cartão (maior mtime vence), data do cartão também passa pela faixa,
+  época salva tem prioridade sobre o cartão, `S01relogio` antes do
+  `S00bootlog`, `continue` no laço do `rcS` (a armadilha do §3.45) e presença
+  nas duas listas obrigatórias.
 - Guardas ao contrário: tirar a faixa de sanidade → 2 falhas; voltar o `log()`
   quebrado → 3 falhas.
 - Três defeitos **do meu próprio teste** corrigidos no caminho, e todos são a
@@ -3151,9 +3169,16 @@ também checa isso, mas o que travava **este** aparelho era a comparação de
 **tempo** — a mensagem é literalmente a mesma, e só a reprodução com os dois
 relógios separa as duas.
 
-**Aberto:** nada disto foi validado no aparelho ainda (imagem a regravar); o
-relógio continua errado no **primeiro** boot após gravar o cartão (não há o que
-restaurar); e TLS da Loja só passa a funcionar do segundo boot em diante.
+**Quase deixei um laço fechado**: a primeira versão do `S01relogio` só lia a
+época salva. No primeiro boot, com o relógio em 2017, o `rcK` recusa salvar e
+não haveria **nunca** época plausível — o defeito ficaria permanente. Só
+apareceu porque escrevi o teste do "primeiro boot sem arquivo" e ele mostrou
+que o `rcK` rejeitava. O degrau do mtime do cartão fecha isso.
+
+**Aberto:** nada disto foi validado no aparelho ainda (imagem a regravar). O
+relógio passa a acertar já no **primeiro** boot (data do cartão), com erro de
+no máximo o tempo entre gerar a imagem e ligar o aparelho; do segundo boot em
+diante vale a época do último desligamento, que é mais precisa.
 
 ## 4. O que NÃO foi verificado
 

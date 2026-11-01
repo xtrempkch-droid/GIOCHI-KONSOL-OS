@@ -97,7 +97,48 @@ if [ -r "$ARQUIVO" ]; then
             ;;
     esac
 else
-    log "sem relogio salvo (primeiro boot apos gravar o cartao): $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+    # ---- ultimo recurso: a data que o PC deixou no cartao ---------------
+    # No PRIMEIRO boot depois de gravar o cartao nao ha' epoca salva, e /user
+    # nasce VAZIO (o post-image.sh cria user.ext4 vazio) — nao existe arquivo
+    # nenhum ali de onde tirar a hora. Mas a particao de boot (p1, FAT) foi
+    # escrita pelo PC quando a imagem foi gerada: o mtime mais NOVO dali e'
+    # uma data real, nunca futura, e infinitamente melhor que 2017.
+    #
+    # Sem isto o conserto nao se sustentava: o rcK recusa salvar 2017 (fora de
+    # faixa) e o relogio ficaria errado PARA SEMPRE, porque nunca haveria uma
+    # epoca plausivel para restaurar.
+    #
+    # Por que o MAIOR mtime e nao o do arquivo principal: os arquivos criados
+    # no proprio aparelho carregam 2017. O mais novo do conjunto e' sempre o
+    # que veio do PC.
+    # GIOCHI_RELOGIO_BOOT_DEV / _MNT existem SO' para teste: o host nao tem
+    # root para criar loop device, e o tests/test_relogio.py precisa exercitar
+    # este caminho. Mesma ideia do GIOCHI_ROOT_DEV do grow-user.sh.
+    _bp=${GIOCHI_RELOGIO_BOOT_DEV:-}
+    if [ -z "$_bp" ] && command -v giochi_boot_part >/dev/null 2>&1; then
+        _bp=$(giochi_boot_part)
+    fi
+    _tmp=${GIOCHI_RELOGIO_BOOT_MNT:-/run/relogio-boot}
+    _melhor=0
+    if [ -n "$_bp" ] && { [ -b "$_bp" ] || [ -n "${GIOCHI_RELOGIO_BOOT_DEV:-}" ]; }; then
+        mkdir -p "$_tmp" 2>/dev/null || true
+        if mount -t vfat -o ro,noatime "$_bp" "$_tmp" 2>/dev/null; then
+            for _f in "$_tmp"/* "$_tmp"/dtbs/* "$_tmp"/extlinux/*; do
+                [ -f "$_f" ] || continue
+                _e=$(date -r "$_f" +%s 2>/dev/null) || continue
+                case "$_e" in ''|*[!0-9]*) continue ;; esac
+                [ "$_e" -gt "$_melhor" ] && _melhor=$_e
+            done
+            umount "$_tmp" 2>/dev/null || true
+        fi
+    fi
+    if [ "$_melhor" -gt 1577836800 ] && [ "$_melhor" -lt 4102444800 ]; then
+        if date -s "@$_melhor" >/dev/null 2>&1; then
+            log "sem relogio salvo; usei a data do cartao ($_bp): $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+        fi
+    else
+        log "sem relogio salvo e sem data utilizavel no cartao: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+    fi
 fi
 
 exit 0

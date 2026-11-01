@@ -108,6 +108,29 @@ giochi_other_disk() {
 
 # Primeira particao de um disco, com o nome certo para o tipo de dispositivo
 # (/dev/mmcblk2p1 x /dev/sda1). Vazio se nao houver.
+# p1 do MESMO disco da raiz: /dev/mmcblk1p2 -> /dev/mmcblk1p1, /dev/sda2 ->
+# /dev/sda1. Nunca assume mmcblk0: o cartao SD e' mmcblk1 nestes aparelhos e
+# mmcblk0 e' o eMMC, que a X55 nao tem (AGENTS.md 3.29).
+giochi_boot_part() {
+    _rp=${1:-}
+    if [ -z "$_rp" ] && command -v giochi_root_part >/dev/null 2>&1; then
+        _rp=$(giochi_root_part)
+    fi
+    # So' aceita caminho de dispositivo. Sem esta guarda, `root=UUID=...
+    # 5431` casava em `*[0-9]` e a funcao devolvia o UUID truncado como se
+    # fosse um no' de bloco.
+    case "$_rp" in
+        /dev/*) ;;
+        *) echo ""; return 0 ;;
+    esac
+    case "$_rp" in
+        *p[0-9][0-9]) echo "${_rp%p??}p1" ;;
+        *p[0-9])      echo "${_rp%p?}p1" ;;
+        *[0-9])       echo "${_rp%?}1" ;;
+        *)            echo "" ;;
+    esac
+}
+
 giochi_first_part() {
     _d=$1
     _n=$(basename "$_d")
