@@ -122,6 +122,65 @@ if [ -n "$USER_SIZE_MB" ]; then
            seek="$USER_SIZE_MB" status=none
         mkfs.ext4 -q -F -L "$USER_LABEL" "$BINARIES_DIR/user.ext4"
     fi
+
+    # /apps no cartao: os pacotes giochi-ppsspp/giochi-portmaster estagiam em
+    # $BINARIES_DIR/apps-stage (fora do TARGET_DIR — nada pode ir para o
+    # SquashFS sob /user, §3.46). Aqui o conteudo entra no user.ext4 com
+    # debugfs: no primeiro boot /user/apps ja' nasce com PPSSPP e PortMaster.
+    if [ -d "$BINARIES_DIR/apps-stage" ] && [ -x "$HOST_DIR/sbin/debugfs" ]; then
+        # O user.ext4 SOBREVIVE ao build incremental e pode conter a arvore
+        # de uma receita ANTIGA (onde /apps/ppsspp era diretorio, por
+        # exemplo). O debugfs 1.47 nao salva ninguem nesse caso: `rm` nao
+        # aceita flags (`rm -rf` imprime usage e nao remove nada), `write`
+        # sobre caminho existente falha calado e o `set_inode_field mode` em
+        # cima de um DIRETORIO tira o S_IFDIR e corrompe o inode — medido no
+        # build real: o wrapper /apps/ppsspp saiu como "arquivo" de 4096 B
+        # com bloco de diretorio dentro, e o ppsspp-exec da receita antiga
+        # continuou la. Pior: `debugfs -f` continua rodando apos erro e
+        # devolve 0, entao nada disso aparece como falha de build.
+        # Este arquivo e' a imagem de FABRICA da particao de dados: o unico
+        # conteudo e' o que este bloco injeta. Recriar zera a arvore, custa
+        # segundos e torna a injecao deterministica.
+        rm -f "$BINARIES_DIR/user.ext4"
+        dd if=/dev/zero of="$BINARIES_DIR/user.ext4" bs=1M count=0 \
+           seek="$USER_SIZE_MB" status=none
+        mkfs.ext4 -q -F -L "$USER_LABEL" "$BINARIES_DIR/user.ext4"
+        inject_stage="$BINARIES_DIR/user.ext4"
+        cmds="$BINARIES_DIR/.apps-inject.cmds"
+        : > "$cmds"
+        # O `find` emite pai antes dos filhos, e o debugfs exige que o
+        # diretorio de destino exista antes do write — a ordem natural serve.
+        # O fs acabou de ser criado: /apps nao existe, sem rm nenhum.
+        printf 'mkdir /apps\n' >> "$cmds"
+        ( cd "$BINARIES_DIR/apps-stage" && find . -mindepth 1 -print | \
+            LC_ALL=C sort ) > "$BINARIES_DIR/.apps-inject.list"
+        while IFS= read -r entrada; do
+            [ -n "$entrada" ] || continue
+            nome=${entrada#./}
+            alvo="/apps/$nome"
+            if [ -d "$BINARIES_DIR/apps-stage/$nome" ]; then
+                printf 'mkdir "%s"\n' "$alvo" >> "$cmds"
+            elif [ -L "$BINARIES_DIR/apps-stage/$nome" ]; then
+                destino=$(readlink "$BINARIES_DIR/apps-stage/$nome" 2>/dev/null)
+                printf 'symlink "%s" "%s"\n' "$alvo" "$destino" >> "$cmds"
+            elif [ -f "$BINARIES_DIR/apps-stage/$nome" ]; then
+                printf 'write "%s" "%s"\n' \
+                    "$BINARIES_DIR/apps-stage/$nome" "$alvo" >> "$cmds"
+                if [ -x "$BINARIES_DIR/apps-stage/$nome" ]; then
+                    printf 'set_inode_field "%s" mode 0100755\n' "$alvo" >> "$cmds"
+                fi
+            fi
+        done < "$BINARIES_DIR/.apps-inject.list"
+        if "$HOST_DIR/sbin/debugfs" -w -f "$cmds" "$inject_stage" \
+                >/dev/null 2>&1; then
+            _n=$(grep -c '^write ' "$cmds" 2>/dev/null || echo 0)
+            echo "post-image: /apps injetado no user.ext4 ($_n arquivos)"
+        else
+            echo "post-image: ERRO ao injetar /apps no user.ext4 (debugfs)" >&2
+            exit 1
+        fi
+        rm -f "$cmds" "$BINARIES_DIR/.apps-inject.list"
+    fi
 else
     echo "post-image: ERRO: particao 'user' sem 'size' em $GENIMAGE_CFG" >&2
     exit 1

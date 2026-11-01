@@ -1,0 +1,26 @@
+#!/bin/bash
+# Giochi Konsol OS v1.2 — mod_giochi.txt (PortMaster).
+#
+# O PortMaster.sh faz `source mod_${CFW_NAME}.txt` quando existe; sem ele os
+# ports que esperam variaveis do firmware (GODOT_OPTS, LIBGL_DRIVERS_PATH)
+# caem em default errado. Base: mod_ROCKNIX.txt do bundle oficial (mesma
+# familia de SoC), sem sway/pipewire, que nao existem aqui.
+#
+# SPDX-License-Identifier: MIT
+#
+
+PORT_32BIT="${PORT_32BIT:-"N"}"
+
+export LIBGL_DRIVERS_PATH=/usr/lib/dri
+
+# Use for Godot 2
+GODOT2_OPTS="-r ${DISPLAY_WIDTH}x${DISPLAY_HEIGHT} -f"
+
+# Use for Godot 3+
+GODOT_OPTS="--resolution ${DISPLAY_WIDTH}x${DISPLAY_HEIGHT} -f"
+
+pm_platform_helper() {
+    if [ -e "$PM_PIPE" ]; then
+        PortMasterDialogExit
+    fi
+}

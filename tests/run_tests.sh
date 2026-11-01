@@ -164,6 +164,20 @@ if command -v python3 >/dev/null 2>&1; then
     fi
 fi
 
+# Apps do console em /apps (PPSSPP + PortMaster): os pacotes estagiam em
+# BINARIES_DIR/apps-stage e o post-image.sh injeta no user.ext4 via debugfs.
+# O teste roda a injecao de verdade sobre um ext4 de teste e confere o
+# resultado com debugfs — sem root, sem aparelho.
+if command -v python3 >/dev/null 2>&1; then
+    total=$((total + 1))
+    if (cd "$ROOT" && python3 -m unittest tests.test_apps) >/dev/null 2>&1; then
+        echo "OK     apps-do-console (python)"
+    else
+        echo "FALHA  apps-do-console (python)"
+        fail=$((fail + 1))
+    fi
+fi
+
 # Relogio: o aparelho nao tem RTC (zero linhas "rtc" no dmesg da X55), entao
 # S01relogio restaura a epoca salva pelo rcK no desligamento anterior. Sem
 # isso o console acorda em 2017 e `resize2fs` recusa, o certificado TLS da

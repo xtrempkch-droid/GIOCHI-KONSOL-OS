@@ -1,0 +1,51 @@
+#!/bin/bash
+# Giochi Konsol OS v1.2 — device_info do PortMaster (CFW_NAME=giochi).
+#
+# Formato exigido pelo PortMaster.sh (fonte: device_info.txt do bundle
+# oficial, DEVICE_INFO_VERSION 0.1.15). DISPLAY_WIDTH/HEIGHT vem do wrapper
+# /apps/portmaster, que le o device.conf do aparelho.
+#
+# SPDX-License-Identifier: MIT
+#
+
+DEVICE_INFO_VERSION="0.1.15"
+CFW_NAME="giochi"
+CFW_VERSION="1.2"
+DEVICE_RAM=$(free | awk '/Mem:/ { printf("%.0f", ($2 / 1024 / 1024)) }')
+DEVICE_ARCH="aarch64"
+DEVICE_HAS_ARMHF="N"
+DEVICE_HAS_AARCH64="Y"
+DEVICE_HAS_X86="N"
+DEVICE_HAS_X86_64="N"
+DEVICE_CPU=$(lscpu 2>/dev/null | grep '^Model name' | cut -f 2 -d ":" | awk 'NR==1{print $1}')
+DEVICE_NAME=$(tr -d '\0' </proc/device-tree/compatible 2>/dev/null | tr ',' ' ' | awk 'NR==1{print $1}')
+DISPLAY_ORIENTATION=0
+# musl, nao glibc: o PortMaster usa CFW_GLIBC para escolher binarios
+# glibc-especificos (box64/box86). Vazio = nao oferece nenhum.
+CFW_GLIBC=""
+DISPLAY_WIDTH="${DISPLAY_WIDTH:-640}"
+DISPLAY_HEIGHT="${DISPLAY_HEIGHT:-480}"
+GCD=$(gcd $DISPLAY_WIDTH $DISPLAY_HEIGHT 2>/dev/null || echo 1)
+ASPECT_X=$((DISPLAY_WIDTH / GCD))
+ASPECT_Y=$((DISPLAY_HEIGHT / GCD))
+ANALOG_STICKS=2
+
+DEVICE_INFO_VERSION=${DEVICE_INFO_VERSION}
+PM_VERSION=${PM_VERSION:-Unknown}
+CFW_NAME=${CFW_NAME}
+CFW_VERSION=${CFW_VERSION}
+CFW_GLIBC=${CFW_GLIBC}
+DEVICE_NAME=${DEVICE_NAME:-giochi}
+DEVICE_CPU=${DEVICE_CPU:-ARM}
+DEVICE_ARCH=${DEVICE_ARCH}
+DEVICE_RAM=${DEVICE_RAM:-2048}
+DEVICE_HAS_ARMHF="${DEVICE_HAS_ARMHF}"
+DEVICE_HAS_AARCH64="${DEVICE_HAS_AARCH64}"
+DEVICE_HAS_X86="${DEVICE_HAS_X86}"
+DEVICE_HAS_X86_64="${DEVICE_HAS_X86_64}"
+DISPLAY_WIDTH=${DISPLAY_WIDTH}
+DISPLAY_HEIGHT=${DISPLAY_HEIGHT}
+DISPLAY_ORIENTATION=${DISPLAY_ORIENTATION}
+ASPECT_X=${ASPECT_X}
+ASPECT_Y=${ASPECT_Y}
+ANALOG_STICKS=${ANALOG_STICKS}

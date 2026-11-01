@@ -88,10 +88,13 @@ Ferramentas de PC que **não** vão para a imagem (ver
 
 ## Lacunas, em ordem de impacto
 
-1. **`giochi-store` e `portmaster` não existem.** Abas Loja e Ports do Launcher
-   apontam para binários ausentes. Correção já aplicada no `giochi-init`: falha
-   com `ERR launch_failed` e log nomeando o programa e o caminho — antes era um
-   `exit 127` silencioso. Falta o app em si (§4.1.3, §4.7).
+1. **`giochi-store` não existe; `portmaster` existe desde 2026-11-01.** A aba
+   Loja aponta para um binário ausente; correção já aplicada no `giochi-init`:
+   falha com `ERR launch_failed` e log nomeando o programa e o caminho — antes
+   era um `exit 127` silencioso. Falta o app em si (§4.1.3). A aba Ports já
+   tem o `portmaster` em `/apps/PortMaster` (bundle oficial, CFW_NAME=giochi);
+   o que falta é a aba LISTAR os ports instalados e a rede (Wi-Fi) para
+   baixá-los.
    **Fonte de catálogo:** o itch.io foi avaliado e **não serve** — o modelo de
    dados dele não tem ARM (`all`/`386`/`amd64`), então a Loja não consegue
    filtrar o que roda em aarch64, e a oferta ARM64 nativa é de dezenas de

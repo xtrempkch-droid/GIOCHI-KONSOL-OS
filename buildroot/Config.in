@@ -7,6 +7,8 @@ source "$BR2_EXTERNAL_GIOCHI_PATH/package/giochi-assets/Config.in"
 source "$BR2_EXTERNAL_GIOCHI_PATH/package/giochi-games/Config.in"
 source "$BR2_EXTERNAL_GIOCHI_PATH/package/giochi-tools/Config.in"
 source "$BR2_EXTERNAL_GIOCHI_PATH/package/giochi-mtpd/Config.in"
+source "$BR2_EXTERNAL_GIOCHI_PATH/package/giochi-portmaster/Config.in"
+source "$BR2_EXTERNAL_GIOCHI_PATH/package/giochi-ppsspp/Config.in"
 
 config BR2_PACKAGE_GIOCHI_PROTON
 	bool "habilitar stub Proton (GIOCHI_ENABLE_PROTON)"

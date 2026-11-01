@@ -66,3 +66,11 @@ CONFIG_MOUNTPOINT=y
 # TCP/UDP — nao ha -U. Quem conversa com o control.sock e' o binario
 # giochi-ctl do proprio console (src/tools), pelo mesmo giochi_sock_*.
 CONFIG_NC=y
+
+# PortMaster usa unzip E zip em runtime. O BusyBox 1.36.1 TEM o applet unzip
+# (CONFIG_UNZIP, ja' ligado por default no build real) mas NAO tem zip: o
+# applet foi removido do BusyBox ha' muitas versoes (archival/Config.in do
+# 1.36.1: `config UNZIP` existe, `config ZIP` nao). O zip de verdade vem do
+# pacote Info-ZIP (BR2_PACKAGE_ZIP), pedido pelo giochi-portmaster no
+# Config.in — nao tente um CONFIG_ZIP aqui: o validador do fragmento
+# (suíte log-de-boot) reprova simbolo inexistente.

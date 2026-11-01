@@ -1,0 +1,60 @@
+#!/bin/sh
+# Giochi Konsol OS v1.2 — /apps/portmaster (aba Ports do Launcher).
+#
+# O S90graphics DESVINCULA o fbcon do framebuffer para a UI SDL desenhar sem
+# que o cursor/printk repintem a tela. O PortMaster e' uma UI em BASH no
+# terminal: precisa do console de video de volta enquanto roda. Este wrapper
+# faz a troca e devolve o framebuffer ao sair — o mesmo par bind/unbind que o
+# S90graphics usa ao contrario.
+set -u
+
+log() { logger -t portmaster -- "$*" 2>/dev/null || echo "portmaster: $*" >&2; }
+
+bind_fbcon() {
+    _n=0
+    for v in /sys/class/vtconsole/vtcon*; do
+        [ -r "$v/name" ] || continue
+        case "$(cat "$v/name" 2>/dev/null)" in
+            *frame?buffer*) ;;
+            *) continue ;;
+        esac
+        if echo 1 > "$v/bind" 2>/dev/null; then
+            _n=$((_n + 1))
+        fi
+    done
+    return 0
+}
+
+unbind_fbcon() {
+    for v in /sys/class/vtconsole/vtcon*; do
+        [ -r "$v/name" ] || continue
+        case "$(cat "$v/name" 2>/dev/null)" in
+            *frame?buffer*) ;;
+            *) continue ;;
+        esac
+        echo 0 > "$v/bind" 2>/dev/null || true
+    done
+}
+
+bind_fbcon
+trap unbind_fbcon EXIT INT TERM
+
+export TERM=linux
+export HOME=/user
+
+# Painel do aparelho (mesma fonte que o S90graphics le).
+if [ -f /etc/giochi/device.conf ]; then
+    panel=$(sed -n 's/^GIOCHI_PANEL=//p' /etc/giochi/device.conf | head -n1)
+    [ -n "${panel:-}" ] || panel=640x480
+    export DISPLAY_WIDTH=${panel%x*}
+    export DISPLAY_HEIGHT=${panel#*x}
+fi
+: "${DISPLAY_WIDTH:=640}"
+: "${DISPLAY_HEIGHT:=480}"
+
+[ -d /apps/PortMaster ] || {
+    log "PortMaster ausente (/apps/PortMaster)";
+    exit 1
+}
+cd /apps/PortMaster || exit 1
+exec bash PortMaster.sh

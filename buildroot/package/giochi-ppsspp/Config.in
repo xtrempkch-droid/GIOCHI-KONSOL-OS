@@ -1,0 +1,21 @@
+config BR2_PACKAGE_GIOCHI_PPSSPP
+	bool "giochi-ppsspp"
+	select BR2_PACKAGE_SDL2
+	select BR2_PACKAGE_SDL2_TTF
+	select BR2_PACKAGE_ZLIB
+	help
+	  PPSSPP — emulador de PSP, build SDL (PPSSPPSDL) + headless
+	  (PPSSPPHeadless, o "CLI").
+
+	  Instalado em /apps/ppsspp com o wrapper /apps/ppsspp. Compila do
+	  fonte (tag v1.17.1) com GLES2/EGL e SEM Qt/ffmpeg/discord: o
+	  binario conversa com o Mesa do sistema (panfrost via kmsro), o
+	  mesmo caminho que o Launcher usa.
+
+	  Licenca: GPL-2.0 (com submodulos com licencas proprias).
+
+	  Custo medido no host: assets 18 MB (sem vfpu ~13 MB) + binario.
+	  Emulacao de PSP num RK3566/2 GB e' duvida de desempenho — registrado
+	  em assets/engines.json (verified_on_device=false).
+
+	  Fonte: https://github.com/hrydgard/ppsspp

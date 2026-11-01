@@ -33,6 +33,9 @@ em que ordem em [docs/roadmap.md](docs/roadmap.md); inventário de cada app
 | Launcher: motor de layout, tema, `settings.json`, overlay 2 níveis, biblioteca | **pronto** |
 | Launcher como **app** (`/user/apps/giochi-launcher` + fallback na imagem) | **pronto e testado** (suíte roda o `giochi-init` real); não validado no aparelho |
 | Relógio sem RTC: restauração + **correção pelo usuário** (MTP / `SET_DATE`) | **pronto e testado**; não validado no aparelho |
+| Programas em **/apps** (symlink → `/user/apps`), `APP:<nome>` resolve em /apps | **pronto e testado**; não validado no aparelho |
+| **PortMaster** em `/apps/PortMaster` (bundle oficial, CFW_NAME=giochi) | **empacotado e testado** (injeção no user.ext4); UI em bash não validada no aparelho; precisa de Wi-Fi |
+| **PPSSPP CLI** (`PPSSPPSDL` + `PPSSPPHeadless`) em `/apps/PPSSPP` | **compilado** (v1.17.1, GLES2 via SDL2); nada validado no aparelho |
 | Launcher: **desenho dos widgets** no backend SDL2 | **desenha** em hardware: geometria pura + atlas gerado, i18n pt-BR/en, status (Wi-Fi/bateria/cabo), hint bar em chips, paisagem (§3.69–3.73) |
 | `giochi-musicd`: protocolo e socket | **pronto**; decodificação PCM/ALSA **pendente** |
 | Log de boot no cartão (`S00bootlog`) + modo `--debug` com fbcon | **pronto**, testado com mount/syslogd simulados |
@@ -3143,6 +3146,222 @@ o recorte de função tem de usar `"\n}\n"` real (`"
 }
 "`).
 
+### 3.116 Ponteiro para buffer do bloco `if`: o app "falhava ao abrir"
+
+Em `giochi_supervisor_launch_app`, a resolucao do nome fazia:
+
+```c
+if (strchr(program, '/') == NULL) {
+    char resolved[PATH_MAX];          // morre no fim do bloco
+    giochi_app_program(resolved, ...);
+    program = resolved;               // aponta para pilha ja' liberada
+}
+... find_by_name(sup, program);       // le lixo
+```
+
+Sintoma medido: `transition: falha ao abrir 'APP:appstub'` no teste de
+ciclo de vida, sem nenhum log do motivo — o ponteiro apontava para a pilha
+que as chamadas seguintes reutilizaram. E' UB classico e invisivel em -O2:
+o buffer pode parecer intacto e falhar so' sob outra ordem de chamadas.
+
+- O buffer resolvido e' da FUNCAO, nao do bloco.
+- **Regra**: toda vez que um ponteiro sobrevive ao escopo de um `if`, a
+  variavel apontada tem de viver mais que ele.
+
+### 3.117 A chave do supervisor e' `name[32]`: caminho resolvido nao serve de chave
+
+Mesma funcao, segundo defeito na sequencia: usar o caminho RESOLVIDO como
+nome do filho. `GIOCHI_MAX_CHILDREN` guarda `name[32]`; o caminho
+`/tmp/.../usr/bin/appstub` passa de 31, o `giochi_supervisor_add` trunca e o
+`find_by_name` seguinte — com o caminho INTEIRO — nao acha o proprio filho.
+Resultado: `spawn_child` nunca rodava e o app "nao existia".
+
+- A chave e' o NOME CURTO que o usuario mandou (`appstub`); o caminho
+  resolvido e' o `program` do filho (`program[64]`). `giochi_supervisor_add`
+  ja' aceita os dois separados — usava o mesmo valor para os dois.
+- Ao relancar um filho que ja' existe, RE-RESOLVE o program antes do spawn:
+  instalou o app em /apps em runtime, a troca vale no proximo lancamento
+  (mesma regra do Launcher como app).
+
+### 3.118 `CONFIG_ZIP` nao existe no BusyBox 1.36.1 (so' o unzip)
+
+O BusyBox removeu o applet `zip` ha' muitas versoes; o 1.36.1 tem
+`config UNZIP` em `archival/Config.in` e NENHUM `config ZIP`. Um
+`CONFIG_ZIP=y` no `busybox.fragment` e' descartado em silencio pelo kconfig
+— e desta vez quem pegou foi o validador do fragmento (suíte `log-de-boot`),
+que reprovou `['CONFIG_ZIP']` antes de qualquer build.
+
+- `zip` de verdade = pacote Info-ZIP: `BR2_PACKAGE_ZIP` (Buildroot
+  `package/zip`). O `giochi-portmaster` o pede no Config.in (`select`).
+- PortMaster usa unzip E zip em runtime: sem o zip, empacotar saves/patches
+  quebra na hora, com mensagem do port, nao do sistema.
+
+### 3.119 App de 40 MB nao pode nascer no SquashFS sob /user (§3.46 de novo)
+
+PortMaster (40 MB) e PPSSPP (binario ~30 MB + assets) tinham de ir para a
+particao gravavel, mas pacote do Buildroot instala em `TARGET_DIR` — e tudo
+que fica sob `/user` no SquashFS SOME no boot, escondido pelo `user.ext4`
+montado por cima. Instalar la' era desperdicar imagem E nao entregar o app.
+
+- Os pacotes estagiam em `$(BINARIES_DIR)/apps-stage` (fora do TARGET_DIR) e
+  o `post-image.sh` injeta no `user.ext4` com `debugfs -w -f` (comandos
+  gerados: mkdir/write/set_inode_field mode 0100755/symlink, na ordem do
+  `find`, que emite pai antes do filho). O primeiro boot ja' nasce com
+  `/user/apps/{PPSSPP,PortMaster}`.
+- Guarda: suíte `apps-do-console` roda a injecao de verdade sobre um ext4 de
+  teste e confere arquivos, bits de execucao e symlinks com debugfs — sem
+  root, sem aparelho. Testado ao contrario: idempotencia (rodar 2x nao
+  duplica).
+- Mesma regra do §3.20: o unico lugar onde o tamanho/conteudo do user.ext4
+  muda e' o post-image.sh; nada de copiar a arvore em dois lugares.
+
+### 3.120 O `sdl2_ttf-config.cmake` do autotools não é relocável: `FOUND=TRUE` sem criar o alvo
+
+Build real do PPSSPP, no `cmake --build` (o configure passou, o generate
+morreu):
+
+```
+CMake Error at CMakeLists.txt:1535 (target_link_libraries):
+  Target "native" links to: SDL2_ttf::SDL2_ttf
+  but the target was not found.
+```
+
+Causa, lida no arquivo do staging
+(`sysroot/usr/lib/cmake/SDL2_ttf/sdl2_ttf-config.cmake`, gerado pelo
+`configure` — o Buildroot compila o sdl2_ttf com autotools):
+
+```cmake
+set(SDL2_ttf_FOUND TRUE)                 # incondicional
+set(exec_prefix "/usr")                  # NAO relocavel
+set(_sdl2ttf_shl "${_sdl2ttf_libdir}/libSDL2_ttf.so")
+if(EXISTS "${_sdl2ttf_shl}")             # /usr/lib do HOST, nao o sysroot
+    add_library(SDL2_ttf::SDL2_ttf ...)  # nunca roda no cross
+endif()
+```
+
+Ou seja: `FOUND=TRUE` sem alvo importado. O PPSSPP confia no `FOUND` para
+linkar `SDL2_ttf::SDL2_ttf` (linha 1371 do CMakeLists v1.17.1) e o generate
+falha — depois de baixar 3,9 GB de submodulos e configurar tudo.
+
+- Correção: `-DCMAKE_DISABLE_FIND_PACKAGE_SDL2_ttf=TRUE`. O próprio PPSSPP
+  tem fallback para isso: `pkg_check_modules(SDL2_ttf_PKGCONFIG
+  IMPORTED_TARGET SDL2_ttf)` → `PkgConfig::SDL2_ttf_PKGCONFIG` via o
+  `SDL2_ttf.pc` do staging (2.22.0 ≥ 2.0.18, linha 1373).
+- **Regra geral**: config cmake gerado por autotools costuma embutir
+  `prefix=/usr` do momento do configure. Em cross, qualquer `if(EXISTS
+  "/usr/lib/...")` dentro dele é uma armadilha: passa por fora do sysroot ou
+  falha por fora dele. Prefira `pkg_check_modules` (o Buildroot prepara o
+  pkg-config do host com `PKG_CONFIG_LIBDIR` do staging).
+- Guarda: `tests/test_apps.py` exige o
+  `-DCMAKE_DISABLE_FIND_PACKAGE_SDL2_ttf=TRUE` na receita, com o porquê.
+
+### 3.121 `EXTRACT_CMDS` customizado precisa limpar o diretório: unzip interativo morre com stdin fechado
+
+O build do PortMaster falhou no **segundo** build, com uma mensagem que não
+parece erro:
+
+```
+replace .../giochi-portmaster-2026.11.01-1314/roms/ports/PortMaster/control.txt?
+[y]es, [n]o, [A]ll, [N]one, [r]ename:  NULL
+(EOF or read error, treating as "[N]one" ...)
+make: *** [...stamp_extracted] Error 1
+```
+
+O diretório de build **sobrevive** a um build que falha (a árvore fica no
+lugar; só o stamp não nasce). O `EXTRACT_CMDS` customizado não herdava o
+`rm -rf $(@D)` que o extract padrão do Buildroot faz — o unzip encontrou os
+arquivos da extração anterior, perguntou "replace?" e, com o stdin fechado
+(script não-interativo), tratou como "[N]one" e **morreu**.
+
+- Correção: `rm -rf $(@D); mkdir -p $(@D)` antes do `unzip -q -o`. O `-o`
+  é defesa em profundidade: sobrescreve sem perguntar mesmo que algo tenha
+  ficado.
+- **Regra geral**: todo `EXTRACT_CMDS` customizado tem de reproduzir a
+  limpeza do extract padrão (`$(RM) -rf $(@D)`). O padrão do pkg-generic faz
+  isso; sobrescrever a receita e esquecer é a armadilha.
+- Aproveitar e pôr hash no download: `giochi-portmaster.hash` fixa o bundle
+  (sha256 do muos.portmaster.zip) — sem ele o dl-wrapper só avisa "no hash
+  file" e qualquer artefato adulterado passa calado.
+
+### 3.122 PPSSPP: o bloco EGL chama X11 direto no ramo não-fbdev — morre em 56% do build
+
+```
+SDL/SDLGLGraphicsContext.cpp:291: error: 'Display' was not declared
+SDL/SDLGLGraphicsContext.cpp:291: error: 'XCloseDisplay' was not declared
+```
+
+O bloco EGL do PPSSPP (linha 15 do arquivo: `#if defined(USING_EGL)`) usa
+`XOpenDisplay`/`XCloseDisplay` **sem guarda** no ramo `#else`
+(`#if defined(USING_FBDEV) ... #elif defined(__APPLE__) ... #else`): ele
+assume "EGL fora do fbdev = X11 disponível". Num alvo KMS/DRM sem libX11, o
+`find_package(X11)` do CMakeLists (linha 884, sem REQUIRED) falha calado, o
+configure **passa**, e a compilação morre em 56% — depois de baixar 3,9 GB
+de submodulos e compilar glslang/spirv inteiros.
+
+- Correção (a MESMA da ROCKNIX para GLES nos mesmos aparelhos —
+  `projects/ROCKNIX/packages/emulators/standalone/ppsspp-sa/package.mk`,
+  ramo `OPENGLES_SUPPORT`):
+  `-DUSING_EGL=OFF -DUSING_FBDEV=ON -DUSING_GLES2=ON`.
+  Com `USING_EGL=OFF` o bloco inteiro não compila, e o contexto GLES2 vem do
+  **SDL2** (`Init()` usa `SDL_GL_CreateContext` — o caminho principal, não
+  um fallback). `USING_FBDEV=ON` liga `SDL_WINDOW_FULLSCREEN_DESKTOP` (o que
+  um console quer) e o `add_definitions(-DEGL_NO_X11)` do próprio CMakeLists
+  do PPSSPP. O display continua sendo o KMSDRM do SDL2 — nada de `/dev/fb0`.
+- Não confundir com o Launcher: lá o SDL2 abre o KMSDRM sozinho; aqui o
+  PPSSPP tentava abrir o EGL **por cima** do SDL2 e esse caminho é o que
+  assume X11.
+- Guarda: `tests/test_apps.py` exige as três opções na receita, com o
+  porquê.
+
+### 3.123 O `rm` do debugfs NÃO aceita flags — e a injeção no user.ext4 saiu corrompida em verde
+
+O build real de 01/11 produziu `post-image: /apps injetado no user.ext4`
+com rc=0 e a imagem final tinha o wrapper `/apps/ppsspp` **destruído**: no
+lugar do script de 461 B, um "arquivo" de 4096 B com bloco de diretório
+dentro, mais o symlink `ppsspp-exec` da receita antiga ainda vivo. Três
+comportamentos do debugfs 1.47 se combinaram, todos silenciosos:
+
+1. `rm -rf /apps` → `rm: Usage: rm <filename>`. O `rm` do debugfs **não
+   aceita flags** (nem `-r`, nem `-rf`), não remove nada e imprime o usage.
+2. `write <arquivo> <caminho-existente>` → `write: Ext2 file already exists`
+   e **não escreve**. O caminho existente era o **diretório** `/apps/ppsspp`
+   da receita anterior (onde o wrapper morava como `ppsspp/run.sh`).
+3. `set_inode_field /apps/ppsspp mode 0100755` (emitido porque o wrapper do
+   stage é executável) aplicou o modo de ARQUIVO no inode do **diretório**:
+   sem `S_IFDIR`, o diretório passou a ser lido como arquivo regular com o
+   bloco de diretório cru como conteúdo.
+
+E o pior: `debugfs -f <cmds>` **continua rodando depois de erro e devolve
+0**, então o `if debugfs ...; then echo injetado; else exit 1` do
+post-image nunca disparou. Nada no log de build acusou.
+
+Por que só o build real pegou: o `user.ext4` **sobrevive ao build
+incremental** (só é criado se não existir). O primeiro post-image rodou com
+a receita antiga (wrapper como diretório); o segundo, com a nova, injetou
+por cima da árvore velha. O teste de idempotência passava porque rodava a
+**mesma** receita duas vezes: os `write` sobrescrevem arquivos existentes
+sem erro (o problema é só quando o destino é diretório) e `ls.count` não
+pega resquício com nome diferente.
+
+- Correção: o `user.ext4` é **recriado do zero** dentro do bloco de injeção
+  (`rm -f` + `dd seek` + `mkfs.ext4`) — é a imagem de **fábrica** da
+  partição de dados, o único conteúdo é o próprio `apps-stage`, e recriar
+  custa segundos. Sem árvore velha, não existe rm para falhar: o bloco
+  começa com `mkdir /apps` e o resto é determinístico.
+- Guardas em `tests/test_apps.py`: (a)
+  `test_injecao_conserta_arvore_de_receita_antiga` — planta no ext4 a árvore
+  velha (ppsspp como diretório, symlink `ppsspp-exec`, arquivo extinto),
+  roda o bloco e exige estado final **idêntico** ao stage (wrapper regular
+  com o texto certo, zero resquício); (b) `test_bloco_nao_usa_rm_de_debugfs`
+  — proíbe `rm -rf /apps` no bloco; (c) o stage do harness ganhou o wrapper
+  `ppsspp` e o teste básico confere tipo e conteúdo. Testado ao contrário:
+  reintroduzir o bloco antigo reprova (a) e (b).
+- **Regra que fica**: comando do `debugfs -f` que falha **não** falha o
+  script — o sucesso tem de ser conferido com o próprio debugfs depois
+  (que é o que os testes fazem), não com o exit code. E artefato que
+  persiste entre builds (user.ext4, boot.vfat, extlinux.conf) carrega o
+  estado da iteração anterior: quando o layout da saída muda, regenere.
+
 ### 3.104 NetworkManager desfaz o IP manual da interface USB
 
 `tools/giochi-ctl.py preparar` atribuía `10.55.0.1/24` com `ip addr add` e
@@ -3303,6 +3522,122 @@ RTC trocada.
 sessão anterior ainda precisa ser regravada); o pedido de data via MTP exige
 desligar e ligar (aplicação em runtime exigiria polling, descartado de
 propósito); a UI da Loja para data não existe.
+
+### 2026-11-01 (28) — Copilot (/apps como convenção + PPSSPP CLI e PortMaster)
+
+O mantenedor definiu que **os programas ficam em /apps** (no repositório,
+`apps/` é onde os programas moram) e pediu a instalação do **PPSSPP CLI** e do
+**PortMaster**.
+
+**1. /apps como caminho canônico:**
+
+- `giochi_app_program()` genérico no supervisor: `/apps/<nome>` (X_OK) →
+  `libexecdir/<nome>`. O Launcher usa com `giochi-launcher`; `launch_app`
+  usa para `APP:<nome>` (portmaster, ppsspp, store...). Nome com `/` é
+  recusado na resolução (caminho absoluto continua valendo pelo spawn_child).
+- `post-build.sh` cria `/apps -> /user/apps` (a raiz é SquashFS); `S10storage`
+  segue semeando `/user/apps` (o alvo real do symlink).
+- Override de assets do Launcher: `/apps/giochi-launcher/assets/layout.json`.
+
+**2. PortMaster** (bundle oficial 2026.11.01-1314):
+
+- Pacote `giochi-portmaster`: remove firmwares alheios e binários
+  armhf/x86_64, controlfolder → `/apps/PortMaster`, remove o `image_smash`
+  (muOS-only), escreve `device_info.txt` (CFW_NAME=giochi, musl) e
+  `mod_giochi.txt`, cria os symlinks de arquitetura (7zzs, sdl2imgshow, ...)
+  e o wrapper `/apps/portmaster` (rebinda o fbcon — a UI é bash no terminal;
+  o S90graphics desvincula o console para a UI SDL — e devolve ao sair).
+- Runtime exige bash + curl + unzip/zip: bash/libcurl novos na imagem; unzip
+  já era default; **zip vem do Info-ZIP** (§3.118 — `CONFIG_ZIP` não existe
+  no BusyBox 1.36.1, o validador do fragmento pegou antes do build).
+
+**3. PPSSPP CLI** (fonte v1.17.1 — não existe binário aarch64-musl; o Alpine
+é a variante Qt que arrasta Qt5+ffmpeg):
+
+- `PPSSPPSDL` **e** `PPSSPPHeadless` (o CLI), GLES2 **via SDL2**
+  (`USING_EGL=OFF USING_FBDEV=ON USING_GLES2=ON` — o bloco EGL do PPSSPP
+  chama X11 direto e morre sem libX11, §3.122; é a config da ROCKNIX),
+  sem Qt/ffmpeg/discord; libpng/zstd/snappy vendidos (submodulos); assets
+  (flash0, fontes, atlas, lang, shaders) viajam junto em `/apps/PPSSPP`;
+  wrapper `/apps/ppsspp [rom.iso]` (pasta maiúscula + wrapper minúsculo, o
+  arranjo do PortMaster — `/apps/ppsspp` TEM de ser executável, e a receita
+  chegou a estagiar em `ppsspp/` minúsculo enquanto o wrapper fazia `cd
+  /apps/PPSSPP`: inconsistência calada, pega por teste novo).
+- ~20 submodulos no download (inclui o fork do ffmpeg): ~3,9 GB no cache do
+  git; o download em si é uma vez.
+
+**4. Onde fica no cartão:** os dois estagiam em `BINARIES_DIR/apps-stage`
+(fora do TARGET_DIR — §3.46) e o `post-image.sh` injeta no `user.ext4` via
+debugfs. O primeiro boot já nasce com os apps; nada entra no SquashFS.
+
+**Defeitos meus medidos no caminho (e guardados):**
+
+- Ponteiro para buffer do bloco `if` em launch_app → app "falhava ao abrir"
+  sem log (§3.116).
+- `name[32]` do supervisor truncado pelo caminho resolvido → o filho
+  adicionado não era encontrado (§3.117).
+- `CONFIG_ZIP` inventado (§3.118) — terceira vez nesta sessão que um teste
+  casava com COMENTÁRIO em vez de código (classe §3.36).
+
+**Verificação (tudo rodado):** `make test` 40/40 (suíte nova
+`apps-do-console`, 23 testes: receitas + injecao real sobre ext4 de teste,
+conferida com debugfs; idempotência testada ao contrário); `make lint`
+rc=0; lifecycle voltou a verde com os dois defeitos corrigidos. Os três
+erros de build do PPSSPP (sdl2_ttf §3.120, X11 §3.122, pasta/wrapper §na
+receita) foram cada um reproduzidos no build real e guardados em teste.
+
+**Aberto:** nada disto rodou no aparelho; PortMaster sem Wi-Fi (firmware
+`rtw8821c_fw.bin` continua fora) não baixa port nenhum; a aba Ports do
+Launcher ainda não lista os ports instalados; PSP em RK3566/2 GB é dúvida de
+desempenho (`assets/engines.json`, `verified_on_device=false`).
+
+### 2026-11-02 (29) — Copilot (injeção do /apps saiu corrompida em verde)
+
+Validei a imagem final da sessão anterior (debugfs no `user.ext4` da X55) e
+achei um defeito que **nenhum build acusou**: o wrapper `/apps/ppsspp` não
+era o script de 461 B — era o inode do DIRETÓRIO da receita antiga, com o
+modo trocado para 0755 (`set_inode_field` em cima de diretório tira o
+`S_IFDIR`), conteúdo = bloco de diretório cru, e o symlink `ppsspp-exec` da
+receita velha ainda vivo. O PPSSPP não abriria pela aba Ports.
+
+Cadeia medida no debugfs 1.47, reproduzida passo a passo num ext4 de teste:
+
+- `rm -rf /apps` → `rm: Usage: rm <filename>`: o `rm` do debugfs **não
+  aceita flags** e não remove nada;
+- `write` sobre caminho existente → `Ext2 file already exists` e não
+  escreve;
+- `debugfs -f <cmds>` continua após erro e **devolve 0** — o `if` do
+  post-image nunca disparou.
+
+Por que só o build real pegou: o `user.ext4` sobrevive ao incremental; a
+primeira injeção rodou com a receita antiga (wrapper como diretório
+`ppsspp/run.sh` + symlink) e a segunda escreveu por cima. O teste de
+idempotência passava porque usava a MESMA receita nas duas vezes (write
+sobre arquivo existente funciona; o problema é só destino-diretorio +
+resquício com nome diferente).
+
+**Correção:** o bloco de injeção do `post-image.sh` agora **recria o
+user.ext4 do zero** (é a imagem de FÁBRICA da partição de dados; o único
+conteúdo é o próprio `apps-stage`) e começa com `mkdir /apps` — sem rm
+nenhum. Armadilha §3.123.
+
+**Guardas novas em `tests/test_apps.py` (25 testes):**
+`test_injecao_conserta_arvore_de_receita_antiga` (planta a árvore velha no
+ext4, exige estado final idêntico ao stage) e `test_bloco_nao_usa_rm_de_debugfs`
+(proíbe `rm -rf /apps` no bloco); o stage do harness ganhou o wrapper
+`ppsspp` e o teste básico confere tipo regular + conteúdo. **Testadas ao
+contrário:** reintroduzir o bloco antigo reprova as duas.
+
+**Imagem regravada no host, sem docker:** com `genimage`/`mkimage`/
+`mtools`/`dosfstools`/`zstd` do `dist/x55/build/host`, o `post-image.sh`
+rodou direto (env: `BINARIES_DIR`, `HOST_DIR`, `TARGET_DIR`,
+`GIOCHI_DEVICE=x55`) e regenerou `user.ext4` → `boot.vfat` → `sdcard.img` →
+`.img.xz`. Conferido no ext4 novo: `/apps/ppsspp` regular 0755 com o texto
+do wrapper, sem `ppsspp-exec`, `PPSSPP/` e `PortMaster/` completos, e
+`/apps -> /user/apps` no SquashFS intacto.
+
+**Aberto:** a imagem nova não foi gravada no aparelho (o teste do PPSSPP
+real segue pendente); nada do resto da sessão anterior mudou de estado.
 
 ## 4. O que NÃO foi verificado
 

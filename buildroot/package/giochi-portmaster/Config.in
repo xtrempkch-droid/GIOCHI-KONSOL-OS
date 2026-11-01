@@ -1,0 +1,28 @@
+config BR2_PACKAGE_GIOCHI_PORTMASTER
+	bool "giochi-portmaster"
+	select BR2_PACKAGE_BASH
+	select BR2_PACKAGE_BUSYBOX_SHOW_OTHERS
+	select BR2_PACKAGE_LIBCURL
+	select BR2_PACKAGE_LIBCURL_CURL
+	select BR2_PACKAGE_ZIP
+	help
+	  PortMaster — instalador de ports de jogos de PC (wrappers ARM64).
+
+	  Instalado em /apps/PortMaster (a particao de dados, via o symlink
+	  /apps) com o wrapper /apps/portmaster, que e' o alvo da aba Ports
+	  do Launcher (APP:portmaster).
+
+	  Exigencias de runtime: bash, curl (download dos ports), unzip/zip
+	  (BusyBox). Nada disto estava na imagem antes: um port so' funciona
+	  com rede (Wi-Fi) disponivel, que e' outro item aberto do projeto.
+
+	  Licenca: MIT (nucleo do PortMaster); os componentes embutidos
+	  (7zzs, innoextract, runtimes) tem licencas proprias em
+	  /apps/PortMaster/licenses/.
+
+	  Fonte: https://github.com/PortsMaster/PortMaster-GUI
+
+	  NOTA: o zip oficial e' o bundle do muOS; o pacote remove as pastas
+	  dos outros firmwares (batocera/knulli/trimui/...), ajusta o
+	  controlfolder para /apps/PortMaster e escreve device_info.txt com
+	  CFW_NAME=giochi (docs/APPS.md).

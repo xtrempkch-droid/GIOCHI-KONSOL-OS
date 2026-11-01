@@ -1,0 +1,17 @@
+#!/bin/sh
+# Giochi Konsol OS v1.2 — /apps/ppsspp (PPSSPPSDL, o "CLI" do PPSSPP).
+#
+# Uso: /apps/ppsspp [opcoes do PPSSPP] [rom.iso]
+#
+# O PPSSPP resolve os assets relativos ao diretorio do binario; o cd e'
+# obrigatorio. Mesa/SDL do sistema (o mesmo caminho GLES2/EGL do Launcher).
+set -u
+
+[ -x /apps/PPSSPP/PPSSPPSDL ] || {
+    echo "ppsspp: /apps/PPSSPP/PPSSPPSDL ausente" >&2
+    exit 1
+}
+
+export HOME=/user
+cd /apps/PPSSPP || exit 1
+exec ./PPSSPPSDL "$@"

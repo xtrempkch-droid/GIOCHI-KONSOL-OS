@@ -409,7 +409,9 @@ do supervisor cobre `APP:<nome>` (launcher, portmaster, ppsspp, store...).
 - **Onde fica no cartao**: os dois estagiam em `BINARIES_DIR/apps-stage` (fora
   do TARGET_DIR — §3.46) e o `post-image.sh` injeta no `user.ext4` via
   debugfs. Nada vai para o SquashFS sob /user; o primeiro boot ja' nasce com
-  os apps.
+  os apps. O `user.ext4` e' **recriado do zero a cada injecao** (imagem de
+  fabrica da particao de dados; §3.123): o arquivo sobrevive ao build
+  incremental, e a arvore de uma receita antiga corrompe a nova injecao.
 
 **Aberto:** nada rodou no aparelho; PortMaster depende de Wi-Fi (firmware
 `rtw8821c_fw.bin` continua fora); PPSSPP em RK3566/2 GB e' duvida de

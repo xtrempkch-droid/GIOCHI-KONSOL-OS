@@ -18,7 +18,7 @@ Especificação normativa: [architecture-v1.2.md](./architecture-v1.2.md).
 | 5 | Gamepad (`rocknix-joypad`) e painel (X35S/X35H) ⛔ | não empacotado | essas duas placas |
 | 6 | USB na X35S/X35H 🧪 | não ancora (`ep0out`) | SSH/MTP nelas |
 | 7 | Update A/B de ponta a ponta 🧪 | contrato pronto, flip não testado | entrega de update |
-| 8 | Loja (`giochi-store`) e Ports (`portmaster`) | **não existem** | duas abas da UI |
+| 8 | Loja (`giochi-store`) ⛔ / Ports (`portmaster`) 🟡 | Loja não existe; PortMaster **instalado** em `/apps/PortMaster` (falta validar no aparelho e listar ports na aba) | duas abas da UI |
 | 9 | Fase 2: keyring, chave exclusiva, Proton | fora de escopo v1.2 | — |
 
 ---
@@ -82,8 +82,10 @@ sem o aparelho.
       imagem do pacote — o tile é um retângulo.
 - [ ] Aba Música: now playing, barra de progresso, controles, lista.
 - [ ] Aba Home: hero "Continuar", Novidades e Recentes (`device/*/home.json`).
-- [ ] Aba Loja/Ports: dependem de `giochi-store`/`portmaster`, que não existem
-      ([APPS.md](./APPS.md)); a aba hoje diz isso.
+- [ ] Aba Loja: depende de `giochi-store`, que não existe ([APPS.md](./APPS.md));
+      a aba hoje diz isso.
+- [ ] Aba Ports: o `portmaster` já está em `/apps/PortMaster`; falta a aba
+      LISTAR os ports instalados em `/user/ports` (hoje só lança o app).
 - [ ] `hint_bar` (30/45 px) por **par (botão, ação)** com chip; hoje é uma frase.
 - [ ] Overlay de Configurações com o estado atual dos itens
       (ex.: `Modo USB   MTP`, `Modo Desenvolvedor   desligado`); hoje é um painel
