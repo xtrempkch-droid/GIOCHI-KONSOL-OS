@@ -26,7 +26,7 @@ em que ordem em [docs/roadmap.md](docs/roadmap.md); inventário de cada app
 | Kernel, DTB e raiz na X55 | **bootou**: `Mounted root (squashfs) on device 179:2` por `root=PARTUUID` |
 | Painel do X35S/X35H | **bloqueado** por driver fora da árvore (GPL, licenciamento adiado — §3.43) |
 | Gravação do cartão | **verificada byte a byte** (`tools/verify-card.py`); SDXC de 116 GB falhou com `EIO` |
-| USB: gadget composto (MTP + rede/SSH + Mass Storage) | **pronto** no código; **o controlador nunca registrava UDC** porque o DTS dizia `dr_mode = "otg"` sem `extcon`/`usb-role-switch` (§3.88) — corrigido por patch de DT, **imagem ainda não testada no aparelho** |
+| USB: gadget composto (MTP + rede/SSH + Mass Storage) | **pronto** no código; **não ancora na X55**: o bind é tentado (o UDC existe) e o `SETEPCONFIG` do ep0 é recusado em `dr_mode = "otg"` (§3.88). Patch de DT para `peripheral` + sonda no `S50usb` — **boot com o patch ainda não capturado** |
 | Modo Desenvolvedor (§4.6.1): SSH via USB desligado por padrão | **pronto**, testado |
 | Launcher: motor de layout, tema, `settings.json`, overlay 2 níveis, biblioteca | **pronto** |
 | Launcher: **desenho dos widgets** no backend SDL2 | **desenha** em hardware: geometria pura + atlas gerado, i18n pt-BR/en, status (Wi-Fi/bateria/cabo), hint bar em chips, paisagem (§3.69–3.73) |
@@ -4638,46 +4638,52 @@ isso ate' tentar conectar. A chave agora e' resolvida como o **usuario**
 formas diferentes) e viaja por **argumento**, inclusive na re-execucao. Dois
 testes novos; provado ao contrario removendo o repasse, o teste reprova.
 
-### 2026-11-01 (22) — Copilot (o USB-C era `otg` sem extcon: nenhum UDC)
+### 2026-11-01 (22) — Copilot (diagnóstico do USB: a leitura errada e a sonda)
 
 O mantenedor ligou o console com o TTL e o cartão novo. O serial pegou o boot
-**inteiro** (37 KB, DDR → U-Boot → kernel → userspace) — e respondeu as duas
-perguntas que faltavam, com a causa raiz de um problema que já tinha
-sobrevivido a três imagens, dois cartões e dois cabos.
+**inteiro** (37 KB, DDR → U-Boot → kernel → userspace) — e ele provou duas
+coisas e desmentiu uma terceira.
 
 **1. As correções do §3.86/§3.87 funcionaram.** O `rcS` passou por
-`S00bootlog`, `S05modules`, …, e a prova de que o `S50usb` rodou é o
-`configfs-gadget.giochi gadget.0` aparecendo no log. A tela também acendeu:
-`render: SDL2 driver=KMSDRM renderizador=opengles2` e `5 abas`, em 6,6 s.
+`S00bootlog`, `S05modules`, …, `configfs-gadget.giochi` apareceu no log, e a
+tela acendeu: `render: SDL2 driver=KMSDRM renderizador=opengles2`, `5 abas`,
+em 6,6 s.
 
-**2. O USB continuava invisível por causa do DT (§3.88).**
+**2. Eu li o log do USB errado, e escrevi a leitura errada aqui.** O par
 
 ```
 configfs-gadget.giochi gadget.0: HOST MAC 02:47:69:6f:63:69
 dwc3 fcc00000.usb: failed to enable ep0out
 ```
 
-`dr_mode = "otg"` sem `extcon`/`usb-role-switch` = o dwc3 espera um evento do
-pino ID que a placa não tem, e o ramo OTG do `__dwc3_set_mode()` **não chama
-`dwc3_gadget_init()`** — que é quem registra o UDC. `/sys/class/udc` vazio, o
-`giochi-usb-mode` sai com "nenhum UDC disponivel" e o PC não vê nada.
-Corrigido por patch (`peripheral`), e conferido **no DTB gerado**: `otg` = 0
-ocorrências. É o mesmo `failed to enable ep0out` que o HANDOFF já registrava
-para X35S/X35H: a causa é a mesma nas três placas.
+parecia "o UDC não existe". Não é: `HOST MAC` vem de `u_ether.c` (função ECM
+no configfs), e `failed to enable ep0out` vem de `__dwc3_gadget_start()`, que
+**só roda quando o UDC existe e o bind é tentado** — o que falhou foi o
+`SETEPCONFIG` do ep0. A causa provável (hipótese, não medida) é que o caminho
+OTG chama `dwc3_gadget_init()` **sem** o `dwc3_core_soft_reset()` que o
+caminho `peripheral` faz. O patch `dr_mode = "peripheral"` continua, por
+determinismo, mas **não está provado como a correção** — e §3.88 agora diz
+isso, com a tabela do que cada linha prova.
 
-**3. Efeito colateral que custou o cartão inteiro (§3.89).** O modo `mass`
-desmonta `/user` (certo), o bind falhou, e a partição ficou sem dono até
-reiniciar: `settings.json ausente`, `0 pacotes em /user/games`,
-`0 faixas em /user/music`. Agora há `restaura_user()` em todo caminho de falha.
+**3. Para não depender de outra sessão de adivinhação**, o `S50usb` sonda e
+registra no log do cartão: `/sys/class/udc`, o `dr_mode` efetivo lido de
+`/sys/firmware/devicetree/base/usb@fcc00000/dr_mode`, e se o arquivo `UDC` do
+configfs recebeu o nome do controlador (o helper sai 0 também quando **não**
+anexa).
 
-**Verificação:** DTB de `dist/x55/build/images` com `peripheral` e sem `otg`;
-squashfs com `S90graphics` e sem `S20graphics`/`S99launcher`; suíte
-`usb-gadget` com 2 cenários novos (UDC como diretório → `EISDIR`), testada ao
-contrário; `test_kernel_patch` com 3 testes novos; `make test` **35/35**;
-`make lint` rc=0. Imagem nova `12f1f1eb…` (`.xz` `21870b9b…`).
+Defeito achado pelo teste novo: `tr ... < arquivo_inexistente 2>/dev/null`
+vaza `cannot open ... No such file` no stderr do shell — as redireções são
+aplicadas da esquerda para a direita, e a mensagem sai antes do `2>/dev/null`.
+Agora há `[ -r ]` antes.
 
-**Aberto:** a imagem **não foi gravada nem bootada** com o patch do USB. O
-próximo passo é `tools/flash-card.sh /dev/sdd` com o cartão no leitor do PC
-(ele está no console) e então ler o serial: o que se procura agora é
-`/sys/class/udc` preenchido, `gadget anexado em fc000000.usb` e o gadget
-`1d6b:0104` aparecendo no `lsusb` do PC.
+**Verificação:** dois testes novos em `primeiro-boot` (um lê o script, outro
+**roda** o `S50usb` real com `logger` falso no `PATH` e cobra a sonda na
+saída); provado ao contrário removendo a chamada, o teste reprova. `make test`
+**35/35**, `make lint` rc=0.
+
+**Aberto:** o boot com o patch do `dr_mode` **não foi capturado**. Duas
+capturas de 10 e 15 minutos voltaram com 32 bytes (fragmento de `DDR V1.18`
+no buffer do CH341); o console já estava ligado, e sem power-cycle o serial
+não tem o que mostrar. O próximo boot é o que decide: procurar no
+`giochi-boot.log` as três linhas da sonda.
+
