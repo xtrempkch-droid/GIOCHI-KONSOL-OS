@@ -2905,6 +2905,39 @@ S62sshd: Modo Desenvolvedor desativado (developer.ssh_usb_enabled=false)
   que fez, inclusive — principalmente — o ramo "não fiz nada porque está
   desligado". É o que separa "desligado" de "quebrado".
 
+### 3.108 As chaves de host e a `authorized_keys` moram em diretórios diferentes
+
+O espelho (§3.105) copiava `$AuthDir` = `/user/.ssh/dropbear` — o alvo do
+symlink `/etc/dropbear`, que só contém `authorized_keys`. As **chaves de
+host** ficam em `$KeysDir` = `/user/.ssh`, um nível acima:
+
+```
+/user/.ssh/dropbear_ed25519_host_key     <- o que o `-r` do dropbear usa
+/user/.ssh/dropbear_rsa_host_key
+/user/.ssh/dropbear/authorized_keys      <- o que o cliente compara
+```
+
+Medido na X55 com a imagem que já tinha o espelho "corrigido":
+
+```
+$ ssh root@10.55.0.2 'ls -la /run/giochi/dropbear'
+total 0
+drwxr-xr-x  2 root  root  40 .
+```
+
+O diretório existia e estava **vazio**. O boot funcionava porque `/user`
+ainda estava montada — o defeito só apareceria num boot iniciado em `mass`.
+
+- O laço espelha os **dois**: `for _d in "$KeysDir" "$AuthDir"`.
+- Guarda: o teste procura o **`for`**, não o corpo — a mensagem de aviso cita
+  os dois nomes, e dois `assertIn` ingênuos passaram com o laço errado
+  (testado duas vezes antes de acertar). Agora um `regex` extrai os alvos do
+  `for ... in ...; do` e compara o conjunto.
+- **Regra que fica**: dois dados com o mesmo nome lógico ("chaves do
+  dropbear") em diretórios diferentes quebram qualquer variável única. Nomear
+  pelo que o arquivo É (`host_key` × `authorized_keys`) teria evitado isso —
+  e a guarda de "tem a chamada" precisa comparar **argumentos**, não presença.
+
 ### 3.104 NetworkManager desfaz o IP manual da interface USB
 
 `tools/giochi-ctl.py preparar` atribuía `10.55.0.1/24` com `ip addr add` e

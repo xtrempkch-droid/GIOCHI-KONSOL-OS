@@ -346,6 +346,27 @@ class SshdSobeTest(unittest.TestCase):
         self.assertIn("giochi_ssh_snapshot", fonte,
                       "o S62sshd tem de espelhar as chaves DEPOIS de gerar: "
                       "e' o unico ponto em que elas existem")
+        # E tem de espelhar os DOIS diretorios: as chaves de host ficam em
+        # KeysDir (`/user/.ssh`), a authorized_keys em AuthKeysDir
+        # (`/user/.ssh/dropbear`). Espelhar so' o segundo copia zero chave
+        # de host — medido na X55: espelho existindo e VAZIO.
+        bloco = fonte[fonte.index("giochi_ssh_snapshot"):]
+        bloco = bloco[:bloco.index("Senha de root")]
+        # Procurar o token INTEIRO: `$AuthDir` e' prefixo de `$AuthKeysDir`,
+        # e um `assertIn` simples passa com o diretorio errado (testado).
+        # O `for` e' o que decide QUEM e' espelhado. Olhar o corpo inteiro
+        # nao serve: a mensagem de aviso cita os dois nomes e um `assertIn`
+        # passa com o laco errado (testado duas vezes).
+        import re
+
+        lacos = re.findall(r"for\s+_d\s+in\s+([^;]+);\s*do", bloco)
+        self.assertTrue(lacos, "o S62sshd nao tem laco de espelho")
+        alvos = set(re.findall(r"\$(?:KeysDir|AuthDir)\b", " ".join(lacos)))
+        for d in ("$KeysDir", "$AuthDir"):
+            self.assertIn(d, alvos,
+                          "o laco do espelho tem de incluir %s (achados: %r): "
+                          "as chaves de host e a authorized_keys moram em "
+                          "diretorios diferentes" % (d, sorted(alvos)))
         # A chamada tem de estar depois do laco que gera as chaves.
         self.assertGreater(fonte.index("giochi_ssh_snapshot"),
                            fonte.index("dropbearkey -t"),

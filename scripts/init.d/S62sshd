@@ -207,9 +207,22 @@ fi
 #
 # Copiar depois de gerar resolve na ordem certa: qualquer boot posterior tem
 # as chaves em /run antes do proximo `mass`.
+# Sao DOIS diretorios, e o espelho precisa dos dois:
+#   KeysDir (`/user/.ssh`)        -> dropbear_*_host_key  (o que o -r usa)
+#   AuthDir (`/user/.ssh/dropbear`) -> authorized_keys
+# Espelhar so' o AuthDir copiava zero chave de host — medido na X55: o
+# diretorio do espelho existia e estava VAZIO, com o dropbear rodando porque
+# a particao ainda estava montada.
 if command -v giochi_ssh_snapshot >/dev/null 2>&1; then
-    if giochi_ssh_snapshot "$AuthDir" 2>/dev/null; then
+    _espelhou=0
+    for _d in "$KeysDir" "$AuthDir"; do
+        [ -d "$_d" ] || continue
+        giochi_ssh_snapshot "$_d" >/dev/null 2>&1 && _espelhou=1
+    done
+    if [ "$_espelhou" = "1" ]; then
         log "chaves do dropbear espelhadas em ${GIOCHI_SSH_CACHE:-/run/giochi/dropbear}"
+    else
+        log "aviso: nada a espelhar em $KeysDir nem $AuthDir"
     fi
 fi
 
