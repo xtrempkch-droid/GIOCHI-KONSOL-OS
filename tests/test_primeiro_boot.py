@@ -953,6 +953,150 @@ class PrimeiroBootTest(unittest.TestCase):
 GROW = os.path.join(ROOT, "buildroot/board/giochi/rootfs_overlay/etc/giochi/grow-user.sh")
 
 
+
+class LauncherComoApp(unittest.TestCase):
+    """O Launcher pode vir de /user/apps e ser atualizado sem regravar o sistema.
+
+    Pedido do mantenedor: mexer no sistema sem atrapalhar o Launcher, e mexer
+    no Launcher sem recompilar a imagem. O supervisor resolve o binario em
+    /user/apps/giochi-launcher ANTES do /usr/bin da imagem, e o teste
+    funcional executa o giochi-init REAL para provar a ordem.
+    """
+
+    def test_supervisor_procura_app_antes_da_imagem(self):
+        corpo = read(os.path.join(ROOT, "src/init/supervisor.c"))
+        self.assertIn("giochi_launcher_program", corpo,
+                      "falta a resolucao do binario do Launcher")
+        pos_app = corpo.find('"/user/apps/giochi-launcher"')
+        pos_img = corpo.find('GIOCHI_LIBEXECDIR "/giochi-launcher"')
+        self.assertGreater(pos_app, 0,
+                           "o caminho do app nao esta no supervisor")
+        self.assertGreater(pos_img, pos_app,
+                           "o app de /user tem de ser tentado ANTES do "
+                           "binario da imagem")
+
+    def test_app_quebrado_cai_para_a_imagem(self):
+        corpo = read(os.path.join(ROOT, "src/init/supervisor.c"))
+        # access(X_OK), nao stat: binario de upload interrompido nao derruba
+        # a UI — o fallback da imagem assume.
+        trecho = corpo[corpo.index("int giochi_launcher_program"):]
+        trecho = trecho[:trecho.index("\n}\n") + 3]
+        self.assertIn("access", trecho)
+        self.assertIn("X_OK", trecho)
+
+    def test_relance_re_resolve_o_binario(self):
+        corpo = read(os.path.join(ROOT, "src/init/supervisor.c"))
+        ini = corpo.index("void giochi_supervisor_revive_launcher")
+        trecho = corpo[ini:]
+        trecho = trecho[:trecho.index("\n}\n") + 3]
+        self.assertIn("giochi_launcher_program", trecho,
+                      "sem re-resolver, instalar o app em runtime so' vale "
+                      "no proximo boot")
+
+    def test_assets_do_app_sobrepoem_os_da_imagem(self):
+        corpo = read(LAUNCHER_MAIN)
+        self.assertIn("/user/apps/giochi-launcher/assets", corpo,
+                      "o app tem de poder trazer layout/tema/locales proprios")
+        self.assertIn("layout.json", corpo)
+
+    def test_storage_semeia_a_pasta_de_apps(self):
+        corpo = sh_code(read(S10STORAGE))
+        self.assertIn('"$_u/apps"', corpo,
+                      "sem /user/apps na arvore da particao o usuario nao "
+                      "tem onde colocar o binario (MTP expoe /user)")
+
+
+class LauncherComoAppFuncional(unittest.TestCase):
+    """Roda o giochi-init REAL e ve QUAL binario do Launcher ele executa."""
+
+    @classmethod
+    def setUpClass(cls):
+        bin_init = os.path.join(ROOT, "build", "host", "bin", "giochi-init")
+        if not os.path.isfile(bin_init):
+            raise unittest.SkipTest("giochi-init nao compilado (make all)")
+        cls.bin_init = bin_init
+
+    def _rodar(self, app=None, modo_app=None):
+        """Monta um GIOCHI_ROOT e devolve (tmp, arquivo_app, arquivo_img).
+
+        `app` e' o conteudo do binario em /user/apps/giochi-launcher (None =
+        sem app). `modo_app` e' o chmod dele. Cada binario falso toca o seu
+        marcador e dorme, para o supervisor nao ficar relancando em loop.
+        """
+        tmp = tempfile.TemporaryDirectory()
+        base = os.path.join(tmp.name)
+        for sub in ("run/giochi", "user/apps", "usr/bin",
+                    "etc/giochi", "var/log"):
+            os.makedirs(os.path.join(base, sub), exist_ok=True)
+        with open(os.path.join(base, "profile.json"), "w",
+                  encoding="utf-8") as fh:
+            fh.write('{"device":"host","soc":"host","os_version":"1.2",'
+                     '"kernel_version":"0.0","ram_mb":1024,"vram_mb":64}')
+        marcador_app = os.path.join(base, "app.rodou")
+        marcador_img = os.path.join(base, "imagem.rodou")
+        corpo = ("#!/bin/sh\ntouch %s\nsleep 30\n" % marcador_app)
+        if app is not None:
+            caminho = os.path.join(base, "user/apps/giochi-launcher")
+            with open(caminho, "w", encoding="utf-8") as fh:
+                fh.write(corpo)
+            os.chmod(caminho, modo_app if modo_app is not None else 0o755)
+        caminho_img = os.path.join(base, "usr/bin/giochi-launcher")
+        with open(caminho_img, "w", encoding="utf-8") as fh:
+            fh.write("#!/bin/sh\ntouch %s\nsleep 30\n" % marcador_img)
+        os.chmod(caminho_img, 0o755)
+
+        import time
+        env = dict(os.environ, GIOCHI_ROOT=base, GIOCHI_LOG_LEVEL="error")
+        proc = subprocess.Popen(
+            [self.bin_init, "--profile",
+             os.path.join(base, "profile.json")],
+            env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        deadline = time.time() + 10.0
+        while time.time() < deadline:
+            if os.path.exists(marcador_app) or os.path.exists(marcador_img):
+                break
+            if proc.poll() is not None:
+                break
+            time.sleep(0.1)
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        return tmp, marcador_app, marcador_img
+
+    def test_com_app_em_user_executa_o_app(self):
+        tmp, marcador_app, marcador_img = self._rodar(app="x")
+        try:
+            self.assertTrue(os.path.exists(marcador_app),
+                            "com o app em /user/apps, o supervisor tinha de "
+                            "executar ELE")
+            self.assertFalse(os.path.exists(marcador_img),
+                             "o binario da imagem nao podia rodar junto")
+        finally:
+            tmp.cleanup()
+
+    def test_sem_app_usa_a_imagem(self):
+        tmp, marcador_app, marcador_img = self._rodar(app=None)
+        try:
+            self.assertTrue(os.path.exists(marcador_img),
+                            "sem app em /user, o fallback da imagem e' a UI")
+            self.assertFalse(os.path.exists(marcador_app))
+        finally:
+            tmp.cleanup()
+
+    def test_app_sem_execucao_cai_para_a_imagem(self):
+        tmp, marcador_app, marcador_img = self._rodar(app="x", modo_app=0o644)
+        try:
+            self.assertTrue(os.path.exists(marcador_img),
+                            "app sem bit de execucao NAO pode derrubar a UI; "
+                            "o fallback assume")
+            self.assertFalse(os.path.exists(marcador_app))
+        finally:
+            tmp.cleanup()
+
+
+
 class ArmazenamentoDoUsuario(unittest.TestCase):
     """A particao de dados tem de ocupar o cartao; e os nomes, ser legiveis.
 

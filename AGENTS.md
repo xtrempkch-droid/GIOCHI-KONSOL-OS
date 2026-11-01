@@ -31,6 +31,8 @@ em que ordem em [docs/roadmap.md](docs/roadmap.md); inventário de cada app
 | USB: gadget composto (MTP + rede/SSH + Mass Storage) | **pronto** no código; **não ancora na X55**: o UDC existe, o bind é tentado e o `SETEPCONFIG` do ep0 dá **`-110` (timeout)** (§3.88). Não é `dr_mode` (medido nos dois) nem config (comparada com firmware que roda). Patch 0004 imprime `GCTL`/`DSTS`/`DCTL`; **resultado pendente de um boot** |
 | Modo Desenvolvedor (§4.6.1): SSH via USB desligado por padrão | **pronto**, testado |
 | Launcher: motor de layout, tema, `settings.json`, overlay 2 níveis, biblioteca | **pronto** |
+| Launcher como **app** (`/user/apps/giochi-launcher` + fallback na imagem) | **pronto e testado** (suíte roda o `giochi-init` real); não validado no aparelho |
+| Relógio sem RTC: restauração + **correção pelo usuário** (MTP / `SET_DATE`) | **pronto e testado**; não validado no aparelho |
 | Launcher: **desenho dos widgets** no backend SDL2 | **desenha** em hardware: geometria pura + atlas gerado, i18n pt-BR/en, status (Wi-Fi/bateria/cabo), hint bar em chips, paisagem (§3.69–3.73) |
 | `giochi-musicd`: protocolo e socket | **pronto**; decodificação PCM/ALSA **pendente** |
 | Log de boot no cartão (`S00bootlog`) + modo `--debug` com fbcon | **pronto**, testado com mount/syslogd simulados |
@@ -3108,6 +3110,39 @@ reconhecido", sem nenhuma mensagem — o mesmo tipo de defeito do §3.104.
   substituído. Testada ao contrário: com o glob antigo, `test_leitor_usb_sd_e_reconhecido`
   reprova com `/dev/sda` esperado e vazio recebido.
 
+### 3.114 Shim de `date` que aceita qualquer `-s` deixa o teste mentir
+
+Ao testar o pedido de data do `S01relogio` (arquivo via MTP), o primeiro shim
+de `date` devolvia 0 para **qualquer** `date -s`. O script tentava aplicar
+"nao sou uma data", o shim dizia "aplicado", o ano validava (2026 do shim) e o
+pedido era **removido** — o teste do "lixo é ignorado" passava exercitando
+exatamente o caminho que não pode acontecer. É a mesma classe da §3.41: o
+simulador tem de reproduzir o contrato da ferramenta real.
+
+- O shim agora recusa `-s` que não seja `@<dígitos>` ou
+  `YYYY-MM-DD[...]` — igual ao `parse_datestr` do BusyBox (medido em
+  `libbb/time.c`: `date_str[0] == '@'` → `bb_strtol`, e o bloco
+  `yyyy-mm-dd` sob `ENABLE_DESKTOP`).
+- O shim também trata `date -u +%Y` (o script valida o ANO depois de aplicar;
+  o primeiro shim caía no default, não imprimia nada, `[ "" -ge 2020 ]`
+  falhava e o pedido nunca era considerado aplicado).
+- Guarda: `tests/test_relogio.py` afirma os dois lados — lixo mantém o
+  pedido, data legível o remove.
+
+### 3.115 Buscar função em teste: `corpo.index("nome")` casa com a CHAMADA
+
+O teste do relançamento procurava `corpo.index("giochi_supervisor_revive_launcher")`
+e pegava a **chamada** dentro do `reap` (linha ~209), não a definição —
+a guarda verificava um trecho que nunca conteria a re-resolução e falhava
+sem dizer o motivo. Procurar pelo texto da definição
+(`void giochi_supervisor_revive_launcher`) resolve. Mesmo gênero: em Python,
+`"\n}\n"` é a string literal `
+}
+` (com barra), não uma quebra de linha —
+o recorte de função tem de usar `"\n}\n"` real (`"
+}
+"`).
+
 ### 3.104 NetworkManager desfaz o IP manual da interface USB
 
 `tools/giochi-ctl.py preparar` atribuía `10.55.0.1/24` com `ip addr add` e
@@ -3213,6 +3248,61 @@ que o `rcK` rejeitava. O degrau do mtime do cartão fecha isso.
 relógio passa a acertar já no **primeiro** boot (data do cartão), com erro de
 no máximo o tempo entre gerar a imagem e ligar o aparelho; do segundo boot em
 diante vale a época do último desligamento, que é mais precisa.
+
+### 2026-11-01 (27) — Copilot (Launcher como app + data corrigível pelo usuário)
+
+Duas mudanças pedidas pelo mantenedor: (1) o Launcher vira **app** para as
+frentes de trabalho pararem de se atrapalhar; (2) uma **opção** para o sistema
+atualizar a data via MTP (e, no futuro, pela Loja) — o cenário da bateria do
+RTC trocada.
+
+**1. Launcher como app ([docs/LAUNCHER-APP.md](docs/LAUNCHER-APP.md)):**
+
+- `giochi_launcher_program()` no supervisor: `/user/apps/giochi-launcher`
+  **antes** de `/usr/bin/giochi-launcher` (fallback da imagem, sempre
+  presente). O teste é `access(X_OK)`, não `stat`: upload via MTP pela metade
+  não derruba a UI.
+- A resolução repete no `revive_launcher`: instalar o app em runtime vale na
+  próxima volta para a Home (fechar um jogo), sem reboot.
+- Assets: `/user/apps/giochi-launcher/assets/layout.json` sobrepõe
+  `/usr/share/giochi` — binário e tema/textos viajam juntos.
+- `S10storage` semeia `/user/apps`; o MTP já expõe `/user` com rw, então
+  instalar = copiar o binário + `chmod +x` (por SSH).
+- Orçamento inalterado (§4.1.6). O app **não** é assinado — mesmo modelo dos
+  ports em `/user/ports`, sem upgrade automático de rede.
+
+**2. Data ([docs/RELÓGIO.md](docs/RELÓGIO.md)):**
+
+- `SET_DATE <epoch>` no control.sock: valida faixa (2020..2100), `date -s
+  @<epoch>`, persiste em `/user/.giochi/relogio` (a mesma fonte do `rcK`),
+  `mkdir_p` cobre partição formatada. Em `GIOCHI_DRY_RUN` o relógio do host
+  fica intacto.
+- Pedido via MTP: `/user/.giochi/relogio.pedido` (época OU `YYYY-MM-DD
+  HH:MM`), aplicado no boot, removido quando aplicado, mantido quando
+  inválido (o aviso a cada boot é proposital). Resultado com ano implausível
+  é rejeitado e a época anterior é restaurada.
+- `giochi-ctl.py data` manda a hora do PC por SSH (epoch local, sem cálculo
+  manual); o app da Loja usará o mesmo `SET_DATE` (falta só a UI).
+
+**Verificação (tudo rodado):**
+
+- `make test` **39/39** — `primeiro-boot` ganhou `LauncherComoApp` (5 guardas)
+  e `LauncherComoAppFuncional` (3 cenários rodando o `giochi-init` REAL num
+  `GIOCHI_ROOT` falso e provando QUAL binário executou: app presente, app
+  ausente, app sem bit X); `relogio` 14→21 (pedido MTP: época, legível, CRLF,
+  lixo, fora de faixa, ano errado, prioridade); `control.sock` ganhou o
+  contrato do `SET_DATE`; `cliente-ssh` ganhou `set_date` + `data`.
+- Guardas ao contrário: ordem invertida no supervisor → funcional reprova;
+  sem validação de ano → 2 falhas; sem remover pedido → 4; sem faixa da época
+  → 2.
+- Armadilhas novas: §3.114 (shim de `date` que aceitava qualquer `-s` — o
+  teste do lixo passava pelo caminho errado) e §3.115 (`corpo.index()` casava
+  com a chamada, não com a definição).
+
+**Aberto:** nada disto foi validado no aparelho (a imagem com as correções da
+sessão anterior ainda precisa ser regravada); o pedido de data via MTP exige
+desligar e ligar (aplicação em runtime exigiria polling, descartado de
+propósito); a UI da Loja para data não existe.
 
 ## 4. O que NÃO foi verificado
 
