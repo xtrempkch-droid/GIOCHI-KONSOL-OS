@@ -4161,6 +4161,9 @@ imagens; imagem X55 gerada e conferida **por dentro** (`themes/` com os 6 +
 `index.json`, `device-theme.json` = `neon_rose`, `theme.json` ausente).
 
 **Aberto:** nenhuma das seis telas foi vista no aparelho — a imagem foi
-regerada e conferida, o boot com ela ainda não aconteceu. O preview continua
+regerada e conferida, o boot com ela ainda não aconteceu. **Atenção ao cartão**:
+às 01:52 o leitor tinha o **SDXC de 116 GB** (o que deu `EIO` no §3.42), não o
+de 29,7 GB — o bom estava dentro da X55. As duas tentativas de gravação foram
+barradas pelo `polkit` (sem senha digitada), então **nada foi escrito** nele. O preview continua
 sendo rasterização da geometria publicada, **não** captura de tela. Push segue
 bloqueado por credencial.
