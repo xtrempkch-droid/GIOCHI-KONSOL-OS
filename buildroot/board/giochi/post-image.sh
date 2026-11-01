@@ -151,10 +151,14 @@ fi
 # prefixaria com 'rockchip/'. Sem esta normalizacao o dtbs/ do cartao so era
 # populado no caminho do DTB pre-compilado, e todo aparelho com DTS upstream
 # (X55, RG353V, RG351V) morria aqui, no ultimo passo do build.
-if [ ! -f "$BINARIES_DIR/dtbs/$DTB_FILE" ] && \
-   [ -f "$BINARIES_DIR/$DTB_FILE" ]; then
+#
+# SEMPRE copiado, sem 'if [ ! -f ]': ver AGENTS.md §3.39 e §3.63. O
+# BINARIES_DIR sobrevive ao build incremental, entao o DTB de uma execucao
+# anterior ficava la e a versao nova (recompilada com o TRNG ligado) nunca
+# substituia a velha — o cartao saia com o DTB antigo e sem sintoma no build.
+if [ -f "$BINARIES_DIR/$DTB_FILE" ]; then
     mkdir -p "$BINARIES_DIR/dtbs"
-    cp "$BINARIES_DIR/$DTB_FILE" "$BINARIES_DIR/dtbs/$DTB_FILE"
+    cp -f "$BINARIES_DIR/$DTB_FILE" "$BINARIES_DIR/dtbs/$DTB_FILE"
     echo "post-image: dtb $DTB_FILE normalizado para dtbs/"
 fi
 
@@ -181,8 +185,15 @@ if [ -n "${GIOCHI_PRECOMPILED_DTB:-}" ] && [ -f "$GIOCHI_PRECOMPILED_DTB" ]; the
 fi
 
 # board.dtb: nome generico usado pelo boot.cmd quando fdtfile nao existe.
-if [ ! -f "$BINARIES_DIR/board.dtb" ] && [ -f "$BINARIES_DIR/dtbs/$DTB_FILE" ]; then
-    cp "$BINARIES_DIR/dtbs/$DTB_FILE" "$BINARIES_DIR/board.dtb"
+#
+# SEMPRE regerado, como o boot.scr e o extlinux.conf (AGENTS.md §3.39).
+# Com `if [ ! -f ]`, o board.dtb da execucao anterior sobrevivia ao build
+# incremental: medido nesta sessao, o DTB do kernel foi recompilado com o no
+# do TRNG ligado (59416 B, status = "okay") e o board.dtb que foi para o cartao
+# continuou o antigo (59420 B, status = "disabled") — a correcao nao chegava
+# ao aparelho e o boot seguia lento por falta de entropia, sem nenhum aviso.
+if [ -f "$BINARIES_DIR/dtbs/$DTB_FILE" ]; then
+    cp -f "$BINARIES_DIR/dtbs/$DTB_FILE" "$BINARIES_DIR/board.dtb"
 fi
 
 # DTB de aparelho sem suporte upstream (X35S/X35H/genericos): copiado de

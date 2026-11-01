@@ -76,7 +76,7 @@ BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="$(BR2_EXTERNAL_GIOCHI_PATH)/board/giochi
 # proprio probe (painel MIPI e' sondado de forma sincrona), quando dsi->dmd
 # ainda era NULL e &dsi->bridge virava NULL -> bind com -EINVAL silencioso e
 # tela apagada. Ver o cabecalho do patch e AGENTS.md §3.48.
-BR2_LINUX_KERNEL_PATCH="$(BR2_EXTERNAL_GIOCHI_PATH)/board/giochi/patches/linux/0001-drm-rockchip-dw-mipi-dsi-adia-component-add.patch"
+BR2_LINUX_KERNEL_PATCH="$(BR2_EXTERNAL_GIOCHI_PATH)/board/giochi/patches/linux"
 BR2_LINUX_KERNEL_DTS_SUPPORT=y
 @DTS_LINES@
 BR2_LINUX_KERNEL_IMAGE=y

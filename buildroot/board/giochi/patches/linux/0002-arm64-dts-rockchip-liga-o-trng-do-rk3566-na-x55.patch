@@ -1,0 +1,47 @@
+Liga o TRNG do RK3566 na Powkiddy X55 (entropia no boot)
+
+O bloco TRNG do RK3566 existe, o driver e' mainline
+(CONFIG_HW_RANDOM_ROCKCHIP=y, drivers/char/hw_random/rockchip-rng.c) e o no
+esta' em rk356x.dtsi — mas com status = "disabled". Quem liga e' o
+rk3568.dtsi, e a X55 e' rk3566: o no ficou desligado em todas as placas
+rk3566 que nao o habilitam explicitamente (pinetab2 e soquartz habilitam).
+
+Consequencia medida no aparelho: NENHUMA fonte de entropia de hardware. O
+crng inicializa quando junta ruido de temporizador/disco, o que deu 11 s num
+boot e 1024 s em outro. Como getrandom() BLOQUEIA ate o crng estar pronto,
+qualquer biblioteca de userspace que peca bytes aleatorios no caminho de
+inicializacao trava junto:
+
+  [    2.172] I: buttons.map: secao [default] carregada
+  [    8.8 s SEM NADA no log]
+  [   11.005956] random: crng init done
+  MESA-LOADER: failed to open kms_swrast: ...
+  [   11.062] W: render: SDL2 indisponivel (SDL_CreateWindow: EGL not initialized)
+
+O detalhe que fecha o diagnostico: o mesmo trecho de MESA-LOADER/render
+terminava em 1,7 s quando o SDL2 nao tinha KMSDRM. Com o backend KMSDRM
+presente o SDL agora chega ao EGL, e o EGL pede entropia — o bloqueio e' NOVO
+porque o caminho de codigo e' novo.
+
+Com o no ligado, o hwrng alimenta o pool e o crng inicializa nos primeiros
+milissegundos.
+
+Verificado: aplicado no DTS e recompilado somente o DTB. `dtc -I dtb -O dts`
+mostra `status = "okay"` no no rng@fe388000 (antes: "disabled").
+
+--- a/arch/arm64/boot/dts/rockchip/rk3566-powkiddy-x55.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3566-powkiddy-x55.dts
+@@ -925,3 +925,13 @@
+ 		remote-endpoint = <&dsi0_in_vp1>;
+ 	};
+ };
++
++/*
++ * TRNG do RK3566: rk356x.dtsi deixa o no desligado e o rk3568.dtsi e' quem
++ * liga — mas a X55 e' rk3566, entao o bloco ficava sem driver. Sem ele nao
++ * existe fonte de entropia: o crng inicializa tarde (medido: 11 s num boot,
++ * 1024 s em outro) e getrandom() bloqueia ate la. Ver AGENTS.md §3.62.
++ */
++&rng {
++	status = "okay";
++};

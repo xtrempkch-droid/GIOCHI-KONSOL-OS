@@ -273,6 +273,30 @@ class ImagePiecesTest(unittest.TestCase):
                          "extlinux.conf nao pode ser gerado so se faltar")
         self.assertIn("> \"$BINARIES_DIR/extlinux.conf\"", post)
 
+    def test_board_dtb_e_regerado_sempre(self):
+        """Mesma armadilha do extlinux.conf e do boot.scr (§3.39).
+
+        Medido nesta sessão: o DTB do kernel foi recompilado com o nó do TRNG
+        ligado (59416 B, status = "okay") e o `board.dtb` que foi para o cartão
+        continuou o antigo (59420 B, status = "disabled"): a correção não
+        chegava ao aparelho e o boot seguia lento por falta de entropia sem
+        nenhum aviso. Com `if [ ! -f ]`, o artefato da execução anterior
+        sobrevive ao build incremental.
+        """
+        post = sh_code(read(BOARD, "post-image.sh"))
+
+        self.assertNotIn('if [ ! -f "$BINARIES_DIR/board.dtb" ]', post,
+                         "board.dtb nao pode ser copiado so se faltar")
+        self.assertIn('cp -f "$BINARIES_DIR/dtbs/$DTB_FILE" '
+                      '"$BINARIES_DIR/board.dtb"', post)
+        # A normalizacao para dtbs/ tinha o MESMO problema (terceira ocorrencia
+        # desta armadilha no mesmo arquivo): o DTB velho de dtbs/ sobrevivia e
+        # o novo nunca era copiado.
+        self.assertNotIn('if [ ! -f "$BINARIES_DIR/dtbs/$DTB_FILE" ] &&', post,
+                         "dtbs/ nao pode ser populado so se faltar")
+        self.assertIn('cp -f "$BINARIES_DIR/$DTB_FILE" '
+                      '"$BINARIES_DIR/dtbs/$DTB_FILE"', post)
+
     def test_mkbootimg_copia_o_subdiretorio_rockchip(self):
         # O glob "dtbs/*.dtb" nao entra em subdiretorio: sem mmd/mcopy
         # explicitos, dtbs/rockchip/ nao existe no FAT (verificado no .img).

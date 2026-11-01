@@ -12,6 +12,41 @@ decisões tomadas (`# DECISÃO`) que afetam a sessão seguinte.
 Legenda: **feito** (compila e/ou roda), **esqueleto** (interface + stub com
 TODO), **doc** (apenas especificação/script).
 
+## 2026-10-31 — o bloqueio de 8,8 s era ENTROPIA, não vídeo
+
+O log do aparelho (imagem com SDL2/KMSDRM) mostrou:
+
+```
+[    2.172] I: buttons.map: secao [default] carregada
+            < 8,8 s SEM NENHUMA LINHA >
+[   11.005956] random: crng init done
+MESA-LOADER: failed to open kms_swrast: ...
+[   11.062] W: render: SDL2 indisponivel (SDL_CreateWindow: EGL not initialized)
+```
+
+Duas medições fecham o caso: o silêncio termina **exatamente** em
+`crng init done`, e o mesmo trecho terminava em **1,7 s** antes de o SDL2
+ganhar KMSDRM (sem KMSDRM o `SDL_Init` nunca chegava ao EGL). Com KMSDRM o
+EGL pede `getrandom()`, que **bloqueia** até o CRNG inicializar.
+
+Causa: o nó `rng@fe388000` existe no `rk356x.dtsi` com `status = "disabled"`;
+quem liga é o `rk3568.dtsi` e a X55 é **rk3566**. Nenhuma fonte de entropia de
+hardware — o CRNG dependia de ruído e variou de **11 s a 1024 s** entre boots.
+
+| Correção | Onde |
+|---|---|
+| `&rng { status = "okay"; };` | patch de DTS `0002-…-trng-do-rk3566-na-x55.patch` |
+| `BR2_LINUX_KERNEL_PATCH` aponta para o **diretório** | dois templates |
+| `dtbs/`, `dtbs/rockchip/` e `board.dtb` sempre regerados | `post-image.sh` |
+
+O último item foi descoberto ao verificar o DTB **dentro do `.img`**: o build
+recompilou o DTB novo, mas o `if [ ! -f ]` do `post-image.sh` manteve o antigo
+(§3.63, terceira ocorrência da mesma classe no mesmo arquivo).
+
+**Verificado:** `dtc -I dtb -O dts` nas três cópias **dentro da imagem** →
+`status = "okay"`. `make test` 27/27, `make lint` rc=0. Cartão gravado com
+`conv=fsync` e conferido byte a byte (`62554aa9…`). **Não bootado ainda.**
+
 ## 2026-10-31 — A TELA ACENDEU: o kernel está resolvido, faltava o SDL2
 
 Com o coldplug de módulos (§3.50) e o PHY do DSI `=y`, o bind aconteceu:

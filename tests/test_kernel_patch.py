@@ -111,6 +111,28 @@ class FormatoDoPatch(unittest.TestCase):
         self.assertIn("if (!dsi->dmd)", texto,
                       "o patch perdeu a guarda de dmd nulo")
 
+    def test_patch_do_trng_liga_o_no_do_rk3566(self):
+        """Sem o TRNG o crng demora 11 s (ou 1024 s) e getrandom() bloqueia.
+
+        Medido na X55: 8,8 s de silêncio entre "buttons.map carregada" e o
+        primeiro MESA-LOADER, terminando exatamente em "crng init done". O SDL
+        com KMSDRM chega ao EGL, o EGL pede entropia, e só há entropia quando o
+        crng fica pronto.
+        """
+        nome = ("0002-arm64-dts-rockchip-liga-o-trng-do-rk3566-na-x55"
+                ".patch")
+        caminho = os.path.join(PATCH_DIR, nome)
+        self.assertTrue(os.path.isfile(caminho), "patch do TRNG ausente: %s"
+                        % caminho)
+        texto = read(caminho)
+        self.assertIn("rk3566-powkiddy-x55.dts", texto)
+        self.assertIn("&rng", texto)
+        self.assertIn('status = "okay"', texto)
+        # O numero do patch importa: precisa vir depois do 0001 e o nome tem de
+        # ordenar (o Buildroot aplica em ordem de nome).
+        self.assertTrue(nome.startswith("0002-"),
+                        "o patch do TRNG tem de ordenar depois do 0001")
+
 
 class DefconfigApontaParaOPatch(unittest.TestCase):
     def linha_patch(self, caminho):
@@ -119,9 +141,16 @@ class DefconfigApontaParaOPatch(unittest.TestCase):
                 return linha.strip()
         return ""
 
-    def test_templates_referenciam_o_patch(self):
+    def test_templates_apontam_para_o_diretorio(self):
+        """O diretório e' melhor que listar arquivo por arquivo.
+
+        O Buildroot, quando o valor e' um diretório, aplica todos os *.patch
+        dele em ordem de nome (`apply-patches.sh <dir> <dir> \*.patch`). Listar
+        arquivo por arquivo faz um patch novo ser ignorado em silêncio — o
+        mesmo tipo de defeito silencioso que esta suíte existe para pegar.
+        """
         esperado = ('BR2_LINUX_KERNEL_PATCH="$(BR2_EXTERNAL_GIOCHI_PATH)'
-                    '/board/giochi/patches/linux/%s"' % PATCH_DSI)
+                    '/board/giochi/patches/linux"')
         for caminho in TEMPLATES:
             with self.subTest(template=os.path.basename(caminho)):
                 self.assertEqual(self.linha_patch(caminho), esperado)
@@ -145,9 +174,11 @@ class DefconfigApontaParaOPatch(unittest.TestCase):
             alvo = alvo.replace("$(BR2_EXTERNAL_GIOCHI_PATH)",
                                 os.path.join(ROOT, "buildroot"))
             with self.subTest(template=os.path.basename(caminho)):
-                self.assertTrue(os.path.isfile(alvo),
+                self.assertTrue(os.path.isdir(alvo),
                                 "o defconfig aponta para %s, que não existe"
                                 % alvo)
+                self.assertTrue(glob.glob(os.path.join(alvo, "*.patch")),
+                                "%s não tem nenhum .patch" % alvo)
 
 
 class PatchAplicaNaArvore(unittest.TestCase):

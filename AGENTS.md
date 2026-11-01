@@ -1490,6 +1490,40 @@ responde "este bloco existe de verdade na imagem?" em um segundo, no PC, sem
 gravar cartão.
 
 
+### 3.63 `if [ ! -f ]` no `post-image.sh`: o DTB novo nunca chegava ao cartão
+
+**Terceira ocorrência da mesma classe no mesmo arquivo** (§3.33 `boot.scr`,
+§3.39 `extlinux.conf`, agora os DTB). O `post-image.sh` normaliza o DTB do
+`BINARIES_DIR` para `dtbs/` e `dtbs/rockchip/` só **se o arquivo faltasse**:
+
+```sh
+if [ ! -f "$BINARIES_DIR/dtbs/$DTB_FILE" ] && ...
+if [ ! -f "$BINARIES_DIR/board.dtb" ] && ...
+```
+
+`BINARIES_DIR` sobrevive ao build incremental. Sequência medida nesta sessão:
+
+1. patch de DTS liga o TRNG → `make` recompila o DTB (59416 B, `okay`);
+2. `post-image.sh` vê `dtbs/` já populado (59420 B, `disabled`) e **não
+   copia**;
+3. a imagem é gerada, gravada, verificada byte a byte — e o aparelho continua
+   sem entropia.
+
+O build não avisa e a verificação de cartão não pega: o cartão é idêntico à
+imagem, só a imagem é que tem o DTB velho.
+
+- Todas as cópias passaram a ser **incondicionais** (`cp -f`).
+- Guarda: `test_board_dtb_e_regerado_sempre` (suíte `log-de-boot`), que cobre
+  as duas ocorrências (`dtbs/` e `board.dtb`).
+- **Verificação que fecha**: `dtc -I dtb -O dts <dtb> | grep -A6 <no>` **na
+  imagem**, não em `BINARIES_DIR` — foi assim que o defeito apareceu, com o
+  DTB dentro do `.img` montado ainda dizendo `disabled`.
+
+**Regra que fica:** no `post-image.sh`, todo arquivo derivado é regerado
+sempre. Se um `if [ ! -f ]` aparecer nesse arquivo, é bug — o diretório de
+saída não é limpo entre builds.
+
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):
@@ -3156,3 +3190,42 @@ correção. Lição: teste que passa por causa de dado errado **é** o dado erra
 **Aberto:** a matriz diz "não verificado em aparelho" para 19 das 20 engines —
 só o Godot tem medição real. E o recomendador ainda não está ligado ao
 `giochi-store`; hoje é ferramenta de linha de comando.
+
+### 2026-10-31 (24) — Copilot (8,8 s de silêncio: era entropia, não vídeo)
+
+O log do cartão tinha um detalhe que eu havia lido como "o EGL demora":
+**8,8 s de silêncio** entre `buttons.map: secao [default] carregada` (2,172 s)
+e o primeiro `MESA-LOADER` (11,06 s), com `random: crng init done` em
+11,005 s — o silêncio termina **exatamente** ali.
+
+A segunda medição fecha: o mesmo trecho terminava em **1,7 s** antes de o SDL2
+ganhar KMSDRM. O bloqueio é **novo** porque o caminho é novo — sem KMSDRM o
+`SDL_Init` falhava antes do EGL; com KMSDRM chega ao EGL, e o EGL chama
+`getrandom()`, que bloqueia até o CRNG inicializar.
+
+Causa da falta de entropia (§3.62): o nó `rng@fe388000` está em `rk356x.dtsi`
+com `status = "disabled"`; quem liga é o `rk3568.dtsi`, e a X55 é rk3566.
+Medido no DTB da imagem com `dtc -I dtb -O dts`. Não havia fonte de hardware
+nenhuma e o CRNG variou de **11 s a 1024 s** entre boots — assinatura clássica
+de "esperando entropia".
+
+**Correções:**
+- patch de DTS `0002-arm64-dts-rockchip-liga-o-trng-do-rk3566-na-x55.patch`
+  com `&rng { status = "okay"; };`
+- `BR2_LINUX_KERNEL_PATCH` passou a apontar para o **diretório** (o Buildroot
+  aplica todos os `*.patch` em ordem de nome); listar arquivo por arquivo fazia
+  patch novo ser ignorado em silêncio.
+- `post-image.sh`: `dtbs/`, `dtbs/rockchip/` e `board.dtb` sempre regerados
+  (§3.63). O `if [ ! -f ]` manteve o DTB **antigo** e a correção não chegava ao
+  cartão — descoberto verificando o DTB **dentro do `.img`**, não em
+  `BINARIES_DIR`.
+
+**Verificação:** `make test` **27/27**, `make lint` rc=0. Guardas novas em
+`patch-de-kernel` (patch do TRNG + apontamento para o diretório, testadas ao
+contrário) e `log-de-boot` (`test_board_dtb_e_regerado_sempre`, testada ao
+contrário). `dtc` nas três cópias dentro da imagem → `status = "okay"`.
+Cartão gravado com `dd conv=fsync` e conferido byte a byte (`62554aa9…`).
+
+**Aberto:** o boot com o TRNG ligado ainda não aconteceu. Se o CRNG ainda
+demorar, o próximo suspeito é `CONFIG_RANDOM_TRUST_BOOTLOADER`/`CPU_RNG`; se
+acelerar, o EGL deve passar e o próximo dado é a sonda `giochi-gpu-probe`.
