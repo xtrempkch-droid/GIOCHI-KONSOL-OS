@@ -4624,3 +4624,47 @@ isso ate' tentar conectar. A chave agora e' resolvida como o **usuario**
 (`$HOME`, `SUDO_USER`, `PKEXEC_UID` — `sudo` e `pkexec` trocam o HOME de
 formas diferentes) e viaja por **argumento**, inclusive na re-execucao. Dois
 testes novos; provado ao contrario removendo o repasse, o teste reprova.
+
+### 2026-11-01 (22) — Copilot (o USB-C era `otg` sem extcon: nenhum UDC)
+
+O mantenedor ligou o console com o TTL e o cartão novo. O serial pegou o boot
+**inteiro** (37 KB, DDR → U-Boot → kernel → userspace) — e respondeu as duas
+perguntas que faltavam, com a causa raiz de um problema que já tinha
+sobrevivido a três imagens, dois cartões e dois cabos.
+
+**1. As correções do §3.86/§3.87 funcionaram.** O `rcS` passou por
+`S00bootlog`, `S05modules`, …, e a prova de que o `S50usb` rodou é o
+`configfs-gadget.giochi gadget.0` aparecendo no log. A tela também acendeu:
+`render: SDL2 driver=KMSDRM renderizador=opengles2` e `5 abas`, em 6,6 s.
+
+**2. O USB continuava invisível por causa do DT (§3.88).**
+
+```
+configfs-gadget.giochi gadget.0: HOST MAC 02:47:69:6f:63:69
+dwc3 fcc00000.usb: failed to enable ep0out
+```
+
+`dr_mode = "otg"` sem `extcon`/`usb-role-switch` = o dwc3 espera um evento do
+pino ID que a placa não tem, e o ramo OTG do `__dwc3_set_mode()` **não chama
+`dwc3_gadget_init()`** — que é quem registra o UDC. `/sys/class/udc` vazio, o
+`giochi-usb-mode` sai com "nenhum UDC disponivel" e o PC não vê nada.
+Corrigido por patch (`peripheral`), e conferido **no DTB gerado**: `otg` = 0
+ocorrências. É o mesmo `failed to enable ep0out` que o HANDOFF já registrava
+para X35S/X35H: a causa é a mesma nas três placas.
+
+**3. Efeito colateral que custou o cartão inteiro (§3.89).** O modo `mass`
+desmonta `/user` (certo), o bind falhou, e a partição ficou sem dono até
+reiniciar: `settings.json ausente`, `0 pacotes em /user/games`,
+`0 faixas em /user/music`. Agora há `restaura_user()` em todo caminho de falha.
+
+**Verificação:** DTB de `dist/x55/build/images` com `peripheral` e sem `otg`;
+squashfs com `S90graphics` e sem `S20graphics`/`S99launcher`; suíte
+`usb-gadget` com 2 cenários novos (UDC como diretório → `EISDIR`), testada ao
+contrário; `test_kernel_patch` com 3 testes novos; `make test` **35/35**;
+`make lint` rc=0. Imagem nova `12f1f1eb…` (`.xz` `21870b9b…`).
+
+**Aberto:** a imagem **não foi gravada nem bootada** com o patch do USB. O
+próximo passo é `tools/flash-card.sh /dev/sdd` com o cartão no leitor do PC
+(ele está no console) e então ler o serial: o que se procura agora é
+`/sys/class/udc` preenchido, `gadget anexado em fc000000.usb` e o gadget
+`1d6b:0104` aparecendo no `lsusb` do PC.
