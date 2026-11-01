@@ -29,11 +29,11 @@ em que ordem em [docs/roadmap.md](docs/roadmap.md); inventário de cada app
 | USB: gadget composto (MTP + rede/SSH + Mass Storage) | **pronto**, testado contra configfs falso |
 | Modo Desenvolvedor (§4.6.1): SSH via USB desligado por padrão | **pronto**, testado |
 | Launcher: motor de layout, tema, `settings.json`, overlay 2 níveis, biblioteca | **pronto** |
-| Launcher: **desenho dos widgets** no backend SDL2 | **desenha** (2026-10-31): geometria pura + atlas gerado; falta ver no aparelho |
+| Launcher: **desenho dos widgets** no backend SDL2 | **desenha** em hardware: geometria pura + atlas gerado, i18n pt-BR/en, status (Wi-Fi/bateria/cabo), hint bar em chips, paisagem (§3.69–3.73) |
 | `giochi-musicd`: protocolo e socket | **pronto**; decodificação PCM/ALSA **pendente** |
 | Log de boot no cartão (`S00bootlog`) + modo `--debug` com fbcon | **pronto**, testado com mount/syslogd simulados |
 | Boot completo até o Launcher em hardware (X55) | **PROVADO**: `giochi-init pronto` + `launcher v1.2 pronto: 5 abas` em **3,9 s** (entrada 19) |
-| Vídeo na X55 | **DSI faz bind e `/dev/dri/card0` existe** (provado em hardware); SDL2 estava sendo compilado sem KMSDRM (§3.56) — corrigido, imagem regravada e verificada, **boot pendente** |
+| Vídeo na X55 | **launcher sobe em SDL2/KMSDRM e a tela acende** (provado em hardware); causa do "EGL not initialized" era o `MESA_LOADER_DRIVER_OVERRIDE=panfrost` (§3.68) |
 | Coldplug de módulos (`S05modules` + regra `$MODALIAS`) | **funcionando** no aparelho (`coldplug concluido`); PHY do DSI é `=y` (§3.50) |
 
 **Nunca repita (custou tempo de build ou passou silencioso):** leia
@@ -1870,14 +1870,39 @@ E o texto inteiro: a tira de rótulos das abas tinha **87 528** de tinta contra
   **1,75 MiB**, dentro do teto de 4 MB da §4.1.6 mas agora com 2,25 MB de
   folga em vez de 3,2 MB.
 
+### 3.73 Texto do catálogo como formato de `printf`
+
+`main.cpp` montava a linha de brilho das configurações assim:
+
+```c
+std::snprintf(brilho, sizeof(brilho), app.i18n.tr("settings.level"),
+              app.settings.brightness);
+```
+
+O catálogo guarda `"Brilho: {n}%"`, não `"%d%%"`. O compilador avisou
+(`-Wformat-nonliteral`) e o aviso é o menor dos problemas: traduzir a string
+para um idioma cuja frase contenha `%s` transforma o catálogo em **leitor de
+pilha** — um `%s` consome um argumento que não existe. O catálogo é dado, e dado
+não vira formato.
+
+- Correção: `i18n.tr_n(chave, n)`, que substitui `{n}` por texto. Fica
+  previsível e o `-Wformat-nonliteral` volta a valer como sinal, em vez de
+  ruído que se aprende a ignorar.
+- No mesmo build apareceu `-Wformat-truncation` de verdade: `char pct[8]` para
+  `"%d%%"` — `battery_pct` é `int`, então cabem 10 dígitos + `%%` + NUL.
+  `pct[16]`. Truncar ali imprimiria percentual errado na tela, sem erro.
+- Regra: `tr()` devolve **texto**, nunca formato. Se a frase tem um número, o
+  caminho é `tr_n`.
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):
 
-- **O userspace roda na X55, mas só foi visto por log.** Medido em hardware
-  (entrada 19): `giochi-init pronto`, `launcher v1.2 pronto: 5 abas` e
-  `primeiro frame` em 3,9 s. O que **não** está verificado é a *tela*: o DRM não
-  faz bind do DSI (§3.44), então o Launcher desenha no backend nulo. Também não
+- **O userspace roda na X55 e a tela acendeu.** Medido em hardware: o
+  `-22` do bind do DSI (§3.48) era o bloqueio, e depois do patch o Launcher
+  sobe em SDL2/KMSDRM (§3.68). O que ainda **não** está verificado na tela é o
+  desenho novo: i18n, indicadores de status, hint bar em chips, fonte com dois
+  pesos e a orientação em paisagem. Também não
   foi verificado nada de áudio, gamepad, Wi-Fi, `control.sock` pelo painel, nem
   o overlay de verdade (só o headless).
 - **X35S e X35H** nunca foram testados por quem escreveu este código. Não têm
@@ -3919,3 +3944,60 @@ folga.
 atlas novo. Se o texto na tela parecer grande/grosso demais, os tokens de
 tamanho (`font_tab` 21, `font_title` 18) são o lugar de mexer, **não** o peso:
 o peso agora está medido contra a referência.
+
+### 2026-10-31 (32) — Copilot (i18n, indicadores de status e o formato que era dado)
+
+O mantenedor pediu, depois de ver a interface subir: *"o bug é no launcher que
+precisa ser corrigido. recomendo fazer um upgrade nos detalhes e já introduzir
+a outro idioma"*, e apontou duas coisas concretas: *"o indicador rede deve ser
+wifi e não rede igual a de celular"* e *"no preview ainda está bugado"*.
+
+**Entregue:**
+
+1. **i18n** (`src/launcher/i18n.{hpp,cpp}` + `assets/locales/{pt_BR,en}.json`):
+   catálogo JSON plano, 62 chaves em cada idioma com **paridade total**,
+   `i18n_normalize()` para `pt_BR`/`pt-BR`/`pt`, resolução por
+   `GIOCHI_LANG` → `LANG` → `theme.json` → `pt_BR`, e troca a quente pelo menu
+   de configurações sem reiniciar a partida nem recarregar o atlas.
+2. **Indicadores de status** (`src/launcher/status.{hpp,cpp}`): bateria por
+   `/sys/class/power_supply`, **Wi-Fi em arcos** (`stroke_arc()`), não barras de
+   célula como estava, e cabo de rede por `/sys/class/net/*/carrier`. Sinal de
+   `/proc/net/wireless`, cuja linha de dados começa com **dois espaços** depois
+   do nome — daí o parser aceitar espaço à esquerda.
+3. **Hint bar em chips**, com a tabela de pares num lugar só (`ui_hint_text()`
+   em `i18n.cpp`); estava duplicada e divergiu três vezes nesta sessão.
+4. **Estilo de tile como dado** (`ui_tile_style()`): a referência recua os
+   tiles normais (`surface`) e acende só o foco. O preview pintava **todos**
+   com `surface_elevated`, invertendo a hierarquia — foi o "preview bugado".
+   Agora `dump-geometry` publica o estilo por tile e o `preview-ui.py` lê.
+5. **Dois pesos de fonte** — registrado em §3.72.
+
+**Dois avisos de compilação que eram defeito de verdade (§3.73):**
+
+- `-Wformat-nonliteral`: o texto do catálogo estava sendo usado como
+  **formato** de `snprintf`. Uma tradução com `%s` viraria leitura de pilha.
+  Agora `tr_n()` substitui `{n}` por texto.
+- `-Wformat-truncation`: `char pct[8]` para `"%d%%"` de um `int`. Agora
+  `pct[16]`.
+
+**Verificação (tudo rodado):**
+
+- `make test` → **29/29** (suítes novas: `idiomas` 164 checagens,
+  `test_i18n` 89, `test_status` 31, `fonte-embutida` 6 230).
+- `make lint` → rc=0.
+- Compila **para o alvo** (aarch64 musl + SDL2, contra o sysroot do build) e
+  para o host sem warning; launcher roda headless 5 quadros.
+- Medição contra a referência `docs/proposta/library-1280x720.png`:
+
+  | Região | Referência | Agora |
+  |---|---|---|
+  | tinta das abas | 32 465 | 32 844 (+1,2%) |
+  | tinta do título | 2 378 | 2 313 (−2,7%) |
+  | altura do título | 21 linhas | 21 linhas |
+
+- `make ui-preview` gera 6 imagens (pt-BR, en, home, vazia, config, 640×480).
+
+**Aberto:** nada disto foi visto na tela do aparelho — a imagem foi regerada
+com o atlas e os locales, mas o boot com ela ainda não aconteceu. O preview
+continua sendo rasterização da geometria publicada, **não** captura do
+aparelho.
