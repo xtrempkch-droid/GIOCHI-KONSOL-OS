@@ -4541,3 +4541,14 @@ testado antes de uma dessas duas coisas. O log de 134 bytes que sobrou de antes
 mostra o mantenedor trocando o modo USB no menu e
 `nao foi possivel gravar usb_mode ('/user/settings.json')` — que é a §3.46 na
 imagem antiga, não um defeito novo.
+
+**A gravacao que deu "OK" e deixou o cartao sem SSH (mesma sessao).** O
+`tools/flash-card.sh` se re-executa com `pkexec` antes de chamar o
+`giochi-dev-mode.sh`, e o `pkexec` troca o `HOME` para `/root`. Resultado
+medido: `dd` passou, `verify-card` deu *"identico byte a byte"* e o Modo
+Desenvolvedor morreu com "chave publica nao encontrada" — o cartao saiu
+gravado e **sem SSH**, que e' o pior dos dois mundos, porque ninguem descobre
+isso ate' tentar conectar. A chave agora e' resolvida como o **usuario**
+(`$HOME`, `SUDO_USER`, `PKEXEC_UID` — `sudo` e `pkexec` trocam o HOME de
+formas diferentes) e viaja por **argumento**, inclusive na re-execucao. Dois
+testes novos; provado ao contrario removendo o repasse, o teste reprova.
