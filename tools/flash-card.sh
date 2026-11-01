@@ -155,7 +155,7 @@ if [ -n "$raiz_dev" ]; then
 fi
 
 # Qualquer particao montada do alvo: no cartao isso e' o caso normal (o
-# gerenciador de arquivos monta GIOCHI_USER ao inserir), e gravar por cima
+# gerenciador de arquivos monta GIOCHI ao inserir), e gravar por cima
 # de um sistema de arquivos montado corrompe o cache do kernel.
 montadas=$(lsblk -rno MOUNTPOINT "$ALVO" 2>/dev/null | grep -v '^$' || true)
 if [ -n "$montadas" ]; then

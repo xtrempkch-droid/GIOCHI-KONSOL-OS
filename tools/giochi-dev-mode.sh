@@ -20,8 +20,8 @@
 #
 # USO
 #   tools/giochi-dev-mode.sh --listar
-#   tools/giochi-dev-mode.sh                # acha GIOCHI_USER e habilita
-#   tools/giochi-dev-mode.sh /media/eu/GIOCHI_USER
+#   tools/giochi-dev-mode.sh                # acha a particao GIOCHI
+#   tools/giochi-dev-mode.sh /media/eu/GIOCHI
 #   tools/giochi-dev-mode.sh --desligar ...
 #   tools/giochi-dev-mode.sh --key ~/.ssh/id_ed25519.pub ...
 #
@@ -81,9 +81,9 @@ achar_cartao() {
 if [ "$LISTAR" = "1" ]; then
     encontrado=$(achar_cartao || true)
     if [ -z "$encontrado" ]; then
-        log "nenhuma particao GIOCHI_USER montada."
+        log "nenhuma particao GIOCHI montada."
         log "monte o cartao (o gerenciador de arquivos monta ao clicar) e repita;"
-        log "ou passe o caminho: $PROG /media/\$USER/GIOCHI_USER"
+        log "ou passe o caminho: $PROG /media/\$USER/GIOCHI"
         exit 1
     fi
     log "particao /user: $encontrado"
@@ -119,7 +119,7 @@ if [ "$LIGAR" = "1" ]; then
         "'$CHAVE_PUB' nao parece chave publica OpenSSH"
 fi
 
-# A particao GIOCHI_USER e' ext4 e o gerenciador de arquivos a monta como ROOT
+# A particao GIOCHI e' ext4 e o gerenciador de arquivos a monta como ROOT
 # (udisks, sem `-o uid=`): o usuario comum nao escreve nela. Isso e' o caso
 # NORMAL, nao a excecao, entao o script se re-executa com privilegio em vez de
 # mandar o usuario descobrir sozinho — foi o que aconteceu na primeira vez.

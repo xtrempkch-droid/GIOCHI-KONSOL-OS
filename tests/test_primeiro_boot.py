@@ -947,6 +947,165 @@ class PrimeiroBootTest(unittest.TestCase):
 
 
 
+
+GROW = os.path.join(ROOT, "buildroot/board/giochi/rootfs_overlay/etc/giochi/grow-user.sh")
+
+
+class ArmazenamentoDoUsuario(unittest.TestCase):
+    """A particao de dados tem de ocupar o cartao; e os nomes, ser legiveis.
+
+    Tres defeitos medidos na X55:
+
+    1. `/user` nascia com 512 MiB e o cartao tinha 29,7 GiB — 28,8 GiB
+       inuteis (`/sys/class/block/mmcblk1p4/size` = 1048576 setores contra
+       62333952 do disco).
+    2. `giochi_disk_of` com `root=PARTUUID=...` devolvia lixo, entao
+       `giochi_other_disk` nao reconhecia o cartao de boot e podia devolver
+       o PROPRIO cartao de boot como "slot 2".
+    3. O rotulo da particao aparecia como `GIOCHI_USER` no PC e nos textos
+       do Launcher — jargao para quem so' quer copiar um jogo.
+    """
+
+    def fonte(self, caminho):
+        with open(caminho, encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_grow_roda_antes_do_mount_a(self):
+        """Com /user montada o kernel nao rele a tabela (BLKRRPART falha)."""
+        # Só as DIRETIVAS: o comentário acima delas também cita "mount -a" e
+        # `index()` acharia a menção no comentário, não a linha executada.
+        diretas = [l for l in self.fonte(INITTAB).splitlines()
+                   if l.startswith("::")]
+        corpo = "\n".join(diretas)
+        self.assertIn("grow-user.sh", corpo,
+                      "o inittab precisa chamar o grow antes do mount -a")
+        self.assertLess(corpo.index("grow-user.sh"), corpo.index("mount -a"),
+                        "chamar depois do mount -a nao funciona: a particao "
+                        "ja' esta' em uso e o kernel nao rele a tabela")
+
+    def test_grow_nunca_encolhe_nem_move(self):
+        corpo = self.fonte(GROW)
+        self.assertNotIn("sfdisk --delete", corpo)
+        # O "+" e' "mesmo inicio, tamanho maximo"; sem ele o sfdisk poderia
+        # mover a particao.
+        self.assertIn("printf ',+\\n'", corpo,
+                      "o sfdisk tem de receber ',+' (mesmo inicio, cresce)")
+
+    def test_grow_confere_que_a_p4_e_a_ultima(self):
+        """Estender uma particao do meio sobrescreveria a seguinte."""
+        corpo = self.fonte(GROW)
+        self.assertIn("ha' particao depois de", corpo,
+                      "falta a guarda que recusa crescer se houver particao "
+                      "depois da p4")
+        self.assertIn("e2fsck", corpo,
+                      "resize2fs precisa do fs limpo; o cartao acabou de ser "
+                      "gravado em bloco")
+
+    def test_grow_nao_derruba_o_boot(self):
+        """Falhar ao crescer e' incomodo; quebrar /user e' perda de dados."""
+        corpo = self.fonte(GROW)
+        self.assertIn("exit 0", corpo)
+        # Todos os caminhos de erro terminam em exit 0 (sem derrubar o rcS).
+        import re
+
+        for m in re.finditer(r"log \"ERRO[^\n]*\n\s*(exit \d)", corpo):
+            self.assertEqual("exit 0", m.group(1),
+                             "erro do grow nao pode falhar o boot")
+
+    def test_disk_of_aceita_dois_digitos(self):
+        """`/dev/sda10` virava `/dev/sda1` (o caso de 1 digito vinha antes)."""
+        import subprocess
+
+        casos = {"/dev/mmcblk1p2": "/dev/mmcblk1",
+                 "/dev/mmcblk1p10": "/dev/mmcblk1",
+                 "/dev/sda2": "/dev/sda",
+                 "/dev/sda10": "/dev/sda"}
+        script = '. "$1"; for p in "$@"; do :; done; ' \
+                 'for p in /dev/mmcblk1p2 /dev/mmcblk1p10 /dev/sda2 /dev/sda10; ' \
+                 'do giochi_disk_of "$p"; echo; done'
+        r = subprocess.run(["sh", "-c", script, "sh", LIB_SH],
+                           capture_output=True, text=True, timeout=30)
+        obtidos = [l for l in r.stdout.splitlines() if l.strip()]
+        self.assertEqual(list(casos.values()), obtidos,
+                         "giochi_disk_of errou o corte de particao")
+
+    def test_other_disk_nao_devolve_o_cartao_de_boot(self):
+        """Sem saber qual e' o disco de boot, devolver 1 e' o certo.
+
+        A versao anterior comparava contra `giochi_disk_of(root)` com
+        `root=PARTUUID=...`, que devolve lixo — a comparacao nunca casava e o
+        cartao de boot passava como "outro disco".
+        """
+        corpo = self.fonte(LIB_SH)
+        self.assertIn("giochi_boot_disk", corpo,
+                      "falta resolver o disco de boot antes de comparar")
+        self.assertIn("blkid -t", corpo,
+                      "com root=PARTUUID e' o blkid que resolve o dispositivo")
+        # E tem de desistir quando nao sabe.
+        trecho = corpo[corpo.index("giochi_other_disk()"):]
+        trecho = trecho[:trecho.index("\n}\n")]
+        self.assertIn("return 1", trecho)
+
+    def test_other_disk_ignora_emmc_e_leitor_vazio(self):
+        corpo = self.fonte(LIB_SH)
+        trecho = corpo[corpo.index("giochi_other_disk()"):]
+        trecho = trecho[:trecho.index("\n}\n")]
+        self.assertIn("mmcblk0", trecho, "eMMC nao e' slot 2")
+        self.assertIn("removable", trecho,
+                      "so' leitor de cartao serve; SDIO/eMMC ficam de fora")
+        self.assertIn("_tem_part", trecho,
+                      "leitor vazio (size=0) nao tem particao e nao serve")
+
+
+    def test_defconfig_pede_as_ferramentas_do_grow(self):
+        """Sem resize2fs/sfdisk/blkid o script nao tem como crescer nada.
+
+        `BR2_PACKAGE_E2FSPROGS` NAO instala o `resize2fs` no Buildroot
+        2024.02 (ha' um simbolo proprio), e o `sfdisk`/`blkid` de verdade
+        vem de `UTIL_LINUX_BINARIES` — o `blkid` do BusyBox nao resolve
+        PARTUUID.
+        """
+        for base in ("base-rk3566.defconfig", "base-rk3326.defconfig"):
+            caminho = os.path.join(ROOT, "buildroot/board/giochi/defconfig",
+                                   base)
+            with open(caminho, encoding="utf-8") as fh:
+                corpo = fh.read()
+            with self.subTest(defconfig=base):
+                for simbolo in ("BR2_PACKAGE_E2FSPROGS_RESIZE2FS=y",
+                                "BR2_PACKAGE_UTIL_LINUX_BINARIES=y"):
+                    self.assertIn(simbolo, corpo,
+                                  f"sem {simbolo} o grow-user.sh nao roda")
+
+    def test_rotulo_da_particao_e_giochi(self):
+        """O usuario ve esse nome no PC; `GIOCHI_USER` e' jargao."""
+        fstab = self.fonte(os.path.join(
+            ROOT, "buildroot/board/giochi/rootfs_overlay/etc/fstab"))
+        self.assertIn("LABEL=GIOCHI\t/user", fstab)
+        post = self.fonte(os.path.join(
+            ROOT, "buildroot/board/giochi/post-image.sh"))
+        self.assertIn("-L GIOCHI ", post,
+                      "o rotulo gravado pelo mkfs tem de casar com o fstab")
+
+    def test_textos_do_launcher_sem_jargao(self):
+        """O Launcher nao deve mostrar caminho de arquivo nem nome de particao."""
+        import json
+        import re
+
+        proibidos = ("GIOCHI_USER", "/user/")
+        for lang in ("pt_BR", "en"):
+            caminho = os.path.join(ROOT, "assets/locales", lang + ".json")
+            with open(caminho, encoding="utf-8") as fh:
+                d = json.load(fh)
+            for chave, valor in d.items():
+                if not isinstance(valor, str):
+                    continue
+                for termo in proibidos:
+                    self.assertNotIn(
+                        termo, valor,
+                        f"{lang}.json:{chave} mostra '{termo}' ao usuario: "
+                        f"{valor!r}")
+
+
 class MtpdChamaOUmtprdComAFlagCerta(unittest.TestCase):
     """`umtprd` usa `-conf`, não `-c` (AGENTS.md §3.99).
 

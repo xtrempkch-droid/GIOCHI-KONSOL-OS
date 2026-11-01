@@ -17,6 +17,12 @@
 ::sysinit:/bin/mkdir -p /var/log /var/lib/seedrng /var/run /var/tmp /dev/pts /dev/shm /run/giochi
 ::sysinit:/bin/mount -t devpts devpts /dev/pts
 ::sysinit:/bin/mount -t tmpfs -o nosuid,nodev tmpfs /dev/shm
+# Cresce a particao de dados (GIOCHI) para ocupar o cartao inteiro. TEM de
+# rodar ANTES do `mount -a`: com /user montada o kernel nao consegue reler a
+# tabela de particoes (BLKRRPART falha com o dispositivo em uso). A imagem
+# distribuida tem 512 MiB de /user e cabe em qualquer cartao; os 28 GB
+# restantes de um cartao de 32 GB ficavam sem uso (etc/giochi/grow-user.sh).
+::sysinit:/etc/giochi/grow-user.sh
 ::sysinit:/bin/mount -a
 ::sysinit:/bin/hostname -F /etc/hostname
 ::sysinit:/etc/init.d/rcS

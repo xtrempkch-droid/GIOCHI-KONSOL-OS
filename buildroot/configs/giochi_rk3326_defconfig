@@ -134,7 +134,16 @@ BR2_PACKAGE_LIBARCHIVE=y
 BR2_PACKAGE_OPENSSL=y
 BR2_PACKAGE_LIBPNG=y
 BR2_PACKAGE_E2FSPROGS=y
+# resize2fs: cresce a particao GIOCHI para o cartao inteiro no primeiro boot
+# (etc/giochi/grow-user.sh). O e2fsprogs do 2024.02 instala resize2fs por
+# este simbolo, nao pelo pacote — conferido no Config.in e no .config real.
+BR2_PACKAGE_E2FSPROGS_RESIZE2FS=y
 BR2_PACKAGE_UTIL_LINUX=y
+# "basic set" do util-linux: traz sfdisk (reescreve SO' a entrada 4 da
+# tabela), blockdev (BLKRRPART sem reiniciar) e o blkid de verdade, que
+# resolve root=PARTUUID no grow-user.sh — o kernel NAO expoe PARTUUID em
+# /sys/class/block/*/uevent nesta configuracao (medido na X55).
+BR2_PACKAGE_UTIL_LINUX_BINARIES=y
 
 # --- rede/BT opcionais via dongle (ADR-14) -----------------------------
 BR2_PACKAGE_WPA_SUPPLICANT=y

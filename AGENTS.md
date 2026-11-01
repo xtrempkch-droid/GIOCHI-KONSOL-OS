@@ -2938,6 +2938,37 @@ ainda estava montada — o defeito só apareceria num boot iniciado em `mass`.
   pelo que o arquivo É (`host_key` × `authorized_keys`) teria evitado isso —
   e a guarda de "tem a chamada" precisa comparar **argumentos**, não presença.
 
+### 3.109 `BR2_PACKAGE_UTIL_LINUX_BINARIES=y` não re-arma o pacote já construído
+
+Precisava de `sfdisk` (reescrever só a entrada 4 da tabela), `blockdev`
+(`BLKRRPART` sem reiniciar) e do `blkid` de verdade (o do BusyBox **não
+resolve `PARTUUID`**). Adicionei `BR2_PACKAGE_UTIL_LINUX_BINARIES=y` ao
+template, rodei `make defconfigs`, o `check-buildroot-symbols.py` disse `ok`,
+o `.config` do build tinha o símbolo… e a imagem saiu **sem nenhum dos três**:
+
+```
+$ ls /tmp/sq/sbin/sfdisk /tmp/sq/sbin/blockdev
+(nada)
+$ ls -la dist/x55/build/build/util-linux-2.39.3/.stamp_installed
+-rw-r--r-- 1 root root 0 Oct 27 22:33 ...      <- 5 dias antes
+```
+
+O `e2fsprogs` **foi** reconstruído (o `resize2fs` apareceu, stamp de 13:41),
+o `util-linux` não. Não investiguei por que um e não o outro — o que importa
+é que confiar no `.config` não basta.
+
+- Correção: apagar `dist/<id>/build/build/util-linux-*/.stamp_{configured,
+  built,installed,target_installed,staging_installed}` e reconstruir.
+  `make util-linux-reconfigure` faz o mesmo sem mexer à mão.
+- **Sinal de que aconteceu**: o `.stamp_installed` do pacote é mais antigo
+  que o `build/.config`.
+- **Regra que fica**: símbolo novo que muda o **conjunto de binários** de um
+  pacote já construído não re-arma nada. É a mesma classe do §3.48 (patch de
+  kernel) e do §3.33 (`boot.scr`). Depois de mexer em `*_BINARIES`,
+  `*_TOOLS` ou similar, **confira o artefato**, não o `.config`.
+- Guarda: `test_defconfig_pede_as_ferramentas_do_grow` cobra os símbolos, e
+  o próprio script diz `ERRO: sfdisk ausente` se rodar sem eles.
+
 ### 3.104 NetworkManager desfaz o IP manual da interface USB
 
 `tools/giochi-ctl.py preparar` atribuía `10.55.0.1/24` com `ip addr add` e

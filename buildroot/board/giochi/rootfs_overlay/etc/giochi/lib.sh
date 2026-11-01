@@ -38,26 +38,87 @@ giochi_root_part() {
 # /dev/sda2 -> /dev/sda).
 giochi_disk_of() {
     _part=$1
+    # A ordem importa: o caso de DOIS digitos tem de vir antes do de um.
+    # Com `*[0-9]` primeiro, `/dev/sda10` virava `/dev/sda1` (medido no host).
     case "$_part" in
-        *p[0-9])    echo "${_part%p?}" ;;
         *p[0-9][0-9]) echo "${_part%p??}" ;;
-        *[0-9])     echo "${_part%?}" ;;
-        *)          echo "$_part" ;;
+        *p[0-9])      echo "${_part%p?}" ;;
+        *[0-9][0-9])  echo "${_part%??}" ;;
+        *[0-9])       echo "${_part%?}" ;;
+        *)            echo "$_part" ;;
     esac
 }
 
-# Disco que NAO contem a raiz (segundo cartao = slot 2, secao 1.3).
-giochi_other_disk() {
+# Disco que CONTEM a particao raiz. Devolve 1 se nao der para saber.
+#
+# `giochi_disk_of("PARTUUID=47494f43-02")` devolve lixo ("PARTUUID=47494f43-0"):
+# o corte de sufixo de particao so' faz sentido em caminho /dev. Como o
+# cmdline deste sistema usa root=PARTUUID, a versao anterior nunca reconhecia
+# o cartao de boot — e `giochi_other_disk` podia devolver o PROPRIO cartao de
+# boot como "slot 2" (medido na X55: /dev/mmcblk1 e' o unico bloco).
+giochi_boot_disk() {
     _root=$(giochi_root_part)
-    _disk=$(giochi_disk_of "$_root")
-    for _blk in /sys/block/mmcblk*; do
+    case "${_root:-}" in
+        /dev/*)
+            giochi_disk_of "$_root"
+            return 0 ;;
+        PARTUUID=*|UUID=*|LABEL=*)
+            if command -v blkid >/dev/null 2>&1; then
+                _dev=$(blkid -t "$_root" -o device 2>/dev/null | head -n1)
+                if [ -n "${_dev:-}" ]; then
+                    giochi_disk_of "$_dev"
+                    return 0
+                fi
+            fi ;;
+    esac
+    return 1
+}
+
+# Disco que NAO contem a raiz (segundo cartao = slot 2, secao 1.3).
+#
+# Criterios, todos medidos/sabidos:
+#   - `removable` = 1  -> leitor de cartao; eMMC e SDIO ficam de fora
+#   - mmcblk0 (eMMC)   -> nunca e' slot 2, e na X55 nem existe
+#   - tem particao     -> leitor vazio nao serve
+# Se nao der para saber qual e' o disco de boot, devolve 1 em vez de
+# arriscar: tratar o cartao de boot como slot 2 significaria montar a
+# particao FAT de boot em /user2.
+giochi_other_disk() {
+    _disco=$(giochi_boot_disk) || return 1
+    [ -n "${_disco:-}" ] || return 1
+    for _blk in /sys/block/mmcblk* /sys/block/sd*; do
         [ -e "$_blk" ] || continue
-        _dev="/dev/$(basename "$_blk")"
-        [ "$_dev" = "$_disk" ] && continue
+        _nome=$(basename "$_blk")
+        [ "$_nome" = "mmcblk0" ] && continue
+        [ "$(cat "$_blk/removable" 2>/dev/null)" = "1" ] || continue
+        _dev="/dev/$_nome"
+        [ "$_dev" = "$_disco" ] && continue
         [ -b "$_dev" ] || continue
+        # Precisa de ao menos uma particao: leitor sem cartao tem size=0.
+        _tem_part=0
+        for _p in "$_blk"/"$_nome"p*; do
+            [ -e "$_p" ] && { _tem_part=1; break; }
+        done
+        [ "$_tem_part" = "1" ] || continue
         echo "$_dev"
         return 0
     done
+    return 1
+}
+
+# Primeira particao de um disco, com o nome certo para o tipo de dispositivo
+# (/dev/mmcblk2p1 x /dev/sda1). Vazio se nao houver.
+giochi_first_part() {
+    _d=$1
+    _n=$(basename "$_d")
+    case "$_n" in
+        mmcblk*)
+            for _c in "$_d"p*; do [ -e "$_c" ] && { echo "$_c"; return 0; }; done ;;
+        *)
+            for _c in "$_d"[0-9] "$_d"[0-9][0-9]; do
+                [ -e "$_c" ] && { echo "$_c"; return 0; }
+            done ;;
+    esac
     return 1
 }
 
@@ -71,7 +132,7 @@ giochi_other_disk() {
 #   -> no PC: sde 0B (File-Stor Gadget anuncia a funcao, sem midia)
 #
 # A versao anterior montava "PARTUUID=47494f43-02" + "4" e entregava isso ao
-# gadget — o formato que o `mount` aceita (fstab usa LABEL=GIOCHI_USER), nao
+# gadget — o formato que o `mount` aceita (fstab usa LABEL=GIOCHI), nao
 # o que o bloco aceita. Quem for montar continua usando o label do fstab.
 giochi_user_part() {
     # 1. /user montado: /proc/mounts guarda o dispositivo ja' resolvido (o
@@ -91,8 +152,8 @@ giochi_user_part() {
             done ;;
     esac
     # 3. by-label: so' existe com udev, mas e' caminho curto quando existe.
-    if [ -L /dev/disk/by-label/GIOCHI_USER ]; then
-        _cand=$(readlink -f /dev/disk/by-label/GIOCHI_USER 2>/dev/null)
+    if [ -L /dev/disk/by-label/GIOCHI ]; then
+        _cand=$(readlink -f /dev/disk/by-label/GIOCHI 2>/dev/null)
         if [ -n "${_cand:-}" ] && [ -b "$_cand" ]; then echo "$_cand"; return 0; fi
     fi
     # 4. O layout A/B fixa p4 como particao de dados (genimage.cfg), entao o

@@ -105,7 +105,7 @@ if [ -n "$USER_SIZE_MB" ]; then
     if [ ! -f "$BINARIES_DIR/user.ext4" ]; then
         dd if=/dev/zero of="$BINARIES_DIR/user.ext4" bs=1M count=0 \
            seek="$USER_SIZE_MB" status=none
-        mkfs.ext4 -q -F -L GIOCHI_USER "$BINARIES_DIR/user.ext4"
+        mkfs.ext4 -q -F -L GIOCHI "$BINARIES_DIR/user.ext4"
     fi
 else
     echo "post-image: ERRO: particao 'user' sem 'size' em $GENIMAGE_CFG" >&2

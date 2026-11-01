@@ -193,7 +193,7 @@ class BusyboxTest(unittest.TestCase):
         # a string como nome de arquivo, o mount -a falha calado e /user (a
         # única partição gravável) nunca é montada.
         self.assertIn("CONFIG_FEATURE_MOUNT_LABEL=y", self.frag)
-        self.assertIn("LABEL=GIOCHI_USER", read(OVERLAY, "fstab"))
+        self.assertIn("LABEL=GIOCHI\t/user", read(OVERLAY, "fstab"))
 
 
 class ImagePiecesTest(unittest.TestCase):
