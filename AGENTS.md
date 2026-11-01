@@ -4354,7 +4354,24 @@ final é `6f531459…`. **As três são invisíveis no aparelho** com os temas a
 então gravar a final pode esperar — mas três tentativas de `pkexec` expiraram
 (senha não digitada), então o cartão **não** tem a `6f531459`.
 
-**Cartão preparado para SSH (2026-11-01, 02:56).** Com o cartão de 29,7 GB no
+**Imagem corrigida gravada (2026-11-01, 03:03).** O cartão de **116 GB** (o
+SDXC) voltou ao leitor e recebeu a imagem `ca705d10…` — a primeira que inclui as
+correções de hoje: `SET_THEME` devolve `ERR not_implemented` em vez de mentir
+(§3.80) e o `S62sshd` registra por que não sobe (§3.81). Conferido:
+
+| Verificação | Resultado |
+|---|---|
+| `verify-card.py` | `OK: o cartao e' identico a imagem, byte a byte` |
+| região que deu `EIO` (§3.42, setores 213088–213192) | hash igual ao da imagem |
+| `giochi-init` no SquashFS | contém `not_implemented` |
+| `S62sshd` no SquashFS | contém `Modo Desenvolvedor desativado` |
+| `themes/` | 6 temas + `index.json`; `device-theme.json` = `neon_rose` |
+| `font.a8` | 458 042 B, sha256 igual ao do repositório |
+
+**Sem comunicação no momento da gravação:** nenhuma interface `10.55.x`,
+nenhum gadget `1d6b:0104` no `lsusb`. O `PING` por SSH segue não executado.
+
+**Cartão preparado para SSH (2026-11-01, 02:56, no cartão de 29,7 GB).** Com o cartão de 29,7 GB no
 leitor: `tools/giochi-dev-mode.sh` gravou `settings.json` com
 `developer.ssh_usb_enabled = true` (preservando `theme_id`, `language` e
 `usb_mode` do aparelho, com `.bak`) e `ssh/authorized_keys` com a chave
