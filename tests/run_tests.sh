@@ -288,6 +288,30 @@ if [ -d "$ROOT/apps/store" ] && command -v python3 >/dev/null 2>&1; then
     fi
 fi
 
+# Contrato do control.sock: o canal que um app de jogos usa. Roda o
+# giochi-init REAL com GIOCHI_ROOT num temporario (sem root, sem aparelho).
+if [ -x "$ROOT/build/host/bin/giochi-init" ] && command -v python3 >/dev/null 2>&1; then
+    total=$((total + 1))
+    if (cd "$ROOT" && python3 -m unittest tests.test_control_protocol) >/dev/null 2>&1; then
+        echo "OK     protocolo-do-app (python)"
+    else
+        echo "FALHA  protocolo-do-app (python)"
+        fail=$((fail + 1))
+    fi
+fi
+
+# Modo Desenvolvedor pelo lado do PC: o script que abre o SSH no cartao, e a
+# prova de que o S62sshd real sobe com o que ele escreveu.
+if [ -x "$ROOT/tools/giochi-dev-mode.sh" ] && command -v python3 >/dev/null 2>&1; then
+    total=$((total + 1))
+    if (cd "$ROOT" && python3 -m unittest tests.test_dev_mode_card) >/dev/null 2>&1; then
+        echo "OK     modo-dev-no-cartao (python)"
+    else
+        echo "FALHA  modo-dev-no-cartao (python)"
+        fail=$((fail + 1))
+    fi
+fi
+
 echo "----"
 echo "$((total - fail))/$total suites OK"
 [ "$fail" -eq 0 ]

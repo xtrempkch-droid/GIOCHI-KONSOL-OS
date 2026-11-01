@@ -53,6 +53,10 @@ do_stop() {
 }
 
 if [ "$dev_enabled" != "1" ]; then
+    # Dizer POR QUE nao sobe: "SSH nao conecta" sem rastro no log custou um
+    # ciclo inteiro neste projeto (§3.34). O padrao de fabrica e' desligado,
+    # entao esta linha e' a primeira coisa a procurar no giochi-boot.log.
+    log "Modo Desenvolvedor desativado (developer.ssh_usb_enabled=false); sshd nao sobe"
     do_stop
     exit 0
 fi

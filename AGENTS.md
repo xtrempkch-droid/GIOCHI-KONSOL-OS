@@ -2015,6 +2015,39 @@ longo: invadia ~180 px.
   linhas contra as 7 necessárias — `test_sete_linhas_cabem_em_todos_os_temas_e_paineis`
   refaz a conta com o `line_height` do `font.json`, não com estimativa.
 
+### 3.80 `SET_THEME` respondia `OK` sem fazer nada
+
+O protocolo do `control.sock` está na spec (§4.9.4) com `SET_THEME <id>`. O
+handler existia, validava o argumento e devolvia `OK theme <id>` — e o corpo era
+um `TODO(v1.2)`. Ou seja: a spec prometia, o comando mentia.
+
+Encontrado ao escrever `tests/test_control_protocol.py`: o teste afirmava
+`OK theme neon_rose` e passava, sem que nada acontecesse.
+
+- Por que não se implementa em cinco linhas: o canal existente é **Launcher →
+  init** (o Launcher grava `settings.json` e manda o comando; o init relê). Trocar
+  o tema é o caminho **inverso**, e não há evento init → Launcher na v1.2. O
+  Launcher lê `settings.json` **uma vez**, no boot (`giochi_settings_load` só
+  aparece no startup).
+- Correção honesta: `ERR not_implemented (troque pelo menu do Launcher)`, com
+  `GLOG_WARN` dizendo o motivo. Quem troca o tema é Select → Sistema → Tema.
+- Guarda: `test_set_theme_admite_que_nao_esta_implementado` exige `ERR` e o
+  marcador `not_implemented`.
+- **Regra** (a mesma do §3.78): resposta `OK` é promessa. Se o efeito não
+  existe, a resposta certa é `ERR` — a mentira custa uma sessão de depuração no
+  aparelho, e o log não tem nada para mostrar.
+
+### 3.81 `S62sshd` saía sem dizer por quê
+
+Com `developer.ssh_usb_enabled=false` (o padrão de fábrica), o script de init
+fazia `do_stop; exit 0` — **sem uma linha de log**. "SSH não conecta" ficava sem
+rastro, exatamente a classe do §3.34.
+
+- Agora registra `Modo Desenvolvedor desativado (...); sshd nao sobe` antes de
+  sair. É a primeira linha a procurar no `giochi-boot.log`.
+- Guarda: `tests/test_dev_mode_card.py::test_sem_dev_mode_nao_sobe` exige a
+  mensagem **e** que o `dropbear -p` não apareça.
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):

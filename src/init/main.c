@@ -215,9 +215,23 @@ static int handle_command(const char *cmd, char *reply, size_t replysz,
             (void)snprintf(reply, replysz, "ERR missing_theme");
             return -1;
         }
-        /* TODO(v1.2): publicar o tema no Launcher (evento dedicado). */
-        (void)snprintf(reply, replysz, "OK theme %s", arg);
-        return 0;
+        /* NAO IMPLEMENTADO, e agora dito em voz alta.
+         *
+         * O canal e' Launcher -> init (o Launcher grava settings.json e manda
+         * o comando). Trocar o tema e' o caminho INVERSO: o init teria de
+         * avisar o Launcher, que resolve o tema no boot a partir de
+         * settings.json e nao rele o arquivo em runtime. Nao existe evento
+         * init -> Launcher na v1.2.
+         *
+         * Antes esta linha respondia "OK theme <id>" sem fazer nada. Um app (ou
+         * quem esta' no SSH) acreditava que o tema tinha mudado — mesmo genero
+         * do §3.78: promessa sem entrega. Quem troca o tema hoje e' o menu
+         * Select > Sistema > Tema, no proprio Launcher. */
+        GLOG_WARN("SET_THEME '%s' ignorado: nao ha canal init -> Launcher na v1.2",
+                  arg);
+        (void)snprintf(reply, replysz,
+                       "ERR not_implemented (troque pelo menu do Launcher)");
+        return -1;
     }
 
     if (strcmp(verb, "LAUNCH_APP") == 0) {

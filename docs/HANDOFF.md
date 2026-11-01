@@ -322,6 +322,10 @@ partição FAT → erro de I/O. Ver `AGENTS.md` §3.38–3.43.
 - Contratos expostos:
   - `control.sock`: `PING`, `POWEROFF`, `REBOOT`, `SUSPEND`, `USB_MODE MTP|MASS`,
     `SET_THEME <id>`, `WIFI_UP|WIFI_DOWN`, `BT_UP|BT_DOWN`, `LAUNCH_APP <id>`.
+    **Estado (2026-11-01):** todos respondem, menos `SET_THEME`, que devolve
+    `ERR not_implemented` — o canal existente é Launcher → init e trocar o tema
+    é o caminho inverso. Contrato completo em
+    [APP-SDK.md](./APP-SDK.md) e coberto por `tests/test_control_protocol.py`.
   - `transition` (FIFO): `giochi_transition_msg` (magic `GTC1`, version 1) —
     ver `src/common/giochi_transition.h`.
 - `LAUNCH_APP` em `control.sock` usa a mesma transição de app (§4.7).

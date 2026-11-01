@@ -468,6 +468,10 @@ lint:
 	@python3 -m unittest tests.test_device_scale 2>&1 | tail -3
 	@echo "== catalogo de temas =="
 	@python3 -m unittest tests.test_themes 2>&1 | tail -3
+	@echo "== protocolo do app (control.sock) =="
+	@python3 -m unittest tests.test_control_protocol 2>&1 | grep -E "Ran|OK|FAILED" | tail -2
+	@echo "== modo desenvolvedor no cartao =="
+	@python3 -m unittest tests.test_dev_mode_card 2>&1 | grep -E "Ran|OK|FAILED" | tail -2
 	@echo "== app de loja do PC =="
 	@python3 -m unittest tests.test_store 2>&1 | grep -E "Ran|OK|FAILED" | tail -2
 	@echo "== fonte embutida (atlas gerado) =="
@@ -482,6 +486,7 @@ lint:
 	           tools/serial-capture.py tools/verify-card.py \
 	           tools/check-dts-panel.py tools/make-font.py \
 	           tools/preview-ui.py tools/make-theme-gallery.py \
+	           tools/giochi-ctl.py \
 	           apps/store/giochi_store/*.py apps/forge/giochi_forge/*.py \
 	           && echo "ok"
 
