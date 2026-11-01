@@ -16,6 +16,34 @@ make -j4       # build/host/bin/{giochi-init,giochi-musicd,giochi-launcher,...}
 make test      # todas as suítes (C, C++, integração e Python)
 ```
 
+### O editor precisa das MESMAS flags (`compile_commands.json`)
+
+O `make` não só compila: ele também escreve `compile_commands.json` (alvo
+`compdb`, que roda junto de `all`). É esse arquivo que o VS Code/clangd leem
+para resolver `#include`. Sem ele o editor adivinha, e o resultado é um erro
+que **não existe no build**:
+
+```
+apps/launcher/input.hpp:12:10: fatal error: giochi_hotkey.h:
+    Arquivo ou diretório inexistente
+```
+
+O header está em `src/common/`, o `INCS` do Makefile tem `-Isrc/common` e o
+`make` compila limpo — o errado era o editor, por falta de informação. Medido,
+com as flags do próprio banco: `rc=0`, compilação limpa.
+
+As flags e a lista de fontes vêm **do Makefile** (o gerador não tem lista
+própria); o valor chega ao gerador por `export` do make, sem shell no meio —
+numa recipe comum as aspas de `-DGIOCHI_SOC='"x55"'` se perdem e o define de
+texto vira símbolo.
+
+- O arquivo é gerado e está no `.gitignore`. Se o editor reclamar de include
+  depois de um `git mv`, rode `make` — não edite o `.vscode` à mão.
+- O `includePath` do [.vscode/c_cpp_properties.json](../.vscode/c_cpp_properties.json)
+  existe só como *fallback* para antes do primeiro `make`, e a suíte
+  `config-do-editor` (`tests/test_editor_config.py`) reprova se ele divergir do
+  `INCS` do Makefile.
+
 | Biblioteca | Macro | Sem ela |
 |---|---|---|
 | SDL2 | `GIOCHI_HAVE_SDL2` | Launcher usa backend headless |

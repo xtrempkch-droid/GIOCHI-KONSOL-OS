@@ -48,6 +48,26 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 - `tools/make-theme-gallery.py` e o alvo `make tema-galeria`.
 
 ### Corrigido
+- **O editor acusava `include` que o build resolvia** (AGENTS.md §3.126).
+  Depois do move `src/launcher` -> `apps/launcher`, o VS Code passou a mostrar
+  `giochi_hotkey.h: Arquivo ou diretório inexistente` em
+  `apps/launcher/input.hpp` — com o `make` compilando limpo. Causa: o editor
+  não lê o Makefile e adivinhava os caminhos de include.
+  - `make` agora gera `compile_commands.json` (`tools/gen-compdb.py`) com as
+    flags **e as listas de fontes do próprio Makefile** — nenhum caminho é
+    reescrito no gerador. Gerado (`.gitignore`), roda junto de `all`, então
+    acompanha um `git mv` sozinho.
+  - As flags chegam ao gerador por `export` do make, não por recipe: numa
+    recipe as aspas de `-DGIOCHI_SOC='"x55"'` se perdem e o define de texto
+    vira símbolo (a armadilha do §3.111, agora no Makefile da raiz).
+  - [.vscode/c_cpp_properties.json](.vscode/c_cpp_properties.json) ficou com
+    `compileCommands` + `includePath` de *fallback* (antes do primeiro `make`),
+    conferido contra o `INCS` pela suíte.
+  - Guarda: suíte `config-do-editor` (`tests/test_editor_config.py`, 14 testes)
+    — confere que o banco cobre `apps/launcher`, que **todo** `#include "..."`
+    de projeto resolve com a entrada dele, que o `includePath` bate com o
+    `INCS`, que `compdb` está em `all` e que o gerador não tem lista própria de
+    fontes. Testada ao contrário nas quatro mutações.
 - **`giochi-ctl` (o cliente do `control.sock` no console) dizia "sucesso" com
   o console travado** (AGENTS.md §3.125). O `giochi_sock_read_line` devolve `0`
   tanto no timeout do `poll` quanto no fim de conexão, e o cliente só tratava

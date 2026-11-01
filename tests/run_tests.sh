@@ -396,6 +396,21 @@ if [ -x "$ROOT/tools/giochi-ctl.py" ] && command -v python3 >/dev/null 2>&1; the
     fi
 fi
 
+# Config do editor: o includes tem de resolver FORA do build tambem. Depois do
+# move src/launcher -> apps/launcher o editor passou a acusar
+# "giochi_hotkey.h: arquivo ou diretorio inexistente" — erro que nao existia no
+# make. O compile_commands.json (gerado pelo proprio Makefile) e' a ponte, e
+# esta suite cobra que ele exista, cubra apps/launcher e traga as flags reais.
+if command -v python3 >/dev/null 2>&1; then
+    total=$((total + 1))
+    if (cd "$ROOT" && python3 -m unittest tests.test_editor_config) >/dev/null 2>&1; then
+        echo "OK     config-do-editor (python)"
+    else
+        echo "FALHA  config-do-editor (python)"
+        fail=$((fail + 1))
+    fi
+fi
+
 # Cliente do control.sock que roda NO CONSOLE (src/tools/giochi-ctl.c). Executa
 # o binario de verdade contra um soquete Unix de verdade: PONG/OK -> 0, ERR ->
 # 1, NADA recebido -> 2 (ja' saiu com 0, escondendo console travado), e compara

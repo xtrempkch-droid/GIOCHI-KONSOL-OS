@@ -3465,6 +3465,62 @@ então os dois clientes do **mesmo** protocolo discordavam no veredito.
   fontes com o que o `src/init/main.c` aceita (extraído por regex do próprio
   fonte, não copiado). Testada ao contrário nos seis defeitos: todos reprovam.
 
+### 3.126 O editor não lê o Makefile: `#include` que compila e não resolve
+
+Depois do move `src/launcher` → `apps/launcher`, o VS Code passou a mostrar um
+erro que **não existia no build**:
+
+```
+apps/launcher/input.hpp:12:10: fatal error: giochi_hotkey.h:
+    Arquivo ou diretório inexistente
+```
+
+O header está em `src/common/giochi_hotkey.h`, o `INCS` do Makefile tem
+`-Isrc/common` e o `make` compilava **limpo**. Reproduzido compilando o
+`input.cpp` com as flags do banco, tirando só os `-I`: a mensagem sai igual,
+palavra por palavra. Com as flags: `rc=0`, nada.
+
+A causa é estrutural: **o editor não lê o Makefile**. Sem
+`compile_commands.json` ele adivinha os caminhos — e adivinhar funciona por
+acaso até alguém mover um diretório (que é exatamente o que tinha acabado de
+acontecer).
+
+A saída comum (`includePath` num `.vscode/c_cpp_properties.json`) é uma
+**segunda cópia** das flags: no dia em que um diretório mudar, o build quebra e
+a gente conserta, e o editor fica apontando para o lugar antigo — a mesma
+classe do §3.20 e do §3.124.
+
+- Correção: `make` gera `compile_commands.json` (`tools/gen-compdb.py`) com as
+  flags e a lista de fontes **do próprio Makefile**. O arquivo é gerado, então
+  está no `.gitignore`; o `compdb` roda junto de `all`, e é isso que faz o
+  banco acompanhar um `git mv` sem ninguém lembrar.
+- **Transporte das flags**: por `export` do make, **não** por recipe. Numa
+  recipe, `GIOCHI_CFLAGS='$(CFLAGS_ALL)'` faz as aspas simples de `DEFS`
+  fecharem as aspas da recipe, e `-DGIOCHI_SOC='"x55"'` chega como
+  `-DGIOCHI_SOC=x55` — o define de **texto** vira o **símbolo**, que é a
+  armadilha que o `check-image-contents.sh` vigia nos `.mk` (§3.111 agora vale
+  também para o Makefile da raiz). `export VAR := ...` entrega por `execve`,
+  sem shell. Medido: sem isso, o argumento saía `-DGIOCHI_SOC=desconhecido`.
+- Sem o `-I`, `shlex.split` também não basta: ele precisa receber o valor
+  **cru** do Makefile (`'"x55"'`) para produzir `-DGIOCHI_SOC="x55"`, que é o
+  que o compilador recebe de verdade.
+- `.vscode/c_cpp_properties.json` ficou só com `compileCommands` + um
+  `includePath` de *fallback* (para antes do primeiro `make`), e a suíte cobra
+  que ele seja **igual** ao `INCS`.
+- Guarda: `tests/test_editor_config.py` (14 testes, suíte `config-do-editor` em
+  `make test` e no `make lint`): o banco existe e cobre `apps/launcher` e
+  `src/common`, todo `#include "..."` de projeto resolve com a entrada dele
+  (dir do arquivo + `-I`, como o editor faz), o `includePath` bate com o
+  `INCS`, `compdb` está em `all` e é `.PHONY`, o gerador **não** enumera fonte
+  por conta própria e o arquivo está no `.gitignore`.
+- **Terceira vez que um teste meu casou com COMENTÁRIO** (§3.36, §3.118,
+  §3.125): a guarda do `.gitignore` usava `assertIn` no texto inteiro, e o
+  comentário acima da regra cita `compile_commands.json` pelo nome — apaguei a
+  linha de ignore e o teste continuou verde. Agora existe `linhas_ativas()`
+  (tira comentário e branco) e a comparação é linha a linha.
+- O `tools/check-tracked.sh` (§3.1) reprovou o arquivo gerado até ele entrar na
+  lista de permitidos — funcionou como projetado.
+
 ### 3.104 NetworkManager desfaz o IP manual da interface USB
 
 `tools/giochi-ctl.py preparar` atribuía `10.55.0.1/24` com `ip addr add` e
@@ -3844,6 +3900,52 @@ reprova.
 próximo build (`giochi-tools`). O `gpu_probe.c`, vizinho de diretório, também
 só é compilado pela receita do pacote (sem teste de comportamento); é o
 próximo candidato ao mesmo tratamento.
+
+### 2026-11-02 (32) — Copilot (o editor acusava include que o build resolvia)
+
+Relato do mantenedor: `giochi_hotkey.h: Arquivo ou diretório inexistente`, com
+`apps/launcher/input.hpp` marcado. Não era bug de código: o header está em
+`src/common/`, o `make` compila limpo e o `-Isrc/common` estava no `INCS`.
+Era o **editor**, que não tem como saber as flags — ele não lê o Makefile.
+
+**Reprodução antes de mexer**: compilei `apps/launcher/input.cpp` com as flags
+reais e depois sem os `-I`. A mensagem sai igual à do relato, palavra por
+palavra (`input.hpp:12:10: fatal error: giochi_hotkey.h: Arquivo ou diretório
+inexistente`); com as flags, `rc=0`. Armadilha §3.126.
+
+**Correção**: o `make` passa a escrever `compile_commands.json`
+(`tools/gen-compdb.py`, alvo `compdb`, que roda junto de `all`), com as flags
+**e a lista de fontes do próprio Makefile** — nenhum caminho é reescrito no
+gerador. É o arquivo que VS Code/clangd leem, então o editor passa a ver
+exatamente o que o compilador vê. Gerado ⇒ `.gitignore`; roda em `all` ⇒
+acompanha um `git mv` sozinho (foi um move que produziu o bug).
+
+**Dois defeitos meus no caminho, medidos:**
+
+- Passei as flags por recipe (`GIOCHI_CFLAGS='$(CFLAGS_ALL)' python3 ...`) e as
+  aspas de `-DGIOCHI_SOC='"x55"'` se perderam: o argumento saía
+  `-DGIOCHI_SOC=desconhecido` — o define de TEXTO virou o SÍMBOLO, que é a
+  armadilha do §3.111, agora valendo também para o Makefile da raiz. Corrigido
+  com `export` do make (entrega por `execve`, sem shell). Quem pegou foi o
+  teste das aspas, antes de qualquer build.
+- A guarda do `.gitignore` usava `assertIn` no texto inteiro e o **comentário**
+  acima da regra cita `compile_commands.json` pelo nome: apaguei a linha de
+  ignore e o teste continuou verde. **Terceira vez** nesta série de sessões
+  (§3.36, §3.118, §3.125). Agora há `linhas_ativas()` e a comparação é linha a
+  linha.
+
+**Verificação (tudo rodado):** `make test` **42/42** (suíte nova
+`config-do-editor`, 14 testes); `make lint` rc=0 depois de permitir o arquivo
+gerado no `check-tracked.sh` (§3.1 — ele reprovou primeiro, como projetado);
+`make` de build limpo gera 54 entradas. Guardas testadas ao contrário: tirar
+`apps/launcher` do `INCS` → reprova (`includePath` diverge e header fora dos
+`-I`); tirar `compdb` de `all` → reprova; gerador com `rglob` próprio → reprova;
+apagar a linha de ignore do `.gitignore` → reprova.
+
+**Aberto:** `compile_commands.json` reflete o build de **host**; o cross do
+Buildroot tem flags próprias e continua sem banco (o editor não precisa dele).
+Se o editor ainda reclamar depois de um move, é sinal de que o `make` não
+rodou — o teste diz isso.
 
 ## 4. O que NÃO foi verificado
 

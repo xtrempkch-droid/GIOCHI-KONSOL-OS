@@ -116,6 +116,18 @@ endif
 CFLAGS_ALL   += $(SDL2_CFLAGS)
 CXXFLAGS_ALL += $(SDL2_CFLAGS)
 
+# Flags para o gerador do compile_commands.json (alvo `compdb`). Vao por
+# `export` do proprio make: o valor chega ao processo filho por execve, sem
+# passar por um shell. Numa recipe comum as aspas simples de DEFS fecham as
+# aspas da recipe e o `-DGIOCHI_SOC='"x55"'` chega como `-DGIOCHI_SOC=x55` —
+# o define de TEXTO vira simbolo, exatamente a armadilha que o
+# tools/check-image-contents.sh vigia nos .mk (AGENTS.md §3.111).
+export GIOCHI_CC := $(CC)
+export GIOCHI_CXX := $(CXX)
+export GIOCHI_CFLAGS := $(CFLAGS_ALL)
+export GIOCHI_CXXFLAGS := $(CXXFLAGS_ALL)
+export GIOCHI_ASSET_DIR := $(CURDIR)/assets
+
 OBJ := $(BUILD_ROOT)/obj
 BIN := $(BUILD_ROOT)/bin
 
@@ -243,10 +255,36 @@ TEST_BINS := $(patsubst tests/%.c,$(BIN)/%,$(TESTS_C)) \
              $(patsubst tests/%.cpp,$(BIN)/%,$(TESTS_CXX))
 
 .PHONY: all clean test install info check-config defconfigs lint images tema-galeria \
-        bootlogo screenshots proposta font ui-preview \
+        bootlogo screenshots proposta font ui-preview compdb \
         $(BIN)/dump-geometry
 
-all: $(TARGETS)
+all: $(TARGETS) compdb
+
+# compile_commands.json: o editor nao le o Makefile, e sem este arquivo ele
+# ADIVINHA os includes. O sintoma nao e' um erro de build — e' um erro que so'
+# existe no editor:
+#
+#   apps/launcher/input.hpp:12: 'giochi_hotkey.h' file not found
+#
+# O header esta' em src/common/ e o `-Isrc/common` esta' aqui. A saida comum
+# (copiar a lista de includes para o .vscode) seria uma SEGUNDA copia das
+# flags: no dia em que um diretorio mudar, o build quebra e a gente conserta, e
+# o editor fica apontando para o lugar antigo. As flags vem por variavel de
+# ambiente do PROPRIO Makefile (§3.20), e as listas de fontes tambem.
+#
+# Depende de `all` para o arquivo nunca ficar velho: foi exatamente um MOVE
+# (src/launcher -> apps/launcher) que produziu o erro acima. O arquivo e'
+# gerado, entao esta' no .gitignore.
+compdb:
+	@if ! command -v python3 >/dev/null 2>&1; then \
+	    echo "compdb: python3 ausente; compile_commands.json nao gerado"; \
+	    exit 0; \
+	fi; \
+	python3 tools/gen-compdb.py \
+	    --c $(COMMON_SRC) $(INIT_SRC) $(MUSICD_SRC) $(THUMBGEN_SRC) \
+	        $(TOOLS_SRC) $(CTL_SRC) src/tools/gpu_probe.c $(TESTS_C) \
+	    --cxx $(LAUNCHER_SRC) tools/dump-geometry.cpp \
+	    --test-cxx $(TESTS_CXX)
 
 info:
 	@echo "build root : $(BUILD_ROOT)"
@@ -552,6 +590,9 @@ lint:
 	else \
 	    echo "  PULADA: $(BIN)/giochi-ctl ausente (sem compilador no host?)"; \
 	fi
+	@echo "== config do editor (includes x compile_commands.json) =="
+	@$(MAKE) --no-print-directory compdb >/dev/null 2>&1 || true; \
+	python3 -m unittest tests.test_editor_config 2>&1 | grep -E "Ran|OK|FAILED" | tail -2
 	@echo "== ferramentas python =="
 	@python3 -m py_compile tools/make-screenshots.py \
 	           tools/make-layout-proposal.py \
@@ -560,7 +601,7 @@ lint:
 	           tools/serial-capture.py tools/verify-card.py \
 	           tools/check-dts-panel.py tools/make-font.py \
 	           tools/preview-ui.py tools/make-theme-gallery.py \
-	           tools/giochi-ctl.py \
+	           tools/giochi-ctl.py tools/gen-compdb.py \
 	           apps/store/giochi_store/*.py apps/forge/giochi_forge/*.py \
 	           && echo "ok"
 

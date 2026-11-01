@@ -36,6 +36,15 @@ is_allowed() {
         *.giochi|*.giochi.sig|*.manifest.json|*.img|*.vfat|*.squashfs) return 0 ;;
         *.img.xz|*.img.zst|*.img.gz) return 0 ;;
         *.o|*.d|*.a|*.so) return 0 ;;
+        # compile_commands.json e' GERADO pelo Makefile (tools/gen-compdb.py) a
+        # partir das flags reais; existe para o editor resolver include, nao
+        # para ser versionado. Se ele aparecer aqui e' porque o padrao do
+        # .gitignore esta' certo — nao e' um arquivo do projeto que sumiu.
+        compile_commands.json) return 0 ;;
+        # tasks.json e' escrito pelo depurador do VS Code ("C/C++: gcc build
+        # active file") por cima do que o projeto tenha: gerado, nao versionado.
+        # O c_cpp_properties.json, esse e' do projeto e vai no git.
+        .vscode/tasks.json) return 0 ;;
     esac
     return 1
 }

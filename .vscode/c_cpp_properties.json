@@ -1,0 +1,31 @@
+{
+  // IntelliSense a partir do `compile_commands.json` GERADO pelo Makefile.
+  //
+  // As flags (inclusive -Isrc/common, -Iapps/launcher, ...) vivem no Makefile,
+  // e `make` regenera este banco a cada build. Copiar caminhos para cá criaria
+  // uma segunda fonte de verdade — foi assim que `apps/launcher/input.hpp`
+  // passou a acusar "giochi_hotkey.h: arquivo ou diretório inexistente" depois
+  // do move de src/launcher para apps/.
+  //
+  // O `includePath` abaixo existe para funcionar ANTES do primeiro `make`
+  // (clone novo). Ele é conferido contra o `INCS` do Makefile pela suíte
+  // `config-do-editor` (tests/test_editor_config.py): se alguém mudar um e não
+  // o outro, o teste reprova. Não "conserte" o editor editando à mão — rode
+  // `make compdb`.
+  "configurations": [
+    {
+      "name": "Giochi (host)",
+      "compileCommands": "${workspaceFolder}/compile_commands.json",
+      "includePath": [
+        "${workspaceFolder}/src/common",
+        "${workspaceFolder}/src/init",
+        "${workspaceFolder}/apps/launcher",
+        "${workspaceFolder}/src/musicd"
+      ],
+      "cStandard": "c99",
+      "cppStandard": "c++17",
+      "intelliSenseMode": "linux-gcc-x64"
+    }
+  ],
+  "version": 4
+}

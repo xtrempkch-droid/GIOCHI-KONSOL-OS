@@ -33,6 +33,13 @@ __pycache__/
 *.pyc
 
 # editores
+# compile_commands.json: GERADO pelo Makefile (tools/gen-compdb.py) a
+# partir das flags reais. E' o que o editor usa para resolver include;
+# `make` o regenera, entao nao vai versionado.
+compile_commands.json
+# .vscode/tasks.json e' gerado pelo depurador do VS Code (build de arquivo solto);
+# o c_cpp_properties.json, esse sim, e' do projeto.
+.vscode/tasks.json
 *.swp
 .DS_Store
 
