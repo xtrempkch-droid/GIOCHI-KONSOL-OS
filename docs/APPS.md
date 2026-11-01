@@ -26,7 +26,7 @@ Ordem de trabalho: [roadmap.md](./roadmap.md).
 | # | Componente | Tipo | Onde | Estado |
 |---|---|---|---|---|
 | 1 | `giochi-init` | daemon C | [src/init](../src/init) | ✅ supervisor, `control.sock`, FIFO, hotkey, `device_profile.json`; ciclo de vida coberto por `lifecycle_test.sh` |
-| 2 | `giochi-launcher` | C++17 + SDL2 | [src/launcher](../src/launcher) | 🟡 motor de layout, tema, `settings.json`, overlay, biblioteca prontos; **desenho dos widgets é esboço** (`TODO(v1.2)`) |
+| 2 | `giochi-launcher` | C++17 + SDL2 | [src/launcher](../src/launcher) | ✅ roda como **app** desde 2026-11-01: o supervisor resolve `/user/apps/giochi-launcher` antes do binário da imagem, então a UI atualiza sem regravar o sistema ([LAUNCHER-APP.md](LAUNCHER-APP.md)) |
 | 3 | `giochi-musicd` | daemon C + ALSA | [src/musicd](../src/musicd) | 🟡 socket e protocolo §4.8.4 prontos; **decodificação PCM pendente** |
 | 4 | `giochi-store` | app externo | — | ⛔ **não existe no console**. `layout.json` aponta `APP:giochi-store` e o `giochi-init` responde `ERR launch_failed` com log claro. O **lado PC** existe: [apps/store](../apps/store) monta o catálogo e o `news.json`. Fontes avaliadas e contrato do pacote: [LOJA.md](LOJA.md) |
 | 5 | `portmaster` | app externo | — | ⛔ **não existe**. Mesmo caso da Loja (`APP:portmaster`) |

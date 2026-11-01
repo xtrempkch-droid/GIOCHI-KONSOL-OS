@@ -33,6 +33,19 @@ typedef struct {
 
 void giochi_supervisor_init(giochi_supervisor *sup);
 
+/* Caminho do binario do Launcher, na ordem de preferencia:
+ *
+ *   1. /user/apps/giochi-launcher   (Launcher como app, docs/LAUNCHER-APP.md)
+ *   2. <libexecdir>/giochi-launcher (fallback na imagem, nunca fica sem UI)
+ *
+ * O item 1 e' o que permite mexer no Launcher sem regravar o sistema: basta
+ * colocar o binario novo na particao de dados (via MTP ou SSH). O fallback
+ * garante que um app quebrado nao deixa o aparelho sem interface — quem
+ * decide e' o access(X_OK), nao a existencia.
+ *
+ * Retorna 0 e preenche buf, ou -1 se nenhum dos dois resolve. */
+int giochi_launcher_program(char *buf, size_t bufsz);
+
 /* args pode ser NULL. Copia os argumentos; nao retem ponteiros. */
 int giochi_supervisor_add(giochi_supervisor *sup, const char *name,
                           const char *program, const char *const args[],

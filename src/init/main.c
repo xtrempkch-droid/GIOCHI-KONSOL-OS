@@ -22,6 +22,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdio.h>
@@ -119,6 +120,72 @@ static int handle_radio(char *reply, size_t replysz, const char *what, int rc)
         (void)snprintf(reply, replysz, "ERR %s_failed", what);
     }
     return -1;
+}
+
+/* SET_DATE <epoch>: acerta o relogio e persiste.
+ *
+ * POR QUE EXISTE (docs/RELÓGIO.md): o aparelho nao tem RTC — o kernel acorda
+ * em 2017 e o S01relogio restaura a epoca do ultimo desligamento. Quando a
+ * bateria do RTC e' trocada (ou o usuario grava um cartao novo), essa fonte
+ * some e a data fica errada: certificado TLS da Loja "ainda nao valido",
+ * logs datados de 2017, resize2fs recusando. Este comando e' a porta para o
+ * app da Loja (futuro) e para o SSH corrigirem a data.
+ *
+ * Faixa: 2020-01-01 .. 2100-01-01, a MESMA do S01relogio. Fora dela e'
+ * erro, nao aviso: uma epoca absurda setada aqui seria gravada e perpetuada.
+ */
+static int handle_set_date(char *reply, size_t replysz, const char *arg)
+{
+    char path[PATH_MAX];
+    char buf[64];
+    unsigned long long epoch;
+    char *end = NULL;
+    const char *set_argv[] = { "date", "-s", NULL, NULL };
+
+    if (arg == NULL || *arg == '\0') {
+        (void)snprintf(reply, replysz, "ERR missing_date");
+        return -1;
+    }
+    if (strspn(arg, "0123456789") != strlen(arg)) {
+        (void)snprintf(reply, replysz, "ERR invalid_date");
+        return -1;
+    }
+    epoch = strtoull(arg, &end, 10);
+    if (end == NULL || *end != '\0' || epoch < 1577836800ULL ||
+        epoch > 4102444800ULL) {
+        (void)snprintf(reply, replysz, "ERR invalid_date");
+        return -1;
+    }
+
+    if (giochi_is_dry_run()) {
+        GLOG_INFO("dry-run: SET_DATE @%llu ignorado (relogio do host intacto)",
+                  epoch);
+    } else {
+        (void)snprintf(buf, sizeof(buf), "@%llu", epoch);
+        set_argv[2] = buf;
+        if (giochi_run(set_argv) != 0) {
+            (void)snprintf(reply, replysz, "ERR date_failed");
+            return -1;
+        }
+    }
+
+    /* Persiste para o proximo boot (mesma fonte que o rcK usa). Se /user
+     * estiver fora do ar (modo `mass`), o relogio vale ate' o desligamento
+     * e o erro fica no log, nao na resposta: a data FOI setada. O mkdir_p
+     * cobre particao formatada pelo usuario: /user/.giochi pode nao existir
+     * ainda quando o comando chega. */
+    if (giochi_path(path, sizeof(path), "/user/.giochi") == 0 &&
+        giochi_mkdir_p(path, 0755) == 0 &&
+        giochi_path(path, sizeof(path), "/user/.giochi/relogio") == 0) {
+        (void)snprintf(buf, sizeof(buf), "%llu\n", epoch);
+        if (giochi_write_file_atomic(path, buf, strlen(buf)) != 0) {
+            GLOG_WARN("SET_DATE: nao consegui persistir em %s", path);
+        }
+    }
+
+    GLOG_INFO("SET_DATE @%llu aplicado", epoch);
+    (void)snprintf(reply, replysz, "OK date %llu", epoch);
+    return 0;
 }
 
 static int handle_command(const char *cmd, char *reply, size_t replysz,
@@ -259,6 +326,10 @@ static int handle_command(const char *cmd, char *reply, size_t replysz,
     }
     if (strcmp(verb, "BT_DOWN") == 0) {
         return handle_radio(reply, replysz, "bt_down", giochi_bt_set(0));
+    }
+
+    if (strcmp(verb, "SET_DATE") == 0) {
+        return handle_set_date(reply, replysz, arg);
     }
 
     (void)snprintf(reply, replysz, "ERR unknown_command");
@@ -437,10 +508,19 @@ int main(int argc, char **argv)
 
     giochi_supervisor_init(&ctx.supervisor);
     if (!no_spawn) {
+        char launcher_bin[PATH_MAX];
+
         (void)giochi_supervisor_add(&ctx.supervisor, "musicd", "giochi-musicd",
                                     NULL, 1);
-        (void)giochi_supervisor_add(&ctx.supervisor, "launcher",
-                                    "giochi-launcher", NULL, 1);
+        /* Launcher como app (docs/LAUNCHER-APP.md): o binario pode vir de
+         * /user/apps/giochi-launcher, com o da imagem como fallback. */
+        if (giochi_launcher_program(launcher_bin, sizeof(launcher_bin)) == 0) {
+            GLOG_INFO("launcher: %s", launcher_bin);
+            (void)giochi_supervisor_add(&ctx.supervisor, "launcher",
+                                        launcher_bin, NULL, 1);
+        } else {
+            GLOG_ERR("launcher: binario nao encontrado; UI indisponivel");
+        }
         (void)giochi_supervisor_start_all(&ctx.supervisor);
     } else {
         GLOG_INFO("--no-spawn: supervisionando apenas comandos");

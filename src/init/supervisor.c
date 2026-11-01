@@ -29,6 +29,34 @@ static void sleep_ms(unsigned long ms)
     }
 }
 
+int giochi_launcher_program(char *buf, size_t bufsz)
+{
+    char cand[PATH_MAX];
+
+    if (buf == NULL || bufsz == 0) {
+        return -1;
+    }
+    buf[0] = '\0';
+
+    /* 1. Launcher como app (particao de dados, gravavel — atualiza sem
+     *    regravar o sistema). access(X_OK), nao stat: um arquivo quebrado
+     *    (upload via MTP interrompido) NAO pode derrubar a UI — cai para o
+     *    fallback da imagem. */
+    if (giochi_path(cand, sizeof(cand), "/user/apps/giochi-launcher") == 0 &&
+        access(cand, X_OK) == 0) {
+        giochi_strlcpy(buf, cand, bufsz);
+        return 0;
+    }
+
+    /* 2. Fallback: a imagem sempre traz o Launcher do sistema. */
+    if (giochi_path(cand, sizeof(cand),
+                    GIOCHI_LIBEXECDIR "/giochi-launcher") == 0) {
+        giochi_strlcpy(buf, cand, bufsz);
+        return 0;
+    }
+    return -1;
+}
+
 static int spawn_child(giochi_child *child)
 {
     char dir[PATH_MAX];
@@ -401,6 +429,16 @@ void giochi_supervisor_revive_launcher(giochi_supervisor *sup)
     launcher->suspended = 0;
     GLOG_INFO("relancando launcher na Home");
     launcher->restarts = 0;
+
+    /* Re-resolve o binario a cada relancamento: se o usuario instalou o
+     * Launcher como app (via MTP/SSH) enquanto o sistema rodava, a troca
+     * vale na proxima volta para a Home, sem reboot. */
+    if (giochi_launcher_program(launcher->program,
+                                sizeof(launcher->program)) != 0) {
+        GLOG_ERR("falha ao relancar o launcher: binario nao encontrado");
+        return;
+    }
+
     if (spawn_child(launcher) != 0) {
         GLOG_ERR("falha ao relancar o launcher");
     }
