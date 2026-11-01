@@ -839,10 +839,18 @@ void paint_settings(SDL_Renderer *sdl, const Font &font, const UiGeometry &geo,
                                                      item.value;
 
         if (!right.empty()) {
-            const int w = font.measure(right, geo.font_body, peso_linha);
+            /* O valor ocupa no maximo a METADE da linha, como o rotulo. Antes
+             * ia com max_w = 0 (sem limite): um valor longo — o nome do tema,
+             * que o schema permite ate' 48 caracteres — era desenhado inteiro,
+             * alinhado a' direita e por cima do rotulo. Medido com
+             * "Glass (iOS) Minimalista Estendido": invadia 180 px. */
+            const int max_valor = row.w / 2;
+            const std::string visto =
+                font.truncate(right, geo.font_body, max_valor, peso_linha);
+            const int w = font.measure(visto, geo.font_body, peso_linha);
 
-            (void)font.draw(sdl, right, row.x + row.w - pad - w, row_baseline,
-                            geo.font_body, sel ? primary : secondary, 0,
+            (void)font.draw(sdl, visto, row.x + row.w - pad - w, row_baseline,
+                            geo.font_body, sel ? primary : secondary, max_valor,
                             peso_linha);
         }
         y += row_h;
@@ -1084,8 +1092,7 @@ private:
                a.focus_ring_px == b.focus_ring_px &&
                a.topbar_px == b.topbar_px &&
                a.hint_bar_px == b.hint_bar_px && a.density == b.density &&
-               a.cover_pct == b.cover_pct && a.hints == b.hints &&
-               a.title_scale_pct == b.title_scale_pct;
+               a.cover_pct == b.cover_pct && a.hints == b.hints;
     }
 
     void calcular_geometria(SDL_Renderer *sdl, const UiState &ui)

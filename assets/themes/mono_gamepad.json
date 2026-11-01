@@ -21,8 +21,7 @@
     "density": "espacosa",
     "topbar_height": 40,
     "hint_bar_height": 32,
-    "cover_pct": 105,
-    "title_scale_pct": 100
+    "cover_pct": 105
   },
   "features": {
     "hints": "so_gamepad"

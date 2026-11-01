@@ -100,8 +100,12 @@ struct UiThemeMetrics {
     int density = 1;        /* 0 compacta, 1 normal, 2 espacosa */
     int cover_pct = 100;    /* escala da capa do album (100 = token base) */
     int hints = 0;          /* modo da barra de dicas (theme features.hints) */
-    int title_scale_pct = 100;
 };
+
+/* Tamanhos de fonte que o atlas REALMENTE tem (assets/font.json). O tema nao
+ * escala fonte: qualquer valor fora destes cai na face mais proxima, e ai o
+ * desenho passa a mentir sobre o numero declarado. */
+constexpr int UI_FONT_SIZES[] = {12, 14, 18, 21};
 
 /* Preenche as barras e os tokens. Chamar antes de ui_geometry_tabs e
  * ui_geometry_grid. */

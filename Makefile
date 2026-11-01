@@ -306,7 +306,7 @@ $(BIN)/test_settings: $(OBJ)/tests/test_settings.o $(OBJ)/launcher/settings.o $(
 	@mkdir -p $(BIN)
 	$(CXX) $^ -o $@ $(LDFLAGS) $(EXTRA_LDFLAGS) $(CRYPTO_LIBS)
 
-$(BIN)/dump-geometry: $(OBJ)/tools/dump-geometry.o $(OBJ)/launcher/ui_geometry.o $(OBJ)/launcher/layout.o $(OBJ)/launcher/i18n.o $(OBJ)/launcher/settings.o $(OBJ)/launcher/theme.o $(COMMON_OBJ)
+$(BIN)/dump-geometry: $(OBJ)/tools/dump-geometry.o $(OBJ)/launcher/ui_geometry.o $(OBJ)/launcher/layout.o $(OBJ)/launcher/i18n.o $(OBJ)/launcher/settings.o $(OBJ)/launcher/theme.o $(OBJ)/launcher/overlay.o $(COMMON_OBJ)
 	@mkdir -p $(BIN)
 	$(CXX) $^ -o $@ $(LDFLAGS) $(EXTRA_LDFLAGS) $(CRYPTO_LIBS)
 

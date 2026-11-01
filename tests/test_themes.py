@@ -58,14 +58,14 @@ def contraste(a: str, b: str) -> float:
     return (hi + 0.05) / (lo + 0.05)
 
 
-def geometria(theme_id: str, size: str = "1280x720") -> dict:
+def geometria(theme_id: str, size: str = "1280x720", **extra) -> dict:
     if not DUMP.is_file():
         raise unittest.SkipTest("dump-geometry nao compilado (make all)")
-    saida = subprocess.check_output(
-        [str(DUMP), "--size", size, "--tab", "1", "--items", "15",
-         "--theme", theme_id, "--assets", str(ROOT / "assets")],
-        text=True)
-    return json.loads(saida)
+    cmd = [str(DUMP), "--size", size, "--tab", "1", "--items", "15",
+           "--theme", theme_id, "--assets", str(ROOT / "assets")]
+    for chave, valor in extra.items():
+        cmd += [f"--{chave.replace('_', '-')}", str(valor)]
+    return json.loads(subprocess.check_output(cmd, text=True))
 
 
 class SchemaTest(unittest.TestCase):
@@ -95,6 +95,14 @@ class SchemaTest(unittest.TestCase):
             for nome in CORES:
                 self.assertRegex(tema["colors"][nome], padrao,
                                  f"{item['file']}: cor '{nome}'")
+
+    def test_sem_escala_de_fonte_no_tema(self):
+        """O atlas tem 12/14/18/21 px; escala intermediaria cairia na face mais
+        proxima e o tema mentiria. Se a chave voltar, este teste avisa."""
+        for item in catalogo()["themes"]:
+            self.assertNotIn("title_scale_pct",
+                             carregar(item["file"])["metrics"],
+                             f"{item['file']}: escala de fonte nao existe")
 
     def test_metricas_dentro_da_faixa_do_schema(self):
         faixas = {
@@ -275,6 +283,53 @@ class EfeitoNoLayoutTest(unittest.TestCase):
         self.assertEqual(saida.returncode, 0, saida.stderr)
         doc = json.loads(saida.stdout)
         self.assertGreater(doc["tokens"]["columns"], 0)
+
+
+class MenuSistemaTest(unittest.TestCase):
+    """As 7 linhas do submenu Sistema têm de caber em TODO tema e painel.
+
+    A 7ª linha (Tema) entrou depois e o render tem um `break` silencioso quando
+    a linha não cabe — a última opção simplesmente não apareceria, sem erro.
+    O cálculo usa a face do atlas que o render vai usar de fato (line_height
+    do font.json), não uma estimativa.
+    """
+
+    def test_sete_linhas_cabem_em_todos_os_temas_e_paineis(self):
+        if not DUMP.is_file():
+            raise unittest.SkipTest("dump-geometry nao compilado")
+        font = json.loads((ROOT / "assets" / "font.json").read_text())
+        faces = {(f["px"], f["weight"]): f for f in font["sizes"]}
+
+        for item in catalogo()["themes"]:
+            for size in ("1280x720", "640x480"):
+                g = geometria(item["theme_id"], size, settings=1, level=1)
+                t, tb, hb = g["tokens"], g["topbar"], g["hint_bar"]
+                margin = t["margin"]
+                panel_y = tb["h"] + margin
+                panel_h = (hb["y"] - tb["h"]) - 2 * margin
+                titulo = faces[(t["font_tab"], "bold")]
+                linha = faces[(t["font_tab"], "regular")]
+                y = (panel_y + margin + titulo["ascent"] +
+                     titulo["line_height"] + t["gap"])
+                row_h = linha["line_height"] + t["gap"]
+                limite = panel_y + panel_h - margin
+                cabem = max(0, int((limite - y) / row_h) + 1)
+
+                self.assertGreaterEqual(
+                    cabem, 7,
+                    f"{item['theme_id']} em {size}: cabem {cabem} linhas, o "
+                    f"submenu Sistema tem 7 e a 7a seria omitida sem aviso")
+
+    def test_o_dump_publica_a_mesma_lista_do_overlay(self):
+        """A lista estava duplicada: o preview mostrava 6 linhas, o aparelho 7."""
+        if not DUMP.is_file():
+            raise unittest.SkipTest("dump-geometry nao compilado")
+        g = geometria("dark_default", settings=1, level=1, index=6)
+        itens = g["settings"]["items"]
+
+        self.assertEqual(len(itens), 7, "submenu Sistema com numero errado")
+        self.assertEqual(itens[-1]["label"], "Tema",
+                         "a ultima linha do submenu tem de ser o Tema")
 
 
 class PrecedenciaTest(unittest.TestCase):

@@ -1945,6 +1945,59 @@ cada um falhava de um jeito diferente:
   `assets/themes/dark_default.json` — a mesma cor em dois lugares. Foi removido;
   todas as ferramentas leem `assets/themes/dark_default.json` agora.
 
+### 3.76 O `dump-geometry` tinha a própria cópia da lista do menu
+
+O `tools/dump-geometry.cpp` montava as linhas de Configurações com uma lista
+**própria**: 7 itens no nível 0 e **6** no submenu Sistema. Quando o "Tema"
+entrou como 7ª linha do submenu, o aparelho passou a ter 7 e o preview continuou
+com 6 — de novo a "segunda verdade" do §3.71, agora na lista de itens.
+
+- `giochi_overlay_key(int)` e `giochi_overlay_system_key(int)` passaram a ser a
+  **única** origem das chaves, e o dump lê de lá. `GIOCHI_OVERLAY_DEV_OFF_INDEX`
+  substituiu o `i == 6` mágico.
+- Guarda: `tests/test_themes.py::MenuSistemaTest::test_o_dump_publica_a_mesma_lista_do_overlay`
+  exige 7 itens e que o último seja "Tema".
+
+### 3.77 Prova ao contrário que passa por não ter compilado
+
+Testei a guarda acima removendo o "Tema" de `system_items` e baixando
+`GIOCHI_SYSTEM_ITEM_COUNT` para 6. O `make` **falhou** (o `system_keys` ficou com
+7 inicializadores para um array de 6) e o binário antigo continuou lá — o teste
+rodou contra o dump **velho**, achou 7 itens e passou. Conclusão errada por
+alguns minutos.
+
+- Só é prova ao contrário válida se o build **passou** e o artefato mudou.
+  Repetido de forma compilável (remover das duas tabelas e baixar a contagem):
+  dump com 6 itens, teste falha com `6 != 7`. Aí sim está provado.
+- Regra: em script de prova, checar `rc` do `make` **e** o artefato (aqui, a
+  contagem no dump) antes de ler o resultado do teste.
+
+### 3.78 `title_scale_pct` era um botão que não fazia nada
+
+O esquema do tema tinha escala de fonte (`80..140 %`). O atlas só tem 12, 14, 18
+e 21 px, e `face_for()` devolve a face **mais próxima**: `98 %` de 18 px dá 17,
+que desenha com a face de 18 — igual a 100 %. Dois temas declaravam 95 % e 98 %
+e o efeito era nenhum.
+
+- Removido do esquema, dos temas, do `giochi_theme`, do `UiThemeMetrics` e do
+  `render.cpp`. `UI_FONT_SIZES` documenta os tamanhos que existem de verdade.
+- Guarda: `test_sem_escala_de_fonte_no_tema` falha se a chave voltar.
+- Regra: token que o desenho não honra é pior que token ausente — ele faz o
+  autor do tema acreditar que mudou algo.
+
+### 3.79 O valor da linha do menu não tinha limite de largura
+
+`paint_settings` desenhava o valor à direita com `max_w = 0`, e no `Font::draw`
+`max_w <= 0` significa **sem limite**. Com o nome do tema (o esquema permite 48
+caracteres) o valor era desenhado inteiro por cima do rótulo. Medido com um nome
+longo: invadia ~180 px.
+
+- Agora o valor usa metade da linha e passa por `truncate()` (que corta por
+  pixel e por code point, com `...`).
+- Medição da 7ª linha do submenu em todos os temas e painéis: cabem **11 a 15**
+  linhas contra as 7 necessárias — `test_sete_linhas_cabem_em_todos_os_temas_e_paineis`
+  refaz a conta com o `line_height` do `font.json`, não com estimativa.
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):

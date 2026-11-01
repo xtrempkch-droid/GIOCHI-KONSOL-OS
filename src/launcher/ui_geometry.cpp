@@ -224,7 +224,6 @@ UiThemeMetrics ui_theme_metrics_from(const giochi_theme &t)
     m.density = t.density;
     m.cover_pct = t.cover_pct;
     m.hints = t.hints;
-    m.title_scale_pct = t.title_scale_pct;
     return m;
 }
 
@@ -251,18 +250,6 @@ void ui_geometry_apply_theme(UiGeometry *g, const UiThemeMetrics &m)
     g->tile_h = sc(TILE_H * dt.tile_pct, h) / 100;
     g->topbar_h = m.topbar_px > 0 ? m.topbar_px : TOPBAR_H;
     g->hint_bar_h = m.hint_bar_px > 0 ? m.hint_bar_px : HINT_H;
-
-    if (m.title_scale_pct > 0 && m.title_scale_pct != 100) {
-        g->font_title = sc(FONT_TITLE, h) * m.title_scale_pct / 100;
-        g->font_body = sc(FONT_BODY, h) * m.title_scale_pct / 100;
-        if (g->font_title < 8) {
-            g->font_title = 8;
-        }
-        if (g->font_body < 8) {
-            g->font_body = 8;
-        }
-        g->line_h = g->font_body * 5 / 4;
-    }
 
     layout_from_tokens(g);
 }

@@ -36,6 +36,21 @@ const char *giochi_overlay_item_at(const giochi_overlay *overlay, int index);
 const char *giochi_overlay_item(int index);
 const char *giochi_overlay_current(const giochi_overlay *overlay);
 
+/* Chave de i18n de cada linha do submenu Sistema (indice na ordem de
+ * `system_items`, em overlay.cpp).
+ *
+ * Existe porque a lista estava DUPLICADA: o `tools/dump-geometry.cpp` tinha a
+ * propria copia e ela ficou com 6 itens quando o "Tema" entrou — o preview
+ * desenhava um menu que o aparelho nao tem. Mesma classe do §3.71. Agora o
+ * preview pergunta a chave aqui e traduz pelo catalogo, como o main faz. */
+const char *giochi_overlay_system_key(int index);
+
+/* Chave de i18n de cada item do nivel 0 (mesma razon: a lista era copiada). */
+const char *giochi_overlay_key(int index);
+
+/* Indice do item "Desligar" — o unico do nivel 0 que nao abre submenu. */
+#define GIOCHI_OVERLAY_DEV_OFF_INDEX 6
+
 /* Indices dentro do submenu Sistema. A ordem vive em overlay.cpp e tem de
  * casar com kSistema em main.cpp — ha teste cobrindo (§ overlap). */
 #define GIOCHI_SYSTEM_LANGUAGE_INDEX 0

@@ -21,9 +21,14 @@
     "density": "normal",
     "topbar_height": 40,
     "hint_bar_height": 30,
-    "cover_pct": 115,
-    "title_scale_pct": 100
+    "cover_pct": 115
   },
-  "features": { "hints": "completo" },
-  "typography": { "font_family": "builtin_sans", "topbar_size": 14, "tile_title_size": 12 }
+  "features": {
+    "hints": "completo"
+  },
+  "typography": {
+    "font_family": "builtin_sans",
+    "topbar_size": 14,
+    "tile_title_size": 12
+  }
 }

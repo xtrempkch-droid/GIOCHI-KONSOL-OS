@@ -21,8 +21,7 @@
     "density": "normal",
     "topbar_height": 40,
     "hint_bar_height": 30,
-    "cover_pct": 100,
-    "title_scale_pct": 100
+    "cover_pct": 100
   },
   "features": {
     "hints": "so_gamepad"

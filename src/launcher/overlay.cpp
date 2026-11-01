@@ -24,6 +24,45 @@ static const char *const system_items[GIOCHI_SYSTEM_ITEM_COUNT] = {
     "Tema"
 };
 
+/* A MESMA ordem de `items`, em chaves de i18n. */
+static const char *const item_keys[GIOCHI_OVERLAY_ITEM_COUNT] = {
+    "settings.appearance",
+    "settings.system",
+    "settings.sound",
+    "settings.store",
+    "settings.network",
+    "settings.about",
+    "settings.poweroff"
+};
+
+const char *giochi_overlay_key(int index)
+{
+    if (index < 0 || index >= GIOCHI_OVERLAY_ITEM_COUNT) {
+        return "";
+    }
+    return item_keys[index];
+}
+
+/* A MESMA ordem de `system_items`, em chaves de i18n. Quem precisa do texto
+ * traduzido usa `giochi_overlay_system_key`. */
+static const char *const system_keys[GIOCHI_SYSTEM_ITEM_COUNT] = {
+    "settings.language",
+    "settings.timezone",
+    "settings.brightness",
+    "settings.suspend",
+    "settings.usb_mode",
+    "settings.dev_mode",
+    "settings.theme"
+};
+
+const char *giochi_overlay_system_key(int index)
+{
+    if (index < 0 || index >= GIOCHI_SYSTEM_ITEM_COUNT) {
+        return "";
+    }
+    return system_keys[index];
+}
+
 /* Indice do item "Sistema" no nivel 0. */
 #define SYSTEM_INDEX 1
 

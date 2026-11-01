@@ -54,8 +54,13 @@ typedef struct {
     int hint_bar_h_px;
     int density;
     int hints;
-    int cover_pct;       /* 100 = token base da capa (120x120) */
-    int title_scale_pct; /* 100 = 14/12/12 do painel base */
+    int cover_pct; /* 100 = token base da capa (120x120) */
+
+    /* NAO ha escala de fonte no tema: o atlas tem 12/14/18/21 px e qualquer
+     * valor intermediario cai na face mais proxima — um "98%" desenharia
+     * exatamente igual a 100%. Botao que nao faz o que promete e' pior que
+     * botao ausente; quem quiser outro tamanho, adiciona o tamanho ao atlas
+     * (tools/make-font.py) e vira token. */
 } giochi_theme;
 
 typedef struct {

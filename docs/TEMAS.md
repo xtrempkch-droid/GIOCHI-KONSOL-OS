@@ -109,8 +109,7 @@ Definido em [`schemas/theme.schema.json`](../schemas/theme.schema.json):
     "density": "normal",        // compacta | normal | espacosa
     "topbar_height": 40,        // altura da barra superior
     "hint_bar_height": 30,      // altura da barra de dicas
-    "cover_pct": 115,           // escala da capa do álbum (100 = 120x120)
-    "title_scale_pct": 100      // escala das fontes do painel base
+    "cover_pct": 115            // escala da capa do álbum (100 = 120x120)
   },
   "features": { "hints": "completo" }   // so_gamepad | completo
 }
@@ -119,6 +118,11 @@ Definido em [`schemas/theme.schema.json`](../schemas/theme.schema.json):
 Todas as métricas estão em **px do painel base**: a X55 (720p) recebe tudo
 ×1,5, como qualquer outro token. Escrever `10` vale 10 em 640×480 e 15 em
 1280×720.
+
+**Não há escala de fonte no tema, de propósito.** O atlas tem 12/14/18/21 px; um
+`title_scale_pct: 98` cairia na face de 18 e desenharia exatamente igual a 100 —
+um botão que não faz o que promete. Para outro tamanho, acrescente o tamanho em
+`tools/make-font.py` (ele vira face no atlas) e o token em `ui_geometry.cpp`.
 
 ## 5. Como criar um tema novo
 

@@ -94,12 +94,6 @@
           "minimum": 60,
           "maximum": 160,
           "description": "Escala da capa do album na aba Musica (100 = o token base 120x120). 'Capas de Albuns Maiores' das propostas."
-        },
-        "title_scale_pct": {
-          "type": "integer",
-          "minimum": 80,
-          "maximum": 140,
-          "description": "Escala dos tamanhos de fonte NO PAINEL BASE (100 = 14/12/12)."
         }
       }
     },

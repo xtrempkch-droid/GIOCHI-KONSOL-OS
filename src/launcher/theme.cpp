@@ -53,7 +53,6 @@ void giochi_theme_defaults(giochi_theme *theme)
     theme->density = GIOCHI_DENSITY_NORMAL;
     theme->hints = GIOCHI_HINTS_SO_GAMEPAD;
     theme->cover_pct = 100;
-    theme->title_scale_pct = 100;
 }
 
 unsigned giochi_theme_rgb(const char *hex, unsigned fallback)
@@ -157,8 +156,6 @@ int giochi_theme_load(giochi_theme *theme, const char *dir, const char *file,
             gj_object_get(metrics, "hint_bar_height"), theme->hint_bar_h_px);
         theme->cover_pct =
             gj_as_int(gj_object_get(metrics, "cover_pct"), theme->cover_pct);
-        theme->title_scale_pct = gj_as_int(
-            gj_object_get(metrics, "title_scale_pct"), theme->title_scale_pct);
 
         const char *dens = gj_as_string(gj_object_get(metrics, "density"), NULL);
 

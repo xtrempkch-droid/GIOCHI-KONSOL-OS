@@ -14,6 +14,7 @@
  */
 #include "i18n.hpp"
 #include "layout.hpp"
+#include "overlay.hpp"
 #include "status.hpp"
 #include "ui_geometry.hpp"
 
@@ -45,7 +46,7 @@ void campo_json(std::string *out, const char *texto)
 
 void emitir_textos(const std::string &assets, const std::string &lang, int tab,
                    int items, int settings, int level, int index,
-                   int hints_mode)
+                   int hints_mode, const char *tema_nome)
 {
     giochi::I18n i18n;
 
@@ -114,16 +115,14 @@ void emitir_textos(const std::string &assets, const std::string &lang, int tab,
 
     if (settings) {
         if (level == 0) {
-            static const char *const chaves[] = {
-                "settings.appearance", "settings.system",  "settings.sound",
-                "settings.store",      "settings.network", "settings.about",
-                "settings.poweroff"};
-
-            for (int i = 0; i < 7; i++) {
+            /* A lista de chaves mora em overlay.cpp — copia-la aqui foi o que
+             * deixou o preview com um menu de 6 linhas quando o aparelho tinha
+             * 7. Os indices fecham com giochi_overlay_count(). */
+            for (int i = 0; i < GIOCHI_OVERLAY_ITEM_COUNT; i++) {
                 std::string lbl;
-                campo_json(&lbl, i18n.tr(chaves[i]));
+                campo_json(&lbl, i18n.tr(giochi_overlay_key(i)));
                 std::printf("%s{\"label\":\"%s\",\"sub\":%d}", i > 0 ? "," : "",
-                            lbl.c_str(), i == 6 ? 0 : 1);
+                            lbl.c_str(), i == GIOCHI_OVERLAY_DEV_OFF_INDEX ? 0 : 1);
             }
         } else {
             auto item = [&i18n](bool first, const char *chave,
@@ -136,12 +135,38 @@ void emitir_textos(const std::string &assets, const std::string &lang, int tab,
             };
             std::string idioma = std::string(i18n.lang()) + " (A)";
 
-            item(true, "settings.language", idioma.c_str());
-            item(false, "settings.timezone", "America/Sao_Paulo");
-            item(false, "settings.brightness", "80%");
-            item(false, "settings.suspend", "5 min");
-            item(false, "settings.usb_mode", "MTP");
-            item(false, "settings.dev_mode", i18n.tr("settings.off"));
+            /* Uma linha por item do submenu, na ordem REAL. Valores de
+             * exemplo; o nome do tema vem do catalogo para o preview mostrar
+             * o comprimento tipico de verdade. */
+            for (int i = 0; i < GIOCHI_SYSTEM_ITEM_COUNT; i++) {
+                const char *chave = giochi_overlay_system_key(i);
+                std::string valor;
+
+                switch (i) {
+                case GIOCHI_SYSTEM_LANGUAGE_INDEX:
+                    valor = idioma;
+                    break;
+                case 1:
+                    valor = "America/Sao_Paulo";
+                    break;
+                case 2:
+                    valor = "80%";
+                    break;
+                case 3:
+                    valor = "5 min";
+                    break;
+                case GIOCHI_SYSTEM_USB_MODE_INDEX:
+                    valor = "MTP";
+                    break;
+                case GIOCHI_SYSTEM_DEV_MODE_INDEX:
+                    valor = i18n.tr("settings.off");
+                    break;
+                default:
+                    valor = tema_nome; /* Tema */
+                    break;
+                }
+                item(i == 0, chave, valor.c_str());
+            }
         }
     }
     std::printf("]}\n}\n");
@@ -305,6 +330,7 @@ int main(int argc, char **argv)
     std::printf("],\n\"focus_ring\":{\"x\":%d,\"y\":%d,\"w\":%d,\"h\":%d},\n",
                 ring.x, ring.y, ring.w, ring.h);
     emitir_textos(assets, lang, tab, items, settings, settings_level,
-                  settings_index, theme.hints);
+                  settings_index, theme.hints,
+                  theme_used[0] != '\0' ? theme_used : "tema");
     return 0;
 }

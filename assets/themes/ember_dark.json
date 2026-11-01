@@ -21,8 +21,7 @@
     "density": "espacosa",
     "topbar_height": 40,
     "hint_bar_height": 30,
-    "cover_pct": 120,
-    "title_scale_pct": 100
+    "cover_pct": 120
   },
   "features": {
     "hints": "completo"
