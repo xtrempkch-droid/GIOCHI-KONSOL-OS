@@ -16,7 +16,7 @@
       "theme_id": "neon_rose",
       "name": "Neon Rosé",
       "origin": "layout1.md do mantenedor (brand.dark #0B0F19, accent #F43F5E)",
-      "muda": "densidade normal, borda 1px, canto 10px, capa 115%, dicas com teclado",
+      "muda": "densidade normal, borda 1px, canto 10px, dicas com teclado",
       "images": {
         "1280x720": "docs/temas/neon_rose-1280x720.png",
         "640x480": "docs/temas/neon_rose-640x480.png"
@@ -26,7 +26,7 @@
       "theme_id": "ember_dark",
       "name": "Ember Dark",
       "origin": "layout2.md do mantenedor (brand.dark #020408, accent #EF4444)",
-      "muda": "densidade espacosa, borda 1px, canto 14px, capa 120%, dicas com teclado",
+      "muda": "densidade espacosa, borda 1px, canto 14px, dicas com teclado",
       "images": {
         "1280x720": "docs/temas/ember_dark-1280x720.png",
         "640x480": "docs/temas/ember_dark-640x480.png"
@@ -46,7 +46,7 @@
       "theme_id": "mono_gamepad",
       "name": "Mono Gamepad",
       "origin": "layout4.md do mantenedor (navegacao 100% D-Pad/analogico)",
-      "muda": "densidade espacosa, borda 1px, canto 4px, capa 105%",
+      "muda": "densidade espacosa, borda 1px, canto 4px",
       "images": {
         "1280x720": "docs/temas/mono_gamepad-1280x720.png",
         "640x480": "docs/temas/mono_gamepad-640x480.png"
@@ -56,7 +56,7 @@
       "theme_id": "ios_glass",
       "name": "Glass (iOS)",
       "origin": "layout5.md do mantenedor (ios.card rgba(28,28,30,.75), border rgba(255,255,255,.12))",
-      "muda": "densidade normal, borda 1px, canto 12px, capa 105%",
+      "muda": "densidade normal, borda 1px, canto 12px",
       "images": {
         "1280x720": "docs/temas/ios_glass-1280x720.png",
         "640x480": "docs/temas/ios_glass-640x480.png"

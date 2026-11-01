@@ -20,8 +20,7 @@
     "focus_ring": 2,
     "density": "normal",
     "topbar_height": 40,
-    "hint_bar_height": 30,
-    "cover_pct": 100
+    "hint_bar_height": 30
   },
   "features": {
     "hints": "so_gamepad"

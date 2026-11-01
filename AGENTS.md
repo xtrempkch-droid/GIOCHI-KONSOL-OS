@@ -1985,6 +1985,23 @@ e o efeito era nenhum.
 - Regra: token que o desenho não honra é pior que token ausente — ele faz o
   autor do tema acreditar que mudou algo.
 
+### 3.79b `cover_pct` era o terceiro token sem efeito
+
+Depois de remover o `title_scale_pct` (§3.78), fiz a mesma pergunta para o
+resto: **algum token do tema não tem consumidor?** `grep cover_pct` devolveu
+apenas leitura e publicação — nenhum desenho. A aba Música ainda é painel de
+mensagem (`paint_message_tab`), sem arte de álbum.
+
+- Removido do esquema, dos temas, do `giochi_theme`, do `UiThemeMetrics` e do
+  `dump-geometry`. A guarda virou genérica:
+  `test_nenhum_token_de_efeito_inexistente` recusa `title_scale_pct` **e**
+  `cover_pct` de volta.
+- Depois disso, todo token do tema tem consumidor: `corner`→canto,
+  `border`→contorno do tile comum, `focus_ring`→anel, `density`→grade,
+  `topbar_height`/`hint_bar_height`→barras, `hints`→texto da hint bar.
+- **Regra**: ao acrescentar um token ao tema, procure o `grep` que o consome.
+  Se só aparecer no parse e no dump, é promessa sem entrega.
+
 ### 3.79 O valor da linha do menu não tinha limite de largura
 
 `paint_settings` desenhava o valor à direita com `max_w = 0`, e no `Font::draw`

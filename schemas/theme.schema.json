@@ -88,12 +88,6 @@
           "minimum": 20,
           "maximum": 48,
           "description": "Altura da barra de dicas no painel base. Opcional (default 30)."
-        },
-        "cover_pct": {
-          "type": "integer",
-          "minimum": 60,
-          "maximum": 160,
-          "description": "Escala da capa do album na aba Musica (100 = o token base 120x120). 'Capas de Albuns Maiores' das propostas."
         }
       }
     },

@@ -54,9 +54,12 @@ typedef struct {
     int hint_bar_h_px;
     int density;
     int hints;
-    int cover_pct; /* 100 = token base da capa (120x120) */
 
-    /* NAO ha escala de fonte no tema: o atlas tem 12/14/18/21 px e qualquer
+    /* NAO ha escala da capa do album: a aba Musica ainda desenha painel de
+     * mensagem (sem arte). Declarar o token faria o autor do tema acreditar
+     * que a capa cresceu — mesma regra do title_scale_pct, abaixo.
+     *
+     * NAO ha escala de fonte no tema: o atlas tem 12/14/18/21 px e qualquer
      * valor intermediario cai na face mais proxima — um "98%" desenharia
      * exatamente igual a 100%. Botao que nao faz o que promete e' pior que
      * botao ausente; quem quiser outro tamanho, adiciona o tamanho ao atlas

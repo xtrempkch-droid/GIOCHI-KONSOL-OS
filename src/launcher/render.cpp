@@ -1092,7 +1092,7 @@ private:
                a.focus_ring_px == b.focus_ring_px &&
                a.topbar_px == b.topbar_px &&
                a.hint_bar_px == b.hint_bar_px && a.density == b.density &&
-               a.cover_pct == b.cover_pct && a.hints == b.hints;
+               a.hints == b.hints;
     }
 
     void calcular_geometria(SDL_Renderer *sdl, const UiState &ui)

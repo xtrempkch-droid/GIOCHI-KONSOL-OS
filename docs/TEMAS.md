@@ -2,7 +2,7 @@
 
 Seis temas prontos, todos **dados** em [`assets/themes/`](../assets/themes).
 Escolher um não é só trocar cor: o tema diz raio de canto, espessura de borda,
-densidade da grade, escala da capa do álbum e o que a barra de dicas mostra.
+densidade da grade, altura das barras e o que a barra de dicas mostra.
 
 ![Comparação dos seis temas](temas/contato-1280x720.png)
 
@@ -16,11 +16,11 @@ aparelho usa, não captura de tela.*
 | Tema | Origem | Densidade | Grade em 1280×720 | Grade em 640×480 | O que muda |
 |---|---|---|---|---|---|
 | **Netflix Dark** `dark_default` | projeto original (§4.1.8) | normal | 5×3 (15) | 4×3 (12) | É o tema contra o qual as imagens de referência foram medidas |
-| **Neon Rosé** `neon_rose` | mockup 1 | normal | 5×3 (15) | 4×3 (12) | Acento rosé, borda em todo tile, canto 10 px, capa 115 % |
-| **Ember Dark** `ember_dark` | mockup 2 | espaçosa | 4×3 (12) | 3×3 (9) | Preto OLED, vermelho vivo, canto 14 px, capa 120 % |
-| **Mono Minimal** `mono_minimal` | mockup 3 | compacta | 6×4 (24) | 4×4 (16) | Só preto e branco, canto 3 px, fonte 5 % menor |
+| **Neon Rosé** `neon_rose` | mockup 1 | normal | 5×3 (15) | 4×3 (12) | Acento rosé, borda em todo tile, canto 10 px |
+| **Ember Dark** `ember_dark` | mockup 2 | espaçosa | 4×3 (12) | 3×3 (9) | Preto OLED, vermelho vivo, canto 14 px |
+| **Mono Minimal** `mono_minimal` | mockup 3 | compacta | 6×4 (24) | 4×4 (16) | Só preto e branco, canto 3 px |
 | **Mono Gamepad** `mono_gamepad` | mockup 4 | espaçosa | 4×3 (12) | 3×3 (9) | Igual ao Mono, mas a barra de baixo só mostra botão do controle |
-| **Glass (iOS)** `ios_glass` | mockup 5 | normal | 5×3 (15) | 4×3 (12) | Cards cinza translúcido, canto 12 px, topbar 36 e hint bar 34 |
+| **Glass (iOS)** `ios_glass` | mockup 5 | normal | 5×3 (15) | 4×3 (12) | Cards cinza, canto 12 px, topbar 36 e hint bar 34 |
 
 **A densidade muda a grade de verdade** — foi medido, não estimado
 (`tests/test_themes.py::test_densidade_muda_a_grade_de_verdade`). Se ela só
@@ -44,8 +44,8 @@ nele invalida a comparação com a referência aprovada.
 ![Neon Rosé](temas/neon_rose-1280x720.png)
 
 Azul-noite profundo (`#07090E`), cards `#161E2E` e acento rosé `#F43F5E`.
-Canto de 10 px, borda de 1 px em **todo** tile (o look "caixa" do mockup) e a
-capa do álbum 15 % maior na aba Música. É o tema padrão de fábrica da X55.
+Canto de 10 px e borda de 1 px em **todo** tile (o look "caixa" do mockup). É o
+tema padrão de fábrica da X55.
 
 ### Ember Dark — `ember_dark` (mockup 2)
 
@@ -60,8 +60,8 @@ coisa na tela.
 ![Mono Minimal](temas/mono_minimal-1280x720.png)
 
 Preto absoluto e acento branco: nenhuma cor. Grade **compacta**, 6 colunas em
-1280 e 4 em 640 — o máximo de conteúdo por tela. Fonte 5 % menor. É o tema
-padrão do `rk3326-generic`, o SoC mais fraco da lista.
+1280 e 4 em 640 — o máximo de conteúdo por tela. É o tema padrão do
+`rk3326-generic`, o SoC mais fraco da lista.
 
 ### Mono Gamepad — `mono_gamepad` (mockup 4)
 
@@ -108,8 +108,7 @@ Definido em [`schemas/theme.schema.json`](../schemas/theme.schema.json):
     "focus_ring": 2,            // anel de foco, por fora do tile
     "density": "normal",        // compacta | normal | espacosa
     "topbar_height": 40,        // altura da barra superior
-    "hint_bar_height": 30,      // altura da barra de dicas
-    "cover_pct": 115            // escala da capa do álbum (100 = 120x120)
+    "hint_bar_height": 30       // altura da barra de dicas
   },
   "features": { "hints": "completo" }   // so_gamepad | completo
 }
@@ -118,6 +117,12 @@ Definido em [`schemas/theme.schema.json`](../schemas/theme.schema.json):
 Todas as métricas estão em **px do painel base**: a X55 (720p) recebe tudo
 ×1,5, como qualquer outro token. Escrever `10` vale 10 em 640×480 e 15 em
 1280×720.
+
+**Dois tokens foram removidos por não fazerem o que prometiam:** escala de
+fonte (`title_scale_pct`) e escala da capa do álbum (`cover_pct`) — a aba Música
+ainda desenha painel de mensagem, sem arte de álbum. Token declarado e não
+honrado faz o autor do tema acreditar que mudou algo; os dois voltam quando o
+desenho existir.
 
 **Não há escala de fonte no tema, de propósito.** O atlas tem 12/14/18/21 px; um
 `title_scale_pct: 98` cairia na face de 18 e desenharia exatamente igual a 100 —

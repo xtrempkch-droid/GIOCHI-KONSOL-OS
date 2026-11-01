@@ -70,7 +70,6 @@ struct UiGeometry {
     /* Do tema: o render nao recalcula, so' obedece. */
     int border = 0;      /* espessura da borda de TODO tile (0 = so' o foco) */
     int density = 1;     /* 0 compacta, 1 normal, 2 espacosa */
-    int cover_pct = 100; /* escala da capa do album (100 = token base) */
     int hints = 0;       /* modo da barra de dicas (theme features.hints) */
     int topbar_h = 40;   /* altura do token da topbar, no painel base */
     int hint_bar_h = 30; /* idem para a barra de dicas */
@@ -98,7 +97,6 @@ struct UiThemeMetrics {
     int topbar_px = 40;
     int hint_bar_px = 30;
     int density = 1;        /* 0 compacta, 1 normal, 2 espacosa */
-    int cover_pct = 100;    /* escala da capa do album (100 = token base) */
     int hints = 0;          /* modo da barra de dicas (theme features.hints) */
 };
 

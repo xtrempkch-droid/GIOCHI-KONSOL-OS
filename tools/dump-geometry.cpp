@@ -267,13 +267,13 @@ int main(int argc, char **argv)
     std::printf("{\n");
     std::printf("\"screen\":{\"w\":%d,\"h\":%d},\n", g.screen_w, g.screen_h);
     std::printf("\"theme\":{\"id\":\"%s\",\"name\":\"%s\",\"density\":\"%s\","
-                "\"hints\":\"%s\",\"border\":%d,\"cover_pct\":%d,\n"
+                "\"hints\":\"%s\",\"border\":%d,\n"
                 "  \"colors\":{\"background\":\"%s\",\"surface\":\"%s\","
                 "\"surface_elevated\":\"%s\",\"text_primary\":\"%s\","
                 "\"text_secondary\":\"%s\",\"hint_bar_bg\":\"%s\","
                 "\"divider\":\"%s\",\"accent\":\"%s\"}},\n",
                 theme_used, theme.id, giochi_density_name(g.density),
-                giochi_hints_name(g.hints), g.border, g.cover_pct,
+                giochi_hints_name(g.hints), g.border,
                 theme.background, theme.surface, theme.surface_elevated,
                 theme.text_primary, theme.text_secondary, theme.hint_bar_bg,
                 theme.divider, theme.accent);

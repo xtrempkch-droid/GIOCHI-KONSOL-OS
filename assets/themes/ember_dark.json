@@ -20,8 +20,7 @@
     "focus_ring": 3,
     "density": "espacosa",
     "topbar_height": 40,
-    "hint_bar_height": 30,
-    "cover_pct": 120
+    "hint_bar_height": 30
   },
   "features": {
     "hints": "completo"

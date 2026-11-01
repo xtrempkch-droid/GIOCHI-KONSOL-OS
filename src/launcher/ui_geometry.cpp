@@ -222,7 +222,6 @@ UiThemeMetrics ui_theme_metrics_from(const giochi_theme &t)
     m.topbar_px = t.topbar_h_px;
     m.hint_bar_px = t.hint_bar_h_px;
     m.density = t.density;
-    m.cover_pct = t.cover_pct;
     m.hints = t.hints;
     return m;
 }
@@ -241,7 +240,6 @@ void ui_geometry_apply_theme(UiGeometry *g, const UiThemeMetrics &m)
     g->border = sc(m.border_px > 0 ? m.border_px : 0, h);
     g->focus_ring = sc(m.focus_ring_px > 0 ? m.focus_ring_px : 0, h);
     g->density = dens;
-    g->cover_pct = m.cover_pct > 0 ? m.cover_pct : 100;
     g->hints = m.hints;
     g->gap = sc(dt.gap, h);
     g->title_h = sc(dt.title_h, h);

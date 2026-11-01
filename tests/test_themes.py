@@ -74,7 +74,7 @@ class SchemaTest(unittest.TestCase):
         campos = doc["properties"]["metrics"]["properties"]
 
         for token in ("tile_corner_radius", "tile_border", "focus_ring",
-                      "density", "cover_pct"):
+                      "density"):
             self.assertIn(token, campos,
                           f"token '{token}' nao esta no schema do tema")
 
@@ -96,20 +96,25 @@ class SchemaTest(unittest.TestCase):
                 self.assertRegex(tema["colors"][nome], padrao,
                                  f"{item['file']}: cor '{nome}'")
 
-    def test_sem_escala_de_fonte_no_tema(self):
-        """O atlas tem 12/14/18/21 px; escala intermediaria cairia na face mais
-        proxima e o tema mentiria. Se a chave voltar, este teste avisa."""
+    def test_nenhum_token_de_efeito_inexistente(self):
+        """Token que o desenho nao honra faz o autor do tema acreditar que mudou
+        algo. Os dois que existiam e nao faziam nada:
+          title_scale_pct — o atlas tem 12/14/18/21 px e a face mais proxima
+                            devolve o mesmo desenho;
+          cover_pct       — a aba Musica ainda desenha painel de mensagem, sem
+                            arte de album.
+        Se um deles voltar, este teste avisa."""
         for item in catalogo()["themes"]:
-            self.assertNotIn("title_scale_pct",
-                             carregar(item["file"])["metrics"],
-                             f"{item['file']}: escala de fonte nao existe")
+            m = carregar(item["file"])["metrics"]
+            for morto in ("title_scale_pct", "cover_pct"):
+                self.assertNotIn(morto, m,
+                                 f"{item['file']}: '{morto}' nao tem efeito")
 
     def test_metricas_dentro_da_faixa_do_schema(self):
         faixas = {
             "tile_corner_radius": (0, 24),
             "tile_border": (0, 4),
             "focus_ring": (0, 6),
-            "cover_pct": (60, 160),
         }
 
         for item in catalogo()["themes"]:

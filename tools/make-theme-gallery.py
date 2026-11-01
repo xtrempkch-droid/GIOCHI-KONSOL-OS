@@ -59,8 +59,6 @@ def resumo(tema: dict) -> str:
     if m.get("tile_border"):
         partes.append(f"borda {m['tile_border']}px")
     partes.append(f"canto {m['tile_corner_radius']}px")
-    if m.get("cover_pct", 100) != 100:
-        partes.append(f"capa {m['cover_pct']}%")
     if tema.get("features", {}).get("hints") == "completo":
         partes.append("dicas com teclado")
     return ", ".join(partes)
