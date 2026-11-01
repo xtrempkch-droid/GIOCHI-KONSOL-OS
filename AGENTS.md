@@ -1132,9 +1132,12 @@ Duas causas somadas:
    0,5 s — antes do `Mounted root` (~1,2 s). Aqueles pedidos morrem com
    `-ENOENT` e nada os repete.
 
-- Correção: `scripts/init.d/S05modules` roda `mdev -s` (coldplug) no início do
-  `rcS`, e `buildroot/board/giochi/mdev.conf` ganhou a regra
-  `$MODALIAS=.* root:root 660 @modprobe -b $MODALIAS`.
+- Correção: `scripts/init.d/S05modules` faz o coldplug no início do `rcS`, e
+  `buildroot/board/giochi/mdev.conf` ganhou a regra
+  `$MODALIAS=.* root:root 660 @modprobe "$MODALIAS"` (vale para HOTPLUG).
+- **Correção da correção (§3.64):** a primeira versão chamava `mdev -s` e o
+  aparelho registrou `coldplug concluido (0 modulo(s) carregado(s))` com 1268
+  `.ko` na imagem. `mdev -s` só cria nós; ver §3.64.
 - `CONFIG_PHY_ROCKCHIP_INNO_DSIDPHY=y` (era `=m`): o PHY do DSI é pré-requisito
   do primeiro componente de vídeo; não faz sentido depender de carregar módulo
   para acender a tela.
@@ -1522,6 +1525,48 @@ imagem, só a imagem é que tem o DTB velho.
 **Regra que fica:** no `post-image.sh`, todo arquivo derivado é regerado
 sempre. Se um `if [ ! -f ]` aparecer nesse arquivo, é bug — o diretório de
 saída não é limpo entre builds.
+
+
+### 3.64 `mdev -s` NÃO faz coldplug de módulo (a correção do §3.50 estava errada)
+
+Corrigi o §3.50 achando que `mdev -s` carregaria os módulos no boot. **Não
+carrega**, e o aparelho mostrou na primeira oportunidade:
+
+```
+S05modules: coldplug concluido (0 modulo(s) carregado(s))
+```
+
+com **1268** `.ko` em `/lib/modules/6.12.0/`. Lido no fonte do BusyBox
+1.36.1 (`util-linux/mdev.c`): o caminho de `-s` chama
+`make_device(/*DEVNAME:*/ NULL, path, OP_add)` — sem ambiente nenhum. A regra
+`$MODALIAS=.*` do `mdev.conf` só casa em evento de **hotplug**, porque é o
+kernel quem põe `MODALIAS` no ambiente ao gerar o uevent. O `-s` é só criação
+de nós de `/dev`.
+
+Consequência: Wi-Fi (`rtw88`), Bluetooth (`hci_uart`) e tudo mais que é `=m`
+nunca carrega. A tela acendeu mesmo assim porque eu tinha posto o PHY do DSI
+como `=y` — por sorte, não por desenho.
+
+- `S05modules` passou a varrer `/sys/bus/*/devices/*/modalias` e chamar
+  `modprobe -q <alias>` para cada dispositivo **sem driver ligado**
+  (`[ -e "$dev/driver" ] && continue` — é o que torna a varredura barata, e a
+  maioria dos dispositivos já bound por driver embutido). É o que o
+  `udevadm trigger` faz.
+- O log agora diz `coldplug: N de M alias(es); K modulo(s) ativo(s); T .ko na
+  imagem` — os três números juntos distinguem "não havia o que carregar" de
+  "modules.dep quebrado" de "imagem sem módulo".
+- Guarda: `test_coldplug_de_modulos_no_boot` exige o glob
+  `/sys/bus/*/devices/*/modalias` **no código** (não no comentário) e a chamada
+  `modprobe -q "$alias_name"`.
+
+**Armadilha de teste que quase deixou passar:** a guarda casava com o texto
+inteiro do script, e o **cabeçalho explicativo cita o próprio padrão** — então
+remover o laço não fazia o teste falhar. As guardas de script passaram a usar
+`sh_code()` (remove linhas de comentário) antes de casar. Testado ao contrário:
+com o laço removido agora reprova.
+
+**Regra que fica:** `mdev -s` não substitui udev. Sem udev, coldplug de módulo
+é varrer `modalias` na mão.
 
 
 ## 4. O que NÃO foi verificado
@@ -2659,7 +2704,7 @@ continuou apagada, e o log mostrou um bloqueio **diferente e anterior**:
 1. **Não havia coldplug (§3.50).** Sem udev, quem carrega módulo é
    `request_module()` do kernel (que só funciona depois do rootfs) ou o `mdev`
    com regra `$MODALIAS` — e o `mdev.conf` do projeto não tinha essa regra.
-   Novo `scripts/init.d/S05modules` faz `mdev -s`; a regra entrou no
+   Novo `scripts/init.d/S05modules` faz o coldplug (varredura de modalias, §3.64); a regra entrou no
    `mdev.conf`. `CONFIG_PHY_ROCKCHIP_INNO_DSIDPHY` passou a `=y` (o PHY do DSI
    é pré-requisito do primeiro componente de vídeo).
 2. **Pacote local não re-sincronizava (§3.51).** Era por isso que o aparelho
@@ -3229,3 +3274,43 @@ Cartão gravado com `dd conv=fsync` e conferido byte a byte (`62554aa9…`).
 **Aberto:** o boot com o TRNG ligado ainda não aconteceu. Se o CRNG ainda
 demorar, o próximo suspeito é `CONFIG_RANDOM_TRUST_BOOTLOADER`/`CPU_RNG`; se
 acelerar, o EGL deve passar e o próximo dado é a sonda `giochi-gpu-probe`.
+
+### 2026-10-31 (25) — Copilot (minha correção do coldplug estava errada)
+
+Revendo o log do aparelho com atenção, o `S05modules` dizia
+`coldplug concluido (0 modulo(s) carregado(s))` — com **1268** `.ko` na
+imagem. Eu tinha lido isso como "não havia nada a carregar". Não é: **`mdev -s`
+nunca carrega módulo**.
+
+Lido no fonte do BusyBox 1.36.1 (`util-linux/mdev.c`): o caminho de `-s` chama
+`make_device(/*DEVNAME:*/ NULL, path, OP_add)`, sem ambiente. A regra
+`$MODALIAS=.*` só casa em evento de **hotplug**, porque é o kernel quem põe
+`MODALIAS` no ambiente. Ou seja: a correção do §3.50 (que eu registrei como
+"pronto") não funcionava — a tela acendeu porque eu havia posto o PHY do DSI
+como `=y`, não porque o coldplug funcionou.
+
+**Wi-Fi, Bluetooth e qualquer driver `=m` nunca carregavam.** Corrigido de
+verdade agora: `S05modules` varre `/sys/bus/*/devices/*/modalias` e chama
+`modprobe -q` para cada dispositivo sem driver ligado (o que o
+`udevadm trigger` faz), e o log passa a imprimir
+`coldplug: N de M alias(es); K modulo(s) ativo(s); T .ko na imagem` — os três
+números juntos distinguem as três causas possíveis.
+
+**Armadilha de teste que quase deixou passar:** a guarda casava com o texto
+inteiro do script e o cabeçalho explicativo **cita o próprio padrão**, então
+remover o laço não fazia o teste falhar. As guardas de script agora usam
+`sh_code()` (remove comentários) antes de casar; testado ao contrário, reprova.
+
+Também nesta entrada: o patch do TRNG foi verificado **dentro do `.img`**
+(`dtc -I dtb -O dts` nas três cópias → `status = "okay"`), depois de descobrir
+que o `if [ ! -f ]` do `post-image.sh` mantinha o DTB velho (§3.63).
+
+**Verificação:** `make test` **27/27**, `make lint` rc=0, guardas testadas ao
+contrário, cartão gravado com `dd conv=fsync` e conferido byte a byte
+(`sha256` `73e53c08…`).
+
+**Aberto:** o boot com o TRNG + coldplug real ainda não aconteceu. Se a sonda
+`giochi-gpu-probe` passar nos cinco passos, o próximo item é o desenho dos
+widgets (`TODO(v1.2)` em `render.cpp`). O áudio (`No soundcards found`) é
+tudo `=y` e o `sound` está em `deferred probe` — problema de DTS/ordem, não de
+módulo, e fica para depois da tela.

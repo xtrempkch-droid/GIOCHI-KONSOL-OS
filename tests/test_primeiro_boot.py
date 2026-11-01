@@ -35,6 +35,22 @@ def read(path):
         return fp.read()
 
 
+def sh_code(text):
+    """Remove comentários de um script sh.
+
+    Necessário porque o cabeçalho destes scripts CITA o código que ele
+    explica: uma guarda que casa com o texto inteiro passa mesmo com o laço
+    removido (testado ao contrário).
+    """
+    out = []
+    for linha in text.splitlines():
+        despojada = linha.lstrip()
+        if despojada.startswith("#"):
+            continue
+        out.append(linha)
+    return "\n".join(out)
+
+
 class PrimeiroBootTest(unittest.TestCase):
     def test_rcs_nao_chama_servico_duas_vezes(self):
         """'$script' start || '$script' rodava o serviço sem argumento.
@@ -126,10 +142,24 @@ class PrimeiroBootTest(unittest.TestCase):
         nenhum `rtw88`. O kernel só chama `request_module()` depois que o rootfs
         existe, e os dispositivos de plataforma já nasceram antes disso.
         """
-        script = read(S05MODULES)
-        mdev = read(MDEV_CONF)
+        script = sh_code(read(S05MODULES))
+        mdev = sh_code(read(MDEV_CONF))
 
-        self.assertIn("mdev -s", script, "S05modules não faz o coldplug")
+        # `mdev -s` NAO faz coldplug de modulo: o -s do BusyBox só cria nós,
+        # com make_device(NULL, path, OP_add) — sem MODALIAS no ambiente. A
+        # regra $MODALIAS do mdev.conf só casa em evento de HOTPLUG. Medido no
+        # aparelho: "coldplug concluido (0 modulo(s) carregado(s))" com 1268
+        # .ko na imagem.
+        self.assertRegex(script,
+                         r"/sys/bus/\*/devices/\*/modalias",
+                         "S05modules tem de varrer os modalias (como o "
+                         "udevadm trigger), nao confiar no 'mdev -s'")
+        # A varredura tem de CHAMAR modprobe, nao só listar.
+        self.assertRegex(script, r"modprobe\s+-q\s+\"?\$alias_name")
+        self.assertIn("modprobe", script)
+        # Pular quem já tem driver é o que torna a varredura barata.
+        self.assertIn('"$dev/driver"', script,
+                      "sem pular dispositivo já ligado a varredura fica cara")
         self.assertIn("S05modules", read(POST_BUILD),
                       "post-build.sh não instala o S05modules")
         # A regra do modalias é o que transforma o evento em modprobe.

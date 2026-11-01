@@ -12,6 +12,28 @@ decisões tomadas (`# DECISÃO`) que afetam a sessão seguinte.
 Legenda: **feito** (compila e/ou roda), **esqueleto** (interface + stub com
 TODO), **doc** (apenas especificação/script).
 
+## 2026-10-31 — correção da correção: `mdev -s` não carrega módulo
+
+O log do aparelho dizia `S05modules: coldplug concluido (0 modulo(s)
+carregado(s))` com **1268** `.ko` na imagem. Eu tinha lido como "não havia o
+que carregar"; no fonte do BusyBox 1.36.1 (`util-linux/mdev.c`) o `-s` chama
+`make_device(NULL, path, OP_add)` — **sem ambiente**, e a regra `$MODALIAS` do
+`mdev.conf` só casa em evento de hotplug. A tela acendeu porque o PHY do DSI
+virou `=y`, não porque o coldplug funcionou.
+
+Consequência: Wi-Fi, Bluetooth e todo driver `=m` nunca carregavam.
+
+`S05modules` agora varre `/sys/bus/*/devices/*/modalias` e chama `modprobe -q`
+para cada dispositivo sem driver ligado (o que o `udevadm trigger` faz), e o
+log imprime `coldplug: N de M alias(es); K modulo(s) ativo(s); T .ko na
+imagem`.
+
+**Armadilha de teste:** a guarda casava com o texto inteiro e o cabeçalho
+explicativo cita o padrão — remover o laço passava. Agora `sh_code()` remove
+comentários antes de casar; testado ao contrário, reprova.
+
+Cartão regravado e verificado byte a byte (`73e53c08…`). **Não bootado.**
+
 ## 2026-10-31 — o bloqueio de 8,8 s era ENTROPIA, não vídeo
 
 O log do aparelho (imagem com SDL2/KMSDRM) mostrou:

@@ -3,69 +3,104 @@
 #
 # POR QUE ESTE SCRIPT EXISTE (medido, nao suposto)
 # ------------------------------------------------
-# Neste sistema NAO ha udev nem systemd-udevd: quem carrega modulo e o
-# proprio kernel (request_module -> /sbin/modprobe) ou o mdev com a regra
-# $MODALIAS de /etc/mdev.conf.
-#
-# O request_module do kernel so funciona DEPOIS que o rootfs existe — e os
-# dispositivos de plataforma (DSI, PHY, audio, SDIO do Wi-Fi) ja foram
-# criados muito antes disso (~0,5 s, o rootfs monta em ~1,2 s). Aqueles
-# pedidos falham com -ENOENT, o dispositivo fica sem driver e o
-# "deferred probe" NAO re-tenta: e preciso um coldplug do espaco de
-# usuario.
-#
-# Sem este script, o boot #3 da X55 mostrou:
+# Neste sistema NAO ha udev. Cada driver que nao e' embutido (=y) precisa de
+# alguem chamando modprobe. Sem isso, um boot da X55 mostrou
+# `/lib/modules/6.12.0/` com 1268 .ko e **ZERO** carregado:
 #
 #   dw-mipi-dsi-rockchip fe060000.dsi: failed to get mipi dphy: -517
-#   platform fe060000.dsi: deferred probe pending: (reason unknown)
-#   ALSA: No soundcards found.
-#   (nenhum rtw88, nenhum hci_uart, nenhum phy_rockchip)
+#   ALSA device list: No soundcards found.
+#   (nenhum rtw88, nenhum hci_uart)
 #
-# ...ou seja: `/lib/modules/6.12.0/` cheio de .ko e NADA carregado. A tela
-# fica apagada porque o PHY do DSI nunca aparece (AGENTS.md §3.50).
+# O kernel pede modulo sozinho (request_module -> /sbin/modprobe), mas so
+# DEPOIS que o rootfs existe — e os dispositivos de plataforma nascem por
+# volta de 0,5 s, antes do rootfs (~1,2 s). Aqueles pedidos morrem com
+# -ENOENT e nada os repete.
 #
-# O QUE FAZ
-#   mdev -s  -> percorre /sys e dispara as regras de /etc/mdev.conf. A regra
-#               "$MODALIAS=.* ... @modprobe -b $MODALIAS" faz o modprobe de
-#               cada driver que o hardware pedir. E o equivalente ao
-#               "mdev -s" do Buildroot que este projeto substituiu.
+# A PRIMEIRA TENTATIVA ESTAVA ERRADA (medido, nao suposto)
+# -------------------------------------------------------
+# A versao anterior chamava `mdev -s` esperando que ele fizesse o coldplug.
+# Nao faz: o `-s` do BusyBox mdev so percorre /sys criando NOS de dispositivo,
+# sem ambiente nenhum (`make_device(NULL, path, OP_add)` em
+# util-linux/mdev.c). A regra `$MODALIAS=.*` de /etc/mdev.conf so casa em
+# evento de HOTPLUG, que traz MODALIAS no ambiente. Resultado no aparelho:
 #
-# NAO escreve em /etc (raiz SquashFS, somente leitura).
+#   S05modules: coldplug concluido (0 modulo(s) carregado(s))
+#
+# Agora o script varre os arquivos `modalias` na mao, que e' o que o
+# `udevadm trigger` faz: para cada dispositivo SEM driver ligado, pedir o
+# modulo pelo alias.
+#
+# NAO escreve em /etc (raiz SquashFS, somente leitura). Nunca aborta o boot.
 set -u
 
 TAG=S05modules
+CARREGADOS=0
+TENTADOS=0
+FALHAS=0
 
 log() {
     echo "$TAG: $*" >&2
     logger -t "$TAG" -- "$*" 2>/dev/null || true
 }
 
-if command -v modprobe >/dev/null 2>&1; then
-    :
-else
-    log "aviso: modprobe ausente; nenhum modulo sera carregado e varios drivers falham"
+if ! command -v modprobe >/dev/null 2>&1; then
+    log "aviso: modprobe ausente; nenhum modulo sera carregado"
+    exit 0
 fi
 
-if [ ! -f /etc/mdev.conf ]; then
-    log "aviso: /etc/mdev.conf ausente; o coldplug nao casa $MODALIAS"
+# /lib/modules/<release> tem de existir, senao modprobe nao acha nada e o
+# erro ("module not found") nao diz que o problema e' a versao.
+rel=$(uname -r 2>/dev/null || echo "")
+if [ -n "$rel" ] && [ ! -d "/lib/modules/$rel" ]; then
+    log "aviso: /lib/modules/$rel ausente (kernel nao casa com os modulos)"
+    exit 0
 fi
 
-if command -v mdev >/dev/null 2>&1; then
-    # -s: varre /sys uma vez (coldplug). O mdev do BusyBox respeita o
-    # mdev.conf e sai logo; nao fica residente (quem cuida de hotplug e o
-    # giochi-dongle-hotplug, via regra de usb no mesmo arquivo).
-    mdev -s 2>/dev/null || log "aviso: 'mdev -s' falhou"
-else
-    log "aviso: mdev ausente no busybox; coldplug impossivel"
-fi
+# Quantos .ko existem: se for 0, o problema e' a imagem, nao o coldplug.
+total_ko=$(find /lib/modules/"$rel" -name '*.ko' 2>/dev/null | wc -l)
+[ "$total_ko" -gt 0 ] || log "aviso: nenhum .ko em /lib/modules/$rel"
+
+# ---------------------------------------------------------------- coldplug
+# /sys/bus/*/devices/*/modalias cobre os dispositivos que o kernel conhece.
+# Pular quem JA tem driver ligado e' o que torna isto barato: depois que os
+# drivers embutidos bindam, sobram poucos candidatos.
+for m in /sys/bus/*/devices/*/modalias; do
+    [ -s "$m" ] || continue
+
+    dev=${m%/modalias}
+    # Driver ja ligado: nao ha o que carregar.
+    [ -e "$dev/driver" ] && continue
+
+    alias_name=$(sed -n '1p' "$m" 2>/dev/null) || continue
+    [ -n "$alias_name" ] || continue
+
+    TENTADOS=$((TENTADOS + 1))
+    # -q: sem mensagem para modalias que nenhum modulo cobre (a maioria).
+    if modprobe -q "$alias_name" 2>/dev/null; then
+        CARREGADOS=$((CARREGADOS + 1))
+    else
+        FALHAS=$((FALHAS + 1))
+    fi
+done
 
 # Modulos que nenhum modalias cobre (nao sao driver de dispositivo) e sem os
-# quais uma funcao do sistema fica muda. Lista curta de proposito: cada linha
-# aqui e um custo de boot medido, nao um "vai que precisa".
+# quais uma funcao do sistema fica muda. Lista curta de proposito.
 for mod in zram; do
-    command -v modprobe >/dev/null 2>&1 || break
     modprobe "$mod" 2>/dev/null || true
 done
 
-log "coldplug concluido ($(wc -l </proc/modules 2>/dev/null || echo 0) modulo(s) carregado(s))"
+# mdev -s continua util: cria os NOS de /dev para quem nao tem regra propria em
+# /etc/mdev.conf. Nao carrega modulo (ver o cabecalho).
+if command -v mdev >/dev/null 2>&1; then
+    mdev -s 2>/dev/null || true
+fi
+
+carregados_agora=$(wc -l </proc/modules 2>/dev/null || echo 0)
+if [ "$CARREGADOS" -eq 0 ] && [ "$TENTADOS" -gt 0 ] && [ "$total_ko" -gt 0 ]; then
+    # Sintoma que aparece se o modules.dep estiver quebrado ou o kernel nao
+    # casar com /lib/modules: o build passa e o aparelho fica sem driver.
+    log "aviso: $TENTADOS alias(es) tentado(s) e nenhum modulo carregado (ver modules.dep)"
+fi
+
+log "coldplug: $CARREGADOS de $TENTADOS alias(es); $carregados_agora modulo(s) ativo(s); $total_ko .ko na imagem"
 exit 0
