@@ -84,6 +84,46 @@ class FlashCardTest(unittest.TestCase):
         self.assertIn("giochi-dev-mode.sh", corpo)
         self.assertIn("--sem-ssh", corpo)
 
+    def test_chave_resolvida_antes_da_elevacao(self):
+        """Depois do `pkexec` o HOME e' /root e a chave do usuario some.
+
+        Medido: a primeira gravacao real passou pelo `dd`, a verificacao deu
+        OK e o Modo Desenvolvedor falhou com "chave publica nao encontrada",
+        deixando o cartao gravado e SEM SSH. A chave tem de ser descoberta
+        como usuario e viajar por argumento ate o giochi-dev-mode.sh.
+        """
+        corpo = sh_code(read(FLASH))
+
+        # `--key` tem de existir e ser aceito no parsing (antes da elevacao).
+        self.assertIn("--key)", corpo)
+        indice_key = corpo.index("--key)")
+        indice_elevacao = corpo.index("GIOCHI_FLASH_ELEVADO")
+        self.assertLess(
+            indice_key, indice_elevacao,
+            "o --key tem de ser lido ANTES da re-execucao com privilegio")
+
+        # A chamada do giochi-dev-mode.sh tem de passar a chave por argumento.
+        self.assertRegex(
+            corpo, r'giochi-dev-mode\.sh"\s+--key',
+            "a chave nao esta' sendo passada ao giochi-dev-mode.sh")
+
+        # E tem de ser REPASSADA na re-execucao: sem isso o processo elevado
+        # recalcula a chave com HOME=/root e volta a nao achar nada.
+        self.assertRegex(
+            corpo, r'set -- --key "\$CHAVE_PUB"',
+            "a chave nao sobrevive a elevacao: o processo com privilegio "
+            "recalcula com HOME=/root e falha")
+
+    def test_chave_do_usuario_e_encontrada_antes_do_pkexec(self):
+        """Cobre SUDO_USER/PKEXEC_UID: os dois trocam o HOME."""
+        corpo = sh_code(read(FLASH))
+        for marca in ("SUDO_USER", "PKEXEC_UID"):
+            with self.subTest(marca=marca):
+                self.assertIn(
+                    marca, corpo,
+                    "%s nao e' considerada: elevado, o HOME vira /root e a "
+                    "chave do usuario nao e' achada" % marca)
+
     def test_elevacao_testa_antes_de_exec(self):
         """`exec cmd || outro` nunca executa o `outro` (AGENTS.md §3.82)."""
         corpo = sh_code(read(FLASH))

@@ -27,9 +27,11 @@
 # Opcoes:
 #   --device ID      aparelho da imagem (default: x55)
 #   --imagem CAMINHO imagem .img ou .img.xz (default: dist/<id>/giochi-<id>-sdcard.img)
+#   --key CAMINHO.pub  chave que autoriza o SSH via USB (default: ~/.ssh/id_*.pub)
 #   --sem-ssh        nao reabre o Modo Desenvolvedor depois de gravar
 #   --sim            mostra o que faria, sem escrever (para conferir o alvo)
 #   --checar         nao grava: so' verifica o cartao contra a imagem
+#   --listar         mostra os cartoes/leitores USB conectados
 #
 # O alvo e' o DISPOSITIVO INTEIRO (/dev/sdd), nunca uma particao (/dev/sdd1).
 # O script recusa particao, disco com particao montada e o disco que contem /.
@@ -44,6 +46,7 @@ ALVO=
 SEM_SSH=0
 SIMULAR=0
 SO_CHECAR=0
+CHAVE_PUB=${GIOCHI_SSH_PUBKEY:-}
 
 log()  { printf '%s: %s\n' "$PROG" "$*"; }
 erro() { printf '%s: ERRO: %s\n' "$PROG" "$*" >&2; exit 1; }
@@ -52,6 +55,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --device)   DEVICE=${2:?--device precisa de valor}; shift 2 ;;
         --imagem)   IMAGEM=${2:?--imagem precisa de valor}; shift 2 ;;
+        --key)      CHAVE_PUB=${2:?--key precisa de valor}; shift 2 ;;
         --sem-ssh)  SEM_SSH=1; shift ;;
         --sim)      SIMULAR=1; shift ;;
         --checar)   SO_CHECAR=1; shift ;;
@@ -61,6 +65,32 @@ while [ $# -gt 0 ]; do
         *)          ALVO=$1; shift ;;
     esac
 done
+
+# A chave publica tem de ser resolvida como o USUARIO, antes de qualquer
+# elevacao — e por isso DEPOIS do parsing (`--key` tem de vencer a busca).
+# Depois do `pkexec` o HOME e' /root e a chave do mantenedor deixa de existir:
+# medido, a gravacao inteira passou, a verificacao deu OK e o Modo
+# Desenvolvedor falhou com "chave publica nao encontrada", deixando o cartao
+# sem SSH. Resolvida aqui, o caminho vira ABSOLUTO e viaja por argumento ate o
+# giochi-dev-mode.sh (que tambem precisa disso, §3.82).
+if [ -z "$CHAVE_PUB" ]; then
+    # `sudo` define SUDO_USER e `pkexec` define PKEXEC_UID; os dois trocam o
+    # HOME. Procurar no home de quem chamou cobre os dois casos, e $HOME
+    # continua valendo para quem roda como usuario comum.
+    for base in "$HOME" \
+                "${SUDO_USER:+/home/$SUDO_USER}" \
+                "$(getent passwd "${PKEXEC_UID:-0}" 2>/dev/null | cut -d: -f6)"; do
+        [ -n "$base" ] && [ -d "$base/.ssh" ] || continue
+        for nome in id_ed25519.pub id_rsa.pub id_ecdsa.pub; do
+            [ -f "$base/.ssh/$nome" ] && { CHAVE_PUB="$base/.ssh/$nome"; break 2; }
+        done
+    done
+fi
+if [ -n "$CHAVE_PUB" ] && [ -f "$CHAVE_PUB" ]; then
+    CHAVE_PUB=$(CDPATH= cd -- "$(dirname -- "$CHAVE_PUB")" && pwd)/$(basename -- "$CHAVE_PUB")
+else
+    CHAVE_PUB=
+fi
 
 # --- listar -------------------------------------------------------------
 if [ "${listar:-0}" = "1" ]; then
@@ -179,6 +209,9 @@ if [ "$(id -u)" != "0" ] && [ "${GIOCHI_FLASH_ELEVADO:-}" != "1" ]; then
     set -- --device "$DEVICE" --imagem "$IMAGEM" "$ALVO"
     [ "$SEM_SSH" = "1" ] && set -- --sem-ssh "$@"
     [ "$SO_CHECAR" = "1" ] && set -- --checar "$@"
+    # A chave resolvida vai por ARGUMENTO: `pkexec` limpa o ambiente, e um
+    # `HOME=/home/charles` no `env` nao sobrevive a ele (§3.82).
+    [ -n "$CHAVE_PUB" ] && set -- --key "$CHAVE_PUB" "$@"
     if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
         exec sudo -n env GIOCHI_FLASH_ELEVADO=1 "$SELF" "$@"
     fi
@@ -256,8 +289,16 @@ if ! mount "$part_user" "$mnt" 2>/dev/null; then
     exit 0
 fi
 log "particao /user montada em $mnt; preparando o Modo Desenvolvedor ..."
-sh "$ROOT/tools/giochi-dev-mode.sh" "$mnt" || \
+# A chave vai por ARGUMENTO tambem aqui: chegando por `pkexec`, este processo
+# ja' esta' com HOME=/root, e o giochi-dev-mode.sh procuraria a chave em
+# /root/.ssh (foi assim que a primeira gravacao saiu sem SSH).
+if [ -z "$CHAVE_PUB" ]; then
+    log "AVISO: nenhuma chave publica encontrada (~/.ssh/id_*.pub)."
+    log "       O cartao boota, mas sem SSH. Depois rode:"
+    log "       tools/giochi-dev-mode.sh --key CAMINHO.pub"
+elif ! sh "$ROOT/tools/giochi-dev-mode.sh" --key "$CHAVE_PUB" "$mnt"; then
     log "AVISO: giochi-dev-mode.sh falhou; o cartao boota, mas sem SSH."
+fi
 
 umount "$mnt"
 sync
