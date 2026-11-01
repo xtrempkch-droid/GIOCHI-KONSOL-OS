@@ -133,6 +133,17 @@ class FormatoDoPatch(unittest.TestCase):
         self.assertTrue(nome.startswith("0002-"),
                         "o patch do TRNG tem de ordenar depois do 0001")
 
+    def test_build_rearma_o_kernel_quando_os_patches_mudam(self):
+        """Mudar o conjunto de patches NAO invalida o .stamp_patched.
+
+        Medido: um patch novo no diretório não era aplicado, o build ficava
+        verde e o DTB saía como antes. Mesma classe do §3.53.
+        """
+        bi = read(os.path.join(ROOT, "tools", "build-image.sh"))
+        self.assertIn(".stamp_patched", bi,
+                      "build-image.sh nao re-arma o kernel")
+        self.assertRegex(bi, r"patches.*\.sig|patch_state",
+                         "nao guarda assinatura dos patches aplicados")
 
 class DefconfigApontaParaOPatch(unittest.TestCase):
     def linha_patch(self, caminho):

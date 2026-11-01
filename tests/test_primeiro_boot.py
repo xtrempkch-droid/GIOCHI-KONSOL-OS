@@ -232,6 +232,30 @@ class PrimeiroBootTest(unittest.TestCase):
         self.assertIn("GIOCHI_KEEP_FBCON", body,
                       "sem GIOCHI_KEEP_FBCON fica impossivel depurar na tela")
 
+    def test_amplificador_de_som_e_embutido(self):
+        """`spk_amp` como módulo deixa o card `sound` em deferred probe eterno.
+
+        Medido no boot da X55:
+        `platform sound: deferred probe pending: (reason unknown)` e
+        `ALSA device list: No soundcards found.`
+
+        O card declara `simple-audio-card,aux-devs = <&spk_amp>`; com o driver
+        do amplificador em `=m` e nenhum módulo carregado, o aux-dev nunca
+        existe e o card espera para sempre. O `(reason unknown)` é o sintoma: o
+        card não devolveu -EPROBE_DEFER com motivo, ficou esperando um nó que
+        ninguém nunca atendeu.
+        """
+        frag = read(LINUX_POWKIDDY)
+
+        self.assertIn("CONFIG_SND_SOC_SIMPLE_AMPLIFIER=y", frag,
+                      "o amplificador de som voltou a ser módulo (=m)")
+        # A cadeia toda tem de ser embutida: um elo em =m segura o card.
+        for simbolo in ("CONFIG_SND_SOC_ROCKCHIP=y",
+                        "CONFIG_SND_SOC_RK817=y",
+                        "CONFIG_SND_SIMPLE_CARD=y"):
+            self.assertIn(simbolo, frag,
+                          "%s tem de ser embutido" % simbolo)
+
     def test_var_e_gravavel(self):
         """/var na raiz SquashFS e' somente leitura; nada la pode ser criado.
 

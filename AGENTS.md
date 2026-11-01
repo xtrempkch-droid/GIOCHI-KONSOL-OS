@@ -1569,6 +1569,78 @@ com o laço removido agora reprova.
 é varrer `modalias` na mão.
 
 
+### 3.65 U-Boot trava lendo o `Image` de 47 MB: é o cartão, não a imagem
+
+Medido com o SDXC de 116 GB (o mesmo que já tinha dado `EIO`):
+
+```
+U-Boot> 6245 bytes read in 5 ms (1.2 MiB/s)
+## Executing script at 00c00000
+GIOCHI: boot.scr em execucao (mmc=1 slot=2 root=PARTUUID=47494f43-02)
+59416 bytes read in 10 ms (5.7 MiB/s)
+GIOCHI: dtb dtbs/rockchip/rk3566-powkiddy-x55.dtb
+        <log PARA AQUI para sempre>
+```
+
+O `boot.cmd` imprime `GIOCHI: Image carregada` **depois** do `load`; a linha
+não apareceu porque o `load` não terminou. No kernel, o mesmo cartão dá:
+
+```
+mmc1: tuning execution failed: -5
+mmc1: error -5 whilst initialising SD card
+```
+
+`-5` é `EIO`. O cartão não sustenta **SDR104** (150 MHz, 1,8 V) — o UHS que o
+`&sdmmc0` do DTS pede. O cartão de 29,7 GB faz o mesmo boot em segundos.
+
+- **Ação imediata**: usar o cartão que funciona (`SDHC 29.7 GiB`, que o kernel
+  enumera como `SDR104 SDHC` sem erro). O de 116 GB fica para bancada, não
+  para boot.
+- Se for preciso bootar com cartão marginal:
+  `GIOCHI_DTS_PATH=buildroot/board/giochi/dts/rk3566-powkiddy-x55-sd-lento.dts
+  tools/build-image.sh x55` — aquele DTS tira o `sd-uhs-sdr104` e limita o
+  `&sdmmc0` a 50 MHz. Custo: ~1,9 s contra ~0,6 s de leitura do `Image`. Ver
+  `buildroot/board/giochi/dts/README.md`.
+
+**Tentativa que NÃO deve ser repetida:** entregar isso como patch de DTS em
+`BR2_LINUX_KERNEL_PATCH`. Custa quatro ciclos de build de ~20 min cada e falha
+de três formas diferentes, em sequência:
+
+1. a config não re-arma o pacote `linux` → o patch não é aplicado (build
+   verde, DTB antigo);
+2. apagar os stamps não basta: o `apply-patches.sh` guarda o que aplicou em
+   `.applied_patches_list` (dentro de cada árvore, **não** em `.patches/`) →
+   `duplicate filename`;
+3. apagar o ledger não basta: a árvore já tem os hunks → `Reversed (or
+   previously applied) patch detected`; e o `linux-headers` usa os **mesmos**
+   patches, então re-extrair só o `linux` deixa o `linux-headers` quebrado.
+
+**Regra que fica:** variação de DTS para *uma* imagem é DTS completo por
+`GIOCHI_DTS_PATH`, não patch. Patch é para correção que vale para todos os
+aparelhos.
+
+### 3.66 Áudio sem placa: o amplificador era módulo e segurava o card
+
+`ALSA device list: No soundcards found.` com
+`platform sound: deferred probe pending: (reason unknown)`.
+
+O card `sound` do DTS da X55 declara
+`simple-audio-card,aux-devs = <&spk_amp>`, e o `spk_amp` é
+`simple-audio-amplifier`. Todo o resto da cadeia (RK817, I2S-TDM,
+simple-card) era `=y`, mas o amplificador era `=m` — e com nenhum módulo
+carregado (§3.64) o aux-dev nunca existia e o card esperava para sempre. O
+`(reason unknown)` é o sintoma: o card não devolveu `-EPROBE_DEFER` com
+motivo, ficou preso num nó que ninguém atendeu.
+
+- `CONFIG_SND_SOC_SIMPLE_AMPLIFIER=y` no `linux-powkiddy.fragment`.
+- Guarda: `test_amplificador_de_som_e_embutido` (suíte `primeiro-boot`), que
+  cobra a cadeia toda embutida — um elo em `=m` segura o card.
+
+**Regra que fica:** quando um `simple-audio-card` (ou qualquer consumidor de
+phandle) fica em `deferred probe pending` sem motivo, verifique se o nó
+referenciado tem driver **embutido**. `=m` sem coldplug é o mesmo que ausente.
+
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):
@@ -3314,3 +3386,94 @@ contrário, cartão gravado com `dd conv=fsync` e conferido byte a byte
 widgets (`TODO(v1.2)` em `render.cpp`). O áudio (`No soundcards found`) é
 tudo `=y` e o `sound` está em `deferred probe` — problema de DTS/ordem, não de
 módulo, e fica para depois da tela.
+
+### 2026-10-31 (26) — Copilot (KMSDRM descartado em silêncio: a tela acende, o Launcher não)
+
+Sexto boot em hardware (X55). A tela **acendeu** — o patch do DSI (§3.48) fechou o
+`-22` e o `rockchip_drm` bindou. O que sobrou foi o passo seguinte:
+
+```
+I: launcher v1.2 pronto: 5 abas, default 'home', render=null
+I: render: SDL2 indisponivel; usando backend headless
+```
+
+**Causa: `BR2_PACKAGE_SDL2_KMSDRM=y` estava no defconfig e o Kconfig o
+descartou em silêncio.** O símbolo depende de `SDL2_OPENGL || SDL2_OPENGLES`, e
+nenhum dos dois estava ligado. É a **mesma classe** da §3.2 (símbolo inexistente)
+e da §3.14 (valor inválido) — mas nenhuma das duas guardas pega este caso:
+o símbolo existe, o valor é válido, e ele é **derrubado pela dependência**.
+
+Medido no binário que ia para a imagem:
+
+| | antes | depois |
+|---|---|---|
+| `strings libSDL2*.so \| grep -c kmsdrm` | **0** | 6 |
+| `SDL_GetNumVideoDrivers()` | — | contém `kmsdrm` |
+
+- Correção: `SDL2_OPENGLES=y` nos dois templates **e** o `BR2_PACKAGE_LIBGLES`
+  que ele exige. `BR2_PACKAGE_KMOD_TOOLS` tinha o mesmo problema por falta de
+  `BUSYBOX_SHOW_OTHERS=y`.
+- Guarda nova: `tools/check-config-applied.py` — compara o defconfig **pedido**
+  contra o `.config` **aplicado** pelo Buildroot e falha o build citando o
+  símbolo derrubado. Roda dentro do `build-image.sh`, antes do `make`.
+  É a única forma de pegar isto: o kconfig termina com rc=0.
+- `tools/config-delta.py`: lista os pacotes afetados por uma mudança de
+  `.config`, para o `build-image.sh` fazer `<pkg>-dirclean`. Sem isso o pacote
+  fica com os `.o` antigos e o `make` sai verde com o binário de antes.
+  Testado ao contrário: sem o dirclean, `undefined reference to
+  'DUMMY_bootstrap'`.
+
+**Sonda em vez de adivinhação.** Depois de três rodadas de "o Mesa não abre o
+kms_swrast", parei e escrevi `src/tools/gpu_probe.c` → `/usr/bin/giochi-gpu-probe`
+(compilado pelo `giochi-tools.mk`, deps `libdrm mesa3d`). Cinco passos, cada um
+com OK/FALHOU **e o nome do erro EGL** (`eglGetError()` traduzido). O
+`S20graphics` a chama antes do Launcher, então o próximo log responde qual passo
+falha em vez de "SDL2 indisponivel". Descartado com medição antes disso:
+`rockchip_dri.so` existe, `GALLIUM_KMSRO` está dentro do binário, `gbm_dri.c`
+está no `libgbm`, e o Mesa reporta `Platforms: surfaceless drm` e `gbm: enabled`.
+Nenhuma dessas provas fecha o caso — a sonda fecha.
+
+**Também nesta sessão:**
+
+- **`mdev -s` não carrega módulo** (§3.49): o `-s` do BusyBox chama
+  `make_device(NULL, path, OP_add)` **sem** pôr `MODALIAS` no ambiente, então a
+  regra `$MODALIAS=.*` nunca casa no coldplug. Minha "correção" anterior do
+  coldplug não fazia nada — descoberto lendo o `mdev.c` do 1.36.1, não testando.
+  `S05modules` agora varre `/sys/bus/*/devices/*/modalias` e chama `modprobe -q`.
+- **`modprobe -b` não existe** sem `CONFIG_FEATURE_MODPROBE_BLACKLIST` (não ligado
+  no 2024.02): a regra do `mdev.conf` era `@modprobe -b "$MODALIAS"` e falhava
+  calada. Forma correta: `@modprobe "$MODALIAS"`.
+- **`CONFIG_FB=n` não remove o fbcon** (§3.50): `CONFIG_DRM_FBDEV_EMULATION=y`
+  faz `select FB` e liga `FRAMEBUFFER_CONSOLE`. O console **sempre existiu**
+  nesta imagem; o comentário do `linux.fragment` dizia o contrário. E o fbcon
+  atrapalha a UI (cursor piscando, `printk` por cima), então o `S20graphics`
+  desvincula `/sys/class/vtconsole/vtcon*/bind` e baixa o `console_loglevel`.
+- **`BR2_LINUX_KERNEL_CUSTOM_DTS_PATH` copia o arquivo sem subdiretório** e
+  compila pelo **nome**: precisa de `INTREE_DTS_NAME` batendo, senão
+  `No rule to make target '...dtb'`. Foi a quarta tentativa fracassada de
+  entregar o `max-frequency` do `&sdmmc0` como patch de DTS (§3.51) — a receita
+  agora é documentada em `buildroot/board/giochi/dts/README.md` com DTS completo
+  por `GIOCHI_DTS_PATH`, e a integração automática foi **removida** em vez de
+  ficar meio-feita.
+
+**Verificação (tudo rodado):**
+
+- `make test` → **27/27**. `make lint` → rc=0. Guardas novas testadas ao
+  contrário (`test_config_aplicada.py`: tirar `SDL2_OPENGLES` faz o build
+  reprovar com o nome do símbolo; `test_kernel_patch.py`: sem o arquivo, 5
+  falhas).
+- Build limpo do zero: `EXIT=0`, `sdcard.img` 936 MB → `.xz` **42 MB**.
+- No DTB **dentro do `.img`** (não em `BINARIES_DIR`): `rng@fe388000`
+  `status = "okay"`, `mmc@fe2b0000` com `sd-uhs-sdr104` e `max-frequency`
+  `0x8f0d180`. No fonte do kernel: `component_pending` presente (patch do DSI
+  aplicado) e `CONFIG_SND_SOC_SIMPLE_AMPLIFIER=y` (era `=m`, segurava o card de
+  áudio em deferred probe).
+- `S05modules` na imagem com a varredura de `modalias`; `giochi-gpu-probe`
+  instalado em `/usr/bin`.
+- Cartão SDHC 29,7 GB gravado com `dd conv=fsync` e conferido:
+  `sha256` do cartão = `sha256` da imagem (`d3514d93…6edf1`).
+
+**Aberto:** o boot desta imagem ainda não aconteceu. O SDXC de 116 GB **não
+serve** — `mmc1: tuning execution failed: -5` no SDR104 e o U-Boot trava lendo o
+`Image` de 47 MB (§3.42). Se a sonda passar nos cinco passos, o próximo item é o
+desenho dos widgets (`TODO(v1.2)` em `render.cpp`).

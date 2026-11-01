@@ -397,6 +397,49 @@ build_device() {
         rm -f "$pkg"/.stamp_*
     done
 
+    # Patch de kernel nao re-arma o pacote (AGENTS.md §3.53).
+    #
+    # `BR2_LINUX_KERNEL_PATCH` e' so um valor de configuracao: mudar de "pasta
+    # com 2 patches" para "pasta com 3" nao invalida o `.stamp_patched`, e o
+    # build termina verde com a arvore antiga. Medido: --slow-mmc aplicou o
+    # patch no defconfig efetivo, o kernel nao foi re-patcheado e o DTB saiu
+    # com sd-uhs-sdr104 de novo.
+    #
+    # A assinatura dos patches entra num arquivo de estado: se mudou (patch
+    # novo, editado, ou o conjunto mudou), apaga os stamps do linux para
+    # forcar patch + build + install.
+    patch_sig=$( (cat "$ROOT"/buildroot/board/giochi/patches/linux/*.patch \
+                  2>/dev/null | sha256sum) | cut -d' ' -f1)
+    patch_state="$out/.patches.sig"
+    if [ -n "$patch_sig" ] && [ "$patch_sig" != "$(cat "$patch_state" 2>/dev/null)" ]; then
+        echo "  patches de kernel mudaram: re-armando o pacote linux"
+        # O registro `.patches/` guarda o que ja foi aplicado e NAO e'
+        # recriado so porque o stamp foi apagado: sem remove-lo, o
+        # apply-patches.sh acusa "duplicate filename" e o build morre
+        # (AGENTS.md §3.52).
+        # linux-headers usa os MESMOS patches (o Buildroot aplica
+        # BR2_LINUX_KERNEL_PATCH nele tambem) — por isso o glob tem de cobrir
+        # os dois, senao o build morre em
+        # "linux-headers/.stamp_patched: duplicate filename".
+        # Apagar so os stamps (ou so o .applied_patches_list) NAO basta: a
+        # arvore ja tem os hunks aplicados e o patch re-aplicado morre em
+        # "Reversed (or previously applied) patch detected". A saida limpa e'
+        # remover as arvores e deixar o Buildroot re-extrair do tarball em
+        # DL_DIR (nada e' baixado de novo) — e' o que `make linux-dirclean`
+        # faz, e o custo e' ~15 min de kernel, nao horas (AGENTS.md §3.52).
+        for d in linux linux-headers; do
+            rm -rf "$out"/build/build/"$d"-6.12 2>/dev/null || true
+        done
+        rm -f "$out"/build/build/linux-*/.stamp_patched \
+              "$out"/build/build/linux-*/.stamp_built \
+              "$out"/build/build/linux-*/.stamp_installed \
+              "$out"/build/build/linux-*/.stamp_target_installed \
+              "$out"/build/build/linux-*/.stamp_images_installed \
+              "$out"/build/build/linux-*/.stamp_staging_installed \
+              2>/dev/null || true
+        printf '%s\n' "$patch_sig" > "$patch_state"
+    fi
+
     # O Buildroot NAO reconstroi pacote quando a configuracao dele muda: os
     # stamps continuam validos e a imagem sai com o binario antigo, sem erro.
     # Medido: depois de ligar SDL2_OPENGLES (destrava SDL2_KMSDRM) o build

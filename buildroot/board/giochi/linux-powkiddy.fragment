@@ -40,6 +40,18 @@ CONFIG_SND_SOC_ROCKCHIP_I2S=y
 CONFIG_SND_SOC_ROCKCHIP_I2S_TDM=y
 CONFIG_SND_SOC_RK817=y
 CONFIG_SND_SIMPLE_CARD=y
+# O amplificador de som da X55 (spk_amp, "simple-audio-amplifier") tem de ser
+# EMBUTIDO como o resto da cadeia. Como =m ele so aparece se alguem carregar o
+# modulo, e nesse caso o card `sound` — que declara
+# `simple-audio-card,aux-devs = <&spk_amp>` — fica em deferred probe para
+# sempre. Medido no boot da X55:
+#
+#   platform sound: deferred probe pending: (reason unknown)
+#   ALSA device list: No soundcards found.
+#
+# O `(reason unknown)` do kernel e' o sintoma: o card nao devolveu
+# -EPROBE_DEFER com motivo, ficou esperando um aux-dev que nunca existiu.
+CONFIG_SND_SOC_SIMPLE_AMPLIFIER=y
 
 # --- Wi-Fi integrado RTL8821CS via SDIO (§3.4 / F3) ------------------
 CONFIG_RTW88=m
