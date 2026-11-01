@@ -4249,6 +4249,14 @@ imagem: FAT com `Image`, `board.dtb`, `dtbs/`, `boot.scr` de 6 875 B (com
   `/dev/sdd` e comparada com a imagem: **hash igual**. Se o boot travar em
   `SQUASHFS error` de novo, é mídia, não imagem.
 
+**Estado em 02:25 — leia antes de regravar.** O cartão tem a imagem de **02:05**
+(`594577cd…`), que já leva os seis temas e o menu com 7 linhas. Depois dela três
+correções entraram no `render.cpp`/`overlay.cpp` (valor do menu truncado, lista
+única no `dump-geometry`, `title_scale_pct`/`cover_pct` removidos) e a imagem
+final é `6f531459…`. **As três são invisíveis no aparelho** com os temas atuais,
+então gravar a final pode esperar — mas três tentativas de `pkexec` expiraram
+(senha não digitada), então o cartão **não** tem a `6f531459`.
+
 **Aberto:** nenhuma das seis telas foi vista no aparelho — a imagem foi
 regerada, conferida por dentro, gravada e verificada; o boot com ela ainda não
 aconteceu. O preview continua
