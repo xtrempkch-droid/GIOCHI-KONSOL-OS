@@ -254,13 +254,19 @@ build_device() {
     pkg_src="$out/pkg-src"
     rm -rf "$pkg_src"
     mkdir -p "$pkg_src"
-    for item in Makefile src tools assets schemas scripts Jogos; do
+    # `apps` entrou aqui quando o Launcher virou aplicativo: o pacote
+    # giochi-launcher compila apps/launcher/*.cpp, e sem esta copia o snapshot
+    # sairia sem os fontes e o build morreria em "No rule to make target".
+    for item in Makefile src apps tools assets schemas scripts Jogos; do
         [ -e "$ROOT/$item" ] || continue
         cp -a "$ROOT/$item" "$pkg_src/" 2>/dev/null || {
             echo "ERRO $id: falha ao copiar $item para o snapshot" >&2
             return 1
         }
     done
+    # Os apps de PC em Python deixam __pycache__ para tras a cada execucao:
+    # e' lixo que nao deve viajar para dentro do build (nem para o cache).
+    find "$pkg_src" -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null || true
     GIOCHI_PKGSRC="$pkg_src"
     export GIOCHI_PKGSRC
     echo "  fontes: snapshot em $pkg_src ($(du -sh "$pkg_src" 2>/dev/null | cut -f1))"
@@ -382,7 +388,7 @@ build_device() {
     # Pacote local do Buildroot NAO re-sincroniza sozinho.
     #
     # Medido neste projeto: depois de corrigir src/init/device_profile.c e
-    # src/launcher/main.cpp, o build terminou "verde" e a imagem continuou com
+    # apps/launcher/main.cpp, o build terminou "verde" e a imagem continuou com
     # os binarios ANTIGOS — o log do aparelho ainda dizia
     # "(device=rk3326 soc=rk3326)" e "buttons.map: secao [efault]". Causa: o
     # Buildroot cria build/giochi-*/  com .stamp_rsynced e so roda o rsync do

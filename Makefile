@@ -58,7 +58,7 @@ DEFS += -DGIOCHI_SOC='"$(GIOCHI_SOC)"' \
         -DGIOCHI_KERNEL_VERSION='"$(GIOCHI_KERNEL_VERSION)"' \
         -DGIOCHI_ENABLE_PROTON=$(GIOCHI_PROTON)
 
-INCS := -Isrc/common -Isrc/init -Isrc/launcher -Isrc/musicd
+INCS := -Isrc/common -Isrc/init -Iapps/launcher -Isrc/musicd
 
 CFLAGS_ALL   = $(CSTD) $(OPT) $(CWARN) $(DEFS) $(INCS) $(EXTRA_CFLAGS)
 CXXFLAGS_ALL = $(CXXSTD) $(OPT) $(CXXWARN) $(DEFS) $(INCS) $(EXTRA_CXXFLAGS)
@@ -119,6 +119,29 @@ CXXFLAGS_ALL += $(SDL2_CFLAGS)
 OBJ := $(BUILD_ROOT)/obj
 BIN := $(BUILD_ROOT)/bin
 
+# --- migracao de layout de fontes -------------------------------------------
+# O Launcher saiu de src/launcher/ para apps/launcher/ (virou aplicativo). O
+# build incremental guarda .d/.o apontando para o caminho ANTIGO, e o make
+# aborta na LEITURA do Makefile — antes de qualquer compilacao — com:
+#
+#   make: *** Sem regra para processar o alvo 'src/launcher/main.cpp',
+#   necessario por 'build/host/obj/launcher/main.o'.  Pare.
+#
+# Limpar so' o diretorio do launcher resolveria aqui e agora, mas os .d dos
+# TESTES tambem citam src/launcher/*.hpp. O criterio correto e' o conteudo:
+# .d que cita o caminho aposentado e' lixo. Ele sai JUNTO com o .o
+# correspondente — apagar apenas o .d esconderia dependencia de header ate' a
+# proxima recompilacao, que e' a classe de defeito silencioso do §3.33.
+# Carimbo para o custo ser zero a partir da segunda invocacao.
+LAYOUT_STAMP := $(BUILD_DIR)/.layout-launcher-apps
+$(shell if [ ! -f '$(LAYOUT_STAMP)' ]; then \
+          find '$(BUILD_DIR)' -name '*.d' \
+               -exec grep -ls 'src/launcher/' {} + 2>/dev/null \
+          | while IFS= read -r d; do rm -f "$$d" "$${d%.d}.o"; done; \
+          mkdir -p '$(dir $(LAYOUT_STAMP))' 2>/dev/null; \
+          : > '$(LAYOUT_STAMP)' 2>/dev/null; \
+      fi)
+
 COMMON_SRC := \
 	src/common/giochi_json.c \
 	src/common/giochi_log.c \
@@ -151,25 +174,29 @@ else
 endif
 MUSICD_OBJ := $(patsubst src/%.c,$(OBJ)/%.o,$(MUSICD_SRC))
 
+# O Launcher e' um APLICATIVO, nao nucleo do sistema: mora em apps/ (como o
+# forge e o store), para poder ser mexido sem tocar no sistema nem nos jogos.
+# O prefixo do patsubst e' apps/ justamente para o objeto continuar saindo em
+# $(OBJ)/launcher/*.o — as regras dos testes e do dump-geometry dependem disso.
 LAUNCHER_SRC := \
-	src/launcher/main.cpp \
-	src/launcher/layout.cpp \
-	src/launcher/theme.cpp \
-	src/launcher/settings.cpp \
-	src/launcher/overlay.cpp \
-	src/launcher/input.cpp \
-	src/launcher/evdev.cpp \
-	src/launcher/ipc_client.cpp \
-	src/launcher/metadata.cpp \
-	src/launcher/library.cpp \
-	src/launcher/ui_geometry.cpp \
-	src/launcher/font.cpp \
-	src/launcher/i18n.cpp \
-	src/launcher/status.cpp \
-	src/launcher/render.cpp \
-	src/launcher/render_null.cpp
+	apps/launcher/main.cpp \
+	apps/launcher/layout.cpp \
+	apps/launcher/theme.cpp \
+	apps/launcher/settings.cpp \
+	apps/launcher/overlay.cpp \
+	apps/launcher/input.cpp \
+	apps/launcher/evdev.cpp \
+	apps/launcher/ipc_client.cpp \
+	apps/launcher/metadata.cpp \
+	apps/launcher/library.cpp \
+	apps/launcher/ui_geometry.cpp \
+	apps/launcher/font.cpp \
+	apps/launcher/i18n.cpp \
+	apps/launcher/status.cpp \
+	apps/launcher/render.cpp \
+	apps/launcher/render_null.cpp
 
-LAUNCHER_OBJ := $(patsubst src/%.cpp,$(OBJ)/%.o,$(LAUNCHER_SRC))
+LAUNCHER_OBJ := $(patsubst apps/%.cpp,$(OBJ)/%.o,$(LAUNCHER_SRC))
 
 THUMBGEN_SRC := src/thumbgen/main.c
 THUMBGEN_OBJ := $(patsubst src/%.c,$(OBJ)/%.o,$(THUMBGEN_SRC))
@@ -227,6 +254,12 @@ $(OBJ)/%.o: src/%.c
 	$(CC) $(CFLAGS_ALL) -MMD -MP -c $< -o $@
 
 $(OBJ)/%.o: src/%.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS_ALL) -MMD -MP -c $< -o $@
+
+# Apps em C++ (apps/launcher). O objeto sai em $(OBJ)/launcher/*.o, igual aos
+# outros: o prefixo e' so' de onde o fonte vem.
+$(OBJ)/%.o: apps/%.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS_ALL) -MMD -MP -c $< -o $@
 
@@ -467,7 +500,12 @@ lint:
 	@echo "== escala do override por aparelho =="
 	@python3 -m unittest tests.test_device_scale 2>&1 | tail -3
 	@echo "== catalogo de temas =="
-	@python3 -m unittest tests.test_themes 2>&1 | tail -3
+	@$(MAKE) --no-print-directory $(BIN)/dump-geometry >/dev/null 2>&1 || true; \
+	if [ -x "$(BIN)/dump-geometry" ]; then \
+	    python3 -m unittest tests.test_themes 2>&1 | tail -3; \
+	else \
+	    echo "  PULADA: $(BIN)/dump-geometry ausente (sem compilador no host?)"; \
+	fi
 	@echo "== protocolo do app (control.sock) =="
 	@python3 -m unittest tests.test_control_protocol 2>&1 | grep -E "Ran|OK|FAILED" | tail -2
 	@echo "== cliente do control.sock (por SSH) =="
@@ -503,7 +541,13 @@ lint:
 
 # 'all' antes dos testes: a suite de integracao roda o giochi-init REAL, e num
 # clone limpo 'make test' sozinho nao o teria compilado.
-test: all $(TEST_BINS)
+#
+# dump-geometry entra na MESMA conta (AGENTS.md §3.7): a suite 'temas' mede o
+# efeito real do tema na grade executando esse binario, e o tests/run_tests.sh
+# a PULA quando ele nao existe. Num clone limpo ela simplesmente desaparecia
+# da contagem (40 -> 39 suites, verde do mesmo jeito) -- cobertura perdida em
+# silencio, que e' exatamente o que este repositorio trata como defeito.
+test: all $(TEST_BINS) $(BIN)/dump-geometry
 	@sh tests/run_tests.sh "$(BIN)"
 
 # Os jogos em Godot nao entram em `make test`: o motor nao e dependencia do

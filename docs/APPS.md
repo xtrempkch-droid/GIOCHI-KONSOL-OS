@@ -26,7 +26,7 @@ Ordem de trabalho: [roadmap.md](./roadmap.md).
 | # | Componente | Tipo | Onde | Estado |
 |---|---|---|---|---|
 | 1 | `giochi-init` | daemon C | [src/init](../src/init) | ✅ supervisor, `control.sock`, FIFO, hotkey, `device_profile.json`; ciclo de vida coberto por `lifecycle_test.sh` |
-| 2 | `giochi-launcher` | C++17 + SDL2 | [src/launcher](../src/launcher) | ✅ roda como **app** desde 2026-11-01: o supervisor resolve `/apps/giochi-launcher` (symlink → `/user/apps`) antes do binário da imagem, então a UI atualiza sem regravar o sistema ([LAUNCHER-APP.md](LAUNCHER-APP.md)) |
+| 2 | `giochi-launcher` | C++17 + SDL2 | [apps/launcher](../apps/launcher) | ✅ roda como **app** desde 2026-11-01: o supervisor resolve `/apps/giochi-launcher` (symlink → `/user/apps`) antes do binário da imagem, então a UI atualiza sem regravar o sistema ([LAUNCHER-APP.md](LAUNCHER-APP.md)) |
 | 3 | `giochi-musicd` | daemon C + ALSA | [src/musicd](../src/musicd) | 🟡 socket e protocolo §4.8.4 prontos; **decodificação PCM pendente** |
 | 4 | `giochi-store` | app externo | — | ⛔ **não existe no console**. `layout.json` aponta `APP:giochi-store` e o `giochi-init` responde `ERR launch_failed` com log claro. O **lado PC** existe: [apps/store](../apps/store) monta o catálogo e o `news.json`. Fontes avaliadas e contrato do pacote: [LOJA.md](LOJA.md) |
 | 5 | `portmaster` | app externo (bash + ferramentas aarch64) | [buildroot/package/giochi-portmaster](../buildroot/package/giochi-portmaster) | 🟡 **instalado** em `/apps/PortMaster` (bundle oficial 2026.11.01, CFW_NAME=giochi) com o wrapper `/apps/portmaster`; **não validado no aparelho** e depende de rede (Wi-Fi) para baixar ports |
@@ -35,7 +35,7 @@ Ordem de trabalho: [roadmap.md](./roadmap.md).
 | 7 | `dropbear` | daemon SSH | [scripts/init.d/S62sshd](../scripts/init.d/S62sshd) | ✅ Modo Desenvolvedor, desligado por padrão, só em `10.55.0.2:22`, senha ou chave |
 | 8 | Scripts de init | shell (BusyBox) | [scripts/init.d](../scripts/init.d) | ✅ `S05update`, `S10storage`, `S30swap`, `S40dongle`, `S50usb`, `S55usbnet`, `S62sshd`, `S90graphics` |
 | 9 | RetroArch | app externo | — | 🔒 fase 2 (§4.2 `runtime`); o schema e o `metadata.cpp` já aceitam/rejeitam |
-| 10 | Proton | stub `#ifdef` | [src/launcher/metadata.cpp](../src/launcher/metadata.cpp) | ✅ desativado por padrão (`GIOCHI_ENABLE_PROTON=0`); recusa `runtime=proton` |
+| 10 | Proton | stub `#ifdef` | [apps/launcher/metadata.cpp](../apps/launcher/metadata.cpp) | ✅ desativado por padrão (`GIOCHI_ENABLE_PROTON=0`); recusa `runtime=proton` |
 | 12 | Jogos padrão | Godot 4.3 | [Jogos/](../Jogos) | ✅ Spacewar, Colossal Cave e Arcade Volleyball; lista, licenças e bench em [GAMES.md](./GAMES.md) e `assets/default-games.json` |
 
 Também no console, embora não estejam na lista de "apps":

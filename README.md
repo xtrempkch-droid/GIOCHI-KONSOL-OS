@@ -83,7 +83,7 @@ Um tema é um JSON em [`assets/themes/`](assets/themes) — crie o seu e rode
 | U-Boot mainline + BL31/DDR do rkbin (X55) | ✅ configurado, imagem bootável | [device/x55/device.conf](device/x55/device.conf) |
 | `giochi-init`: supervisor, `control.sock`, FIFO, hotkey, `device_profile.json` | ✅ funcional | [src/init](src/init) |
 | Ciclo de vida Launcher/jogo/app (§2.2/§4.7) | ✅ funcional, testado | [tests/integration](tests/integration/lifecycle_test.sh) |
-| Launcher C++17: layout 1.6, 5 abas, `buttons.map`, biblioteca, overlay 2 níveis | 🟡 motor pronto, widgets pendentes | [src/launcher](src/launcher) |
+| Launcher C++17: layout 1.6, 5 abas, `buttons.map`, biblioteca, overlay 2 níveis | 🟡 motor pronto, widgets pendentes | [apps/launcher](apps/launcher) |
 | `giochi-musicd`: socket/protocolo §4.8.4 | 🟡 protocolo pronto, decode ALSA pendente | [src/musicd](src/musicd) |
 | `.giochi`: pack, extract (ustar embutido), thumbgen | ✅ pack/extract, 🟡 thumbnails | [tools/](tools/) |
 | Update A/B com Ed25519 + SHA-256 | ✅ funcional (verificado ponta a ponta) | [tools/giochi-verify.c](tools/giochi-verify.c) |
@@ -195,7 +195,7 @@ BootROM → U-Boot (A/B + bootcount) → kernel 6.12 → BusyBox init (/etc/init
 ```
 src/common/     JSON, log, sockets, SHA-256, Ed25519, hotkey, FIFO
 src/init/       giochi-init: supervisor, control.sock, power, device_profile, game
-src/launcher/   motor de layout, tema, settings, overlay, evdev, render SDL2
+apps/launcher/   motor de layout, tema, settings, overlay, evdev, render SDL2
 src/musicd/     giochi-musicd (ALSA + música)
 src/thumbgen/   thumbnails 152x85 RGBA
 device/<id>/    FONTE ÚNICA por aparelho: device.conf, theme.json e layout/

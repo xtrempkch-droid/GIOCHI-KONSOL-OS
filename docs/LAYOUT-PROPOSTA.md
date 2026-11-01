@@ -27,7 +27,7 @@ aplica escala em cima de escala.
 
 **Não é:**
 
-- **captura de tela** — `src/launcher/render.cpp` ainda só pinta o fundo do tema
+- **captura de tela** — `apps/launcher/render.cpp` ainda só pinta o fundo do tema
   e o splash (o `TODO(v1.2)` na linha 219);
 - **medida em aparelho** — nada desta proposta rodou em hardware;
 - **cor nova** — os 10 renders usam apenas as 8 cores de `assets/themes/dark_default.json`;
@@ -250,7 +250,7 @@ de texto), **Novidades** (até 3 dicas; o script atual mostra 2) e **Recentes**
 ![Ports 640×480](./proposta/ports-640x480.png)
 
 Estas duas abas não têm layout: `assets/layout.json` aponta para
-`APP:giochi-store` e `APP:portmaster`, `src/launcher/layout.cpp:42-43` marca as
+`APP:giochi-store` e `APP:portmaster`, `apps/launcher/layout.cpp:42-43` marca as
 duas como `is_app`, e não existe `store.json` nem `ports.json` em `assets/`.
 Hoje o resultado é o pior dos mundos: o `giochi-init` responde
 `ERR launch_failed` e o usuário não vê nada — o defeito silencioso que o
@@ -366,8 +366,8 @@ tile para desenhar, só retângulos.
 |---|---|---|
 | `device/x55/layout/*.json` | perfil ×1,5 no lugar dos 7 fatores implícitos, `columns: 5` | **feito** em 2026-10-30, com `tests/test_device_scale.py` |
 | `tools/make-layout-proposal.py` | lê os assets do aparelho em vez de multiplicar o base | **feito** (10 PNGs byte a byte idênticos) |
-| `src/launcher/render.cpp` | topbar, hint bar, grade com anel de foco e `ellipsize` medido em pixels | **feito** em 2026-10-31 (§11): geometria em `ui_geometry.cpp`, texto pelo atlas gerado |
-| `src/launcher/layout.cpp` + schema | tipo de aba (`layout`/`app`) com texto de fallback, em vez do prefixo `APP:` implícito (schema 1.7) | pendente |
+| `apps/launcher/render.cpp` | topbar, hint bar, grade com anel de foco e `ellipsize` medido em pixels | **feito** em 2026-10-31 (§11): geometria em `ui_geometry.cpp`, texto pelo atlas gerado |
+| `apps/launcher/layout.cpp` + schema | tipo de aba (`layout`/`app`) com texto de fallback, em vez do prefixo `APP:` implícito (schema 1.7) | pendente |
 | `tools/make-screenshots.py` | render nativo por painel em vez de letterbox; scrollbar na sarjeta | pendente |
 | `docs/screenshots/*.png` | substituídos por captura do aparelho quando houver hardware | pendente |
 | `overlay.cpp` (Configurações) | não muda nesta proposta | — |
@@ -416,10 +416,10 @@ O desenho saiu do papel e foi para o aparelho. O que existe hoje:
 
 | Peça | Onde | Por quê |
 |---|---|---|
-| tokens + grade + paginação + anel de foco | `src/launcher/ui_geometry.{hpp,cpp}` | **módulo puro**, sem SDL: dá para testar no host (`tests/test_ui_geometry.cpp`, 298 checagens) e impede que os números desta proposta virem constante espalhada no `render.cpp` |
+| tokens + grade + paginação + anel de foco | `apps/launcher/ui_geometry.{hpp,cpp}` | **módulo puro**, sem SDL: dá para testar no host (`tests/test_ui_geometry.cpp`, 298 checagens) e impede que os números desta proposta virem constante espalhada no `render.cpp` |
 | fonte | `assets/font.a8` + `assets/font.json`, gerados por `tools/make-font.py` | não existe TTF no repositório e `SDL2_ttf` custaria ~1,4 MB no rootfs por 60 rótulos; atlas versionado, como `bootlogo` e `screenshots`. Tamanhos 12/14/18/21 px, exatamente os desta tabela, em **dois pesos** (regular e negrito) |
 | peso por papel | `UiTextRole` + `ui_text_weight()` em `ui_geometry.{hpp,cpp}` | título de tile, aba ativa, tecla da hint bar e título de painel são **negrito**; corpo, ação da hint bar, valor de menu e relógio são regular. A tabela mora no módulo puro e o `dump-geometry` a publica (`font_weights`), então `preview-ui.py` e `render.cpp` não podem divergir (AGENTS.md §3.72) |
-| desenho | `src/launcher/render.cpp` + `src/launcher/font.cpp` | topbar com abas medidas, sublinhado de acento, grade 4×3 / 5×3, anel de foco por fora, hint bar e painel de Configurações |
+| desenho | `apps/launcher/render.cpp` + `apps/launcher/font.cpp` | topbar com abas medidas, sublinhado de acento, grade 4×3 / 5×3, anel de foco por fora, hint bar e painel de Configurações |
 | inspeção no PC | `make ui-preview` → `docs/proposta/ui-*.png` | a geometria vem do **mesmo** `ui_geometry.cpp` (via `tools/dump-geometry`) e o texto do **mesmo** atlas: o preview não tem um segundo conjunto de números |
 
 O desenho real, gerado da geometria que vai para o aparelho (não é o render do

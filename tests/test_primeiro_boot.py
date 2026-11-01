@@ -20,7 +20,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RCS = os.path.join(ROOT, "buildroot/board/giochi/rootfs_overlay/etc/init.d/rcS")
 POST_BUILD = os.path.join(ROOT, "buildroot/board/giochi/post-build.sh")
 S10STORAGE = os.path.join(ROOT, "scripts/init.d/S10storage")
-LAUNCHER_MAIN = os.path.join(ROOT, "src/launcher/main.cpp")
+LAUNCHER_MAIN = os.path.join(ROOT, "apps/launcher/main.cpp")
 DEVICECONF_C = os.path.join(ROOT, "src/common/giochi_deviceconf.c")
 BUILD_IMAGE = os.path.join(ROOT, "tools/build-image.sh")
 S05MODULES = os.path.join(ROOT, "scripts/init.d/S05modules")
@@ -134,7 +134,7 @@ class PrimeiroBootTest(unittest.TestCase):
         log e' a unica testemunha. Por isso os dois avisos sao obrigatorios:
         "splash: exibindo N quadros" e o do driver de video escolhido.
         """
-        render = read(os.path.join(ROOT, "src/launcher/render.cpp"))
+        render = read(os.path.join(ROOT, "apps/launcher/render.cpp"))
 
         self.assertIn("GIOCHI_SPLASH_ALWAYS", render,
                       "sem modo permanente nao da' para isolar o SDL da UI")
@@ -166,7 +166,7 @@ class PrimeiroBootTest(unittest.TestCase):
         do tamanho LOGICO (layout.json) e a orientacao e' resolvida girando na
         apresentacao.
         """
-        render = read(os.path.join(ROOT, "src/launcher/render.cpp"))
+        render = read(os.path.join(ROOT, "apps/launcher/render.cpp"))
 
         self.assertIn("ui.layout->width", render)
         self.assertIn("calcular_geometria", render)
@@ -220,7 +220,7 @@ class PrimeiroBootTest(unittest.TestCase):
         /etc/giochi/device.conf (regra da §3.47) torna o resultado o mesmo
         qualquer que seja o caminho.
         """
-        render = read(os.path.join(ROOT, "src/launcher/render.cpp"))
+        render = read(os.path.join(ROOT, "apps/launcher/render.cpp"))
 
         self.assertIn("giochi_deviceconf_get", render)
         self.assertIn("GIOCHI_ROTATION", render)
@@ -233,7 +233,7 @@ class PrimeiroBootTest(unittest.TestCase):
         re-bindar o fbcon, sozinho, NAO mostra nada. Medido: o bootargs desta
         imagem tem apenas `console=ttyS2`.
         """
-        render = read(os.path.join(ROOT, "src/launcher/render.cpp"))
+        render = read(os.path.join(ROOT, "apps/launcher/render.cpp"))
 
         self.assertIn("/dev/tty1", render,
                       "a mensagem de falha precisa ir para o VT")

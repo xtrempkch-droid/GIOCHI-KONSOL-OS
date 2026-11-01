@@ -189,6 +189,34 @@ if [ -f "$DEFCONFIG_CHK" ]; then
     done
 fi
 
+# --- 8) o Launcher e' APLICATIVO: mora em apps/, nao em src/ -------------
+# O mantenedor definiu que app mora em apps/ (junto de forge e store), para
+# poder mexer na UI sem tocar no sistema nem nos jogos. Se alguem mover de
+# volta para src/launcher, o build continua passando (o Makefile aponta para
+# apps/launcher — justamente por isso o defeito seria silencioso), e o proximo
+# agente volta a tratar a UI como nucleo. Aqui falha na hora.
+if [ -d src/launcher ]; then
+    echo "  ERRO src/launcher existe: o Launcher e' app, mora em apps/launcher" >&2
+    fail=$((fail + 1))
+fi
+if [ ! -d apps/launcher ]; then
+    echo "  ERRO apps/launcher ausente (fonte do giochi-launcher)" >&2
+    fail=$((fail + 1))
+fi
+if ! grep -q 'apps/launcher/' Makefile 2>/dev/null; then
+    echo "  ERRO Makefile nao compila apps/launcher (Launcher e' app)" >&2
+    fail=$((fail + 1))
+fi
+
+# O snapshot de fontes precisa levar apps/: sem ele o pacote compila um
+# Makefile cujos fontes nao foram copiados ("No rule to make target").
+if [ -f tools/build-image.sh ] && \
+   ! grep -q 'for item in Makefile src apps' tools/build-image.sh; then
+    echo "  ERRO tools/build-image.sh nao copia apps/ para o pkg-src" >&2
+    echo "       o pacote giochi-launcher compila apps/launcher/*.cpp" >&2
+    fail=$((fail + 1))
+fi
+
 if [ "$fail" -ne 0 ]; then
     echo "check-image-contents: $fail problema(s) de conteudo da imagem" >&2
     exit 1

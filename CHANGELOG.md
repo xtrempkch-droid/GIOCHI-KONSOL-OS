@@ -31,6 +31,20 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
   produtor: agora a Home mostra a novidade da Loja.
   - Guarda: `tests/test_store.py` (16 testes), inclusive `metadata.json` fora
     do primeiro lugar (ADR-11) e `.giochi` x86_64 recusado com motivo.
+- **`apps/launcher`**: o Launcher virou **aplicativo** e saiu de `src/launcher`
+  (mesmo critério que levou `apps/forge` para lá). `src/` passou a ser só o
+  núcleo compartilhado — bibliotecas comuns, supervisor e daemons. Assim dá
+  para mexer na UI sem esbarrar em quem mexe no sistema ou nos jogos.
+  - O Makefile compila `apps/launcher/*.cpp` e um carimbo
+    (`build/.layout-launcher-apps`) apaga os `.d`/`.o` incrementais que ainda
+    citam o caminho antigo — sem ele o `make` aborta na **leitura** do
+    Makefile ("Sem regra para processar o alvo 'src/launcher/main.cpp'").
+  - O snapshot de fontes do `tools/build-image.sh` passou a copiar `apps/`:
+    sem isso o pacote compilaria um Makefile cujos fontes não foram copiados.
+  - Guarda: `tools/check-image-contents.sh` falha se `src/launcher` voltar a
+    existir, se `apps/launcher` sumir, se o Makefile deixar de compilá-lo ou
+    se o snapshot parar de copiar `apps/`. Testada ao contrário (recriar
+    `src/launcher` → rc=1).
 - `tools/make-theme-gallery.py` e o alvo `make tema-galeria`.
 
 ### Corrigido

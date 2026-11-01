@@ -17,6 +17,33 @@ como app:
 | Mexer **no Launcher** (UI, tema, textos) | copia-se o binário novo para `/user`; o sistema fica como está |
 | Trabalhar em Ports/jogos em paralelo | nenhuma das duas frentes depende da outra |
 
+## No repositório: `apps/launcher`
+
+O fonte do Launcher mora em [`apps/launcher/`](../apps/launcher), não em
+`src/`. É a mesma convenção de `apps/forge` e `apps/store`: **se o diretório
+tem um `main`, é aplicativo**. `src/` ficou com o núcleo compartilhado
+(bibliotecas comuns, supervisor e daemons).
+
+Isso é o que dá independência às frentes de trabalho:
+
+| Mexe em | Não precisa tocar |
+|---|---|
+| `apps/launcher/` (UI) | `src/`, `Jogos/`, kernel, init |
+| `src/` (sistema) | a UI |
+| `Jogos/` | os dois |
+
+Quem consome o caminho:
+
+- o [Makefile](../Makefile) da raiz (`LAUNCHER_SRC` + a regra
+  `$(OBJ)/%.o: apps/%.cpp`, com o objeto saindo em `$(OBJ)/launcher/*.o`);
+- o pacote `giochi-launcher` do Buildroot, que compila o mesmo Makefile
+  dentro do snapshot de fontes (`tools/build-image.sh` copia `apps/`);
+- `tools/check-sdl2-compile.sh`, que compila `render.cpp` **com** SDL2.
+
+Guarda: `tools/check-image-contents.sh` (no `make lint`) falha se
+`src/launcher` voltar a existir, se `apps/launcher` sumir, se o Makefile
+deixar de compilá-lo ou se o snapshot parar de copiar `apps/`.
+
 ## Como funciona
 
 ### 1. Resolução do binário (supervisor)

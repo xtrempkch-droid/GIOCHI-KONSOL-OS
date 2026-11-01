@@ -68,7 +68,7 @@ Sinais de alerta conhecidos e onde olhar: `docs/hardware-e-drivers.md` (F1–F12
 
 O motor está pronto (layout schema 1.6, tema, `settings.json`, overlay de 2
 níveis, biblioteca, `buttons.map`). Em 2026-10-31 o `render.cpp` passou a
-**desenhar**: a geometria saiu para `src/launcher/ui_geometry.cpp` (módulo puro,
+**desenhar**: a geometria saiu para `apps/launcher/ui_geometry.cpp` (módulo puro,
 coberto por `tests/test_ui_geometry.cpp`) e o texto vem do atlas gerado por
 `tools/make-font.py` (`assets/font.a8`). `make ui-preview` mostra o resultado
 sem o aparelho.

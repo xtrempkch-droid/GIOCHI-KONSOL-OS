@@ -12,7 +12,7 @@ make screenshots        # equivalente a: tools/make-screenshots.py
 | `home.png` | `assets/themes/dark_default.json`, `assets/layout.json`, `assets/home.json` | composição da aba Home (640×480) |
 | `library.png` | `assets/library.json` | grid 4×3, tile 152×85, título 20 px, scrollbar 4 px |
 | `music.png` | `assets/music.json` | now playing 120×120, progresso, controles, fila |
-| `settings.png` | `src/launcher/overlay.cpp` (nível 0) | overlay de Configurações |
+| `settings.png` | `apps/launcher/overlay.cpp` (nível 0) | overlay de Configurações |
 | `settings-system.png` | idem, nível 1 | submenu Sistema com o **Modo Desenvolvedor** |
 | `x55-home.png` | `device/x55/layout/layout.json` | canvas 1280×720 do painel da X55 |
 | `bootlogo.png` | `assets/bootlogo/bootlogo.rgba` | **splash real**, desenhado pelo Launcher |
@@ -31,7 +31,7 @@ hint bar (30), tile de 152×85, grid 4×3, raio de canto 4, paleta do tema
 
 **Não são** captura de tela de um aparelho. O desenho dos widgets no backend
 SDL2 ainda é esboço — veja o `TODO(v1.2)` em
-[`src/launcher/render.cpp`](../src/launcher/render.cpp), que hoje pinta o fundo
+[`apps/launcher/render.cpp`](../apps/launcher/render.cpp), que hoje pinta o fundo
 do tema e o bootsplash. O texto de exemplo ("Celeste", "Stardew Valley"…)
 existe para dar escala ao tile; ele não vem da biblioteca do usuário.
 

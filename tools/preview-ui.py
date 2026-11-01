@@ -227,7 +227,7 @@ def main() -> int:
                                    fill=cor)
 
     # UiRole -> chave do tema. A ORDEM tem de ser a do enum em
-    # src/launcher/ui_geometry.hpp; tests/test_ui_geometry.cpp cobra isso.
+    # apps/launcher/ui_geometry.hpp; tests/test_ui_geometry.cpp cobra isso.
     papeis = {
         0: None,                    # UI_ROLE_NONE
         1: "background",

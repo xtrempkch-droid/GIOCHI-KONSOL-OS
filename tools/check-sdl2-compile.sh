@@ -12,10 +12,10 @@
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-SRC="$ROOT/src/launcher/render.cpp"
+SRC="$ROOT/apps/launcher/render.cpp"
 CFLAGS="-std=c++17 -fsyntax-only -Wall -Wextra -Wshadow -Wformat=2 -Wundef"
 DEFS="-D_GNU_SOURCE -DGIOCHI_HAVE_SDL2 -DGIOCHI_HAVE_OPENSSL"
-INCS="-I$ROOT/src/common -I$ROOT/src/init -I$ROOT/src/launcher"
+INCS="-I$ROOT/src/common -I$ROOT/src/init -I$ROOT/apps/launcher"
 
 [ -f "$SRC" ] || { echo "  SKIP render.cpp ausente"; exit 0; }
 

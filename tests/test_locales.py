@@ -22,7 +22,8 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 LOCALES = ROOT / "assets" / "locales"
-LAUNCHER = ROOT / "src" / "launcher"
+# O Launcher e' aplicativo: mora em apps/launcher, nao em src/.
+LAUNCHER = ROOT / "apps" / "launcher"
 
 PADRAO = "pt_BR"
 

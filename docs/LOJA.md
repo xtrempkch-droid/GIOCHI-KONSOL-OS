@@ -178,7 +178,7 @@ antes no alfabeto.
 
 1. **`runtime: "native"`** no schema — hoje um binário aarch64 compilado do
    fonte não tem como ser declarado. Afeta `schemas/metadata.schema.json`,
-   `assets/default-games.json` e `src/launcher/metadata.cpp`.
+   `assets/default-games.json` e `apps/launcher/metadata.cpp`.
 2. **O app `giochi-store`** no aparelho: hoje `APP:giochi-store` responde
    `ERR launch_failed` (ver [APPS.md](APPS.md)). O `store` do §4 roda no PC e
    produz os pacotes; falta o lado do console — lista o que está em

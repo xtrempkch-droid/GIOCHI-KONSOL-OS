@@ -333,7 +333,13 @@ fi
 
 # Catalogo de temas: schema, contraste medido, paridade do indice e o efeito
 # REAL no layout (o binario tem de mudar a grade, nao so' a cor).
-if [ -x "$ROOT/build/host/bin/dump-geometry" ] && command -v python3 >/dev/null 2>&1; then
+#
+# Depende do dump-geometry, que o alvo `test` do Makefile compila junto. Se ele
+# faltar, a suite e' PULADA EM VOZ ALTA: antes ela apenas nao entrava na
+# contagem e o total caia de 40 para 39 sem nada dizer -- verde igual.
+if [ ! -x "$BIN/dump-geometry" ] && command -v python3 >/dev/null 2>&1; then
+    echo "PULADA temas (python): dump-geometry nao compilado"
+elif command -v python3 >/dev/null 2>&1; then
     total=$((total + 1))
     if (cd "$ROOT" && python3 -m unittest tests.test_themes) >/dev/null 2>&1; then
         echo "OK     temas (python)"

@@ -172,7 +172,7 @@ class CatalogoTest(unittest.TestCase):
 
     def test_novidades_tem_o_formato_que_o_launcher_le(self):
         # O Launcher le {"items":[{"title","body"}]} em /user/.cache/news.json
-        # (src/launcher/main.cpp, carregar_novidade).
+        # (apps/launcher/main.cpp, carregar_novidade).
         novo = novidades(self.pacotes)
 
         self.assertIn("items", novo)

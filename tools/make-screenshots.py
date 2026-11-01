@@ -13,7 +13,7 @@ Fonte de verdade (as mesmas que o Launcher le em tempo de execucao):
 
 O desenho aqui reproduz a GEOMETRIA e as CORES declaradas nesses arquivos.
 Ele nao e um screenshot de um aparelho: o desenho dos widgets no backend SDL2
-ainda e esboco (ver TODO(v1.2) em src/launcher/render.cpp). Por isso
+ainda e esboco (ver TODO(v1.2) em apps/launcher/render.cpp). Por isso
 docs/SCREENSHOTS.md e o README dizem, com todas as letras, o que estas imagens
 sao e o que nao sao.
 

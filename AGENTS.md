@@ -71,10 +71,12 @@ A especificação normativa é [docs/architecture-v1.2.md](docs/architecture-v1.
 ```text
 src/common/     JSON, log, util, sockets, SHA-256, Ed25519, FIFO, hotkey
 src/init/       giochi-init: supervisor, control.sock, power, game, device_profile
-src/launcher/   layout, theme, settings, overlay, input/evdev, render (SDL2 | null)
 src/musicd/     giochi-musicd (socket texto + ALSA)
 src/thumbgen/   thumbnails 152x85 RGBA
-apps/forge/      giochi-forge (PC): perfil, classificação, empacotamento (Python)
+apps/launcher/  o Launcher (UI do console): layout, theme, settings, overlay,
+                input/evdev, render (SDL2 | null)
+apps/forge/     giochi-forge (PC): perfil, classificação, empacotamento (Python)
+apps/store/     giochi-store (PC): catálogo da Loja + news.json + cópia no cartão
 assets/         layout.json, theme.json, defaults.json, buttons.map, bootlogo/
 device/<id>/layout/    override de layout por aparelho
 schemas/        JSON Schema (metadata, forge, settings, layout)
@@ -92,6 +94,13 @@ tools/          build-image, gen-defconfigs, bootlogo, screenshots, pack/sign/ve
 tests/          unitários C/C++, integração shell, forge e screenshots (Python)
 docs/           arquitetura, hardware, USB, build, QA, handoff, roadmap
 ```
+
+**`apps/` é onde os aplicativos moram** — inclusive o Launcher, que é o app da
+UI do console. Ficar lá é o que permite mexer na interface sem tocar no
+sistema (`src/`) nem nos jogos (`Jogos/`). `src/` é o núcleo compartilhado: as
+bibliotecas comuns, o supervisor e os daemons. Regra prática: se o diretório
+tem um `main`, é app e mora em `apps/`; se é biblioteca ou serviço do sistema,
+mora em `src/`.
 
 **Regra de ouro:** cada dado de aparelho vive em **um** lugar
 (`device/<id>/device.conf`). Se você precisa do mesmo dado em dois arquivos, gere o
@@ -1675,7 +1684,7 @@ Dois bloqueios reais, os dois resolvidos sem inflar o rootfs:
      todo zero passaria em todo o resto).
 
 2. **Os números do layout estavam só na proposta.** Agora vivem em
-   `src/launcher/ui_geometry.cpp`, um módulo **puro** (sem SDL) —
+   `apps/launcher/ui_geometry.cpp`, um módulo **puro** (sem SDL) —
    `tests/test_ui_geometry.cpp` reproduz a tabela medida pelos dois lados:
    4 colunas em 640 (grade 632 px) e 5 em 1280, `tile_h` 85→**128** (127,5
    arredonda para cima, é o valor declarado em `library.json`) e a grade
@@ -3362,6 +3371,36 @@ pega resquício com nome diferente.
   persiste entre builds (user.ext4, boot.vfat, extlinux.conf) carrega o
   estado da iteração anterior: quando o layout da saída muda, regenere.
 
+### 3.124 Mover fonte de diretório quebra o `make` na LEITURA do Makefile
+
+Mover `src/launcher/` → `apps/launcher/` (o Launcher virou app) deixou o
+`make` abortando **antes de compilar qualquer coisa**:
+
+```
+make: *** Sem regra para processar o alvo 'src/launcher/main.cpp',
+necessário por 'build/host/obj/launcher/main.o'.  Pare.
+```
+
+A causa não estava no Makefile: estava no `build/`. O build incremental guarda
+os `.d` (gerados com `-MMD`) listando cada header como dependência, e o
+`-include $(shell find $(BUILD_DIR) -name '*.d')` os lê na hora de montar o
+grafo. Um `.d` que cita `src/launcher/evdev.hpp` cria uma dependência para um
+arquivo que não existe mais — e o make não tem como saber que é lixo.
+
+- `rm -rf build` sempre resolve, mas apaga tudo, e quem tem build grande perde
+  minutos. Melhor: o Makefile tem um **carimbo**
+  (`$(BUILD_DIR)/.layout-launcher-apps`); na primeira invocação ele apaga os
+  `.d` **e o `.o` correspondente** de quem cita o caminho aposentado. Apagar
+  só o `.d` esconderia dependência de header até a próxima recompilação — a
+  classe silenciosa do §3.33.
+- O carimbo existe para o custo ser zero a partir da segunda invocação: sem
+  ele, um `find`+`grep` em todo `build/` rodaria em cada `make`.
+- Os `.d` dos **testes** também citam os headers do launcher (`test_layout.o`
+  inclui `layout.hpp`), então limpar só o diretório do launcher não bastaria.
+- **Regra que fica**: ao mover um diretório de fontes, o `.d` do build
+  incremental é parte do que precisa migrar. O sintoma é um alvo inexistente
+  citado pelo make antes de qualquer erro de compilação.
+
 ### 3.104 NetworkManager desfaz o IP manual da interface USB
 
 `tools/giochi-ctl.py preparar` atribuía `10.55.0.1/24` com `ip addr add` e
@@ -3638,6 +3677,57 @@ do wrapper, sem `ppsspp-exec`, `PPSSPP/` e `PortMaster/` completos, e
 
 **Aberto:** a imagem nova não foi gravada no aparelho (o teste do PPSSPP
 real segue pendente); nada do resto da sessão anterior mudou de estado.
+
+### 2026-11-02 (30) — Copilot (o Launcher vira app no repositório: `apps/launcher`)
+
+O mantenedor fechou a simetria: se o Launcher **é um app**, no repositório ele
+tem de morar em `apps/` como o forge e o store — é o que permite mexer na UI
+sem esbarrar em quem mexe no sistema (`src/`) ou nos jogos (`Jogos/`).
+
+**O que mudou:**
+
+- `src/launcher/` → **`apps/launcher/`** (30 arquivos, `git mv`: histórico
+  preservado). `src/` passou a ser explicitamente o núcleo compartilhado:
+  common, init, musicd, thumbgen.
+- Critério escrito no [apps/README.md](apps/README.md): **se o diretório tem
+  um `main`, é app e mora em `apps/`**. Vale para o que roda no console (o
+  Launcher) e para o que roda no PC (forge, store).
+- `Makefile`: `LAUNCHER_SRC` com prefixo `apps/`, `patsubst apps/%.cpp` (o
+  objeto continua em `$(OBJ)/launcher/*.o`, que é de onde os testes e o
+  `dump-geometry` o pegam), `-Iapps/launcher` e uma regra nova
+  `$(OBJ)/%.o: apps/%.cpp`.
+- `tools/build-image.sh`: o snapshot de fontes passou a copiar `apps/`
+  (sem isso o pacote compila um Makefile cujos fontes não foram copiados).
+  Também limpa `__pycache__` do snapshot — os apps de PC em Python deixam
+  lixo a cada execução.
+- `tools/check-sdl2-compile.sh`, `tests/test_locales.py`,
+  `tests/test_primeiro_boot.py` e 12 documentos ajustados para o caminho novo.
+
+**Defeito encontrado no caminho (§3.124):** o primeiro `make` depois do move
+abortou **antes de compilar** com *"Sem regra para processar o alvo
+'src/launcher/main.cpp'"*. O culpado era o build incremental: os `.d` gerados
+com `-MMD` citam cada header, e o `-include` do Makefile os lê ao montar o
+grafo. `rm -rf build` resolveria, mas o Makefile ganhou um carimbo que apaga
+só os `.d` (e o `.o` par) que citam o caminho aposentado — e só uma vez.
+
+**Guarda nova** (`tools/check-image-contents.sh`, seção 8): falha se
+`src/launcher` voltar a existir, se `apps/launcher` sumir, se o Makefile
+deixar de compilá-lo ou se o snapshot parar de copiar `apps/`. Testada ao
+contrário nos dois casos que importam (recriar `src/launcher` → rc=1; tirar
+`apps` da lista do snapshot → rc=1). O defeito que ela pega é silencioso por
+natureza: o build passaria com o repositório desorganizado.
+
+**Verificação (tudo rodado):** `make` limpo (compila os 16 objetos de
+`apps/launcher` sem warning novo); `make test` **40/40** — a suíte `idiomas`
+quebrou primeiro (`test_locales.py` apontava para `src/launcher`) e é o que se
+espera de um caminho hardcoded; `make lint` rc=0 (inclui
+`check-sdl2-compile.sh`, que compila `render.cpp` com o SDL2 do sysroot).
+
+**Não mudou:** o binário instalado continua `/usr/bin/giochi-launcher` e o
+supervisor continua preferindo `/apps/giochi-launcher` (documentado em
+[LAUNCHER-APP.md](docs/LAUNCHER-APP.md)) — o move é de **organização do
+repositório**, não de comportamento no aparelho. Nada foi testado em hardware
+nesta entrada.
 
 ## 4. O que NÃO foi verificado
 
@@ -3957,7 +4047,7 @@ falta de memória da máquina durante o mesa3d. Falta confirmar `sdcard.img`.
   `makefile` no meio da frase).
 - **Correcao de fato** na doc antiga: ela mandava empacotar com `giochi-forge`
   definindo o entrypoint. O `runtime` de `schemas/metadata.schema.json` aceita
-  so `godot|retroarch|proton` e `src/launcher/metadata.cpp:98` recusa o resto,
+  so `godot|retroarch|proton` e `apps/launcher/metadata.cpp:98` recusa o resto,
   entao um jogo nativo SDL2 **nao** pode virar `.giochi` hoje; faltaria um
   `runtime: "native"` na spec, no schema e no launcher.
 - Verificacao: `g++ -std=c++17 -Wall -Wextra -Wshadow -Wformat=2 -Wundef
@@ -4893,7 +4983,7 @@ Três correções + duas ferramentas novas:
 |---|---|
 | `BR2_PACKAGE_SDL2_OPENGLES=y` (destrava o KMSDRM) | dois templates |
 | `BR2_PACKAGE_BUSYBOX_SHOW_OTHERS=y` (destrava `KMOD_TOOLS`) | dois templates |
-| `render.cpp` imprime **o motivo** da queda para headless | `src/launcher/render.cpp` |
+| `render.cpp` imprime **o motivo** da queda para headless | `apps/launcher/render.cpp` |
 | `tools/check-config-applied.py` — pedido × aplicado, falha o build | novo |
 | `tools/config-delta.py` — quais pacotes a mudança de config afeta | novo |
 
@@ -5486,7 +5576,7 @@ erro.
 
 **O que foi implementado (sem inflar o rootfs):**
 
-- `src/launcher/ui_geometry.{hpp,cpp}` — tokens da proposta §3, grade com
+- `apps/launcher/ui_geometry.{hpp,cpp}` — tokens da proposta §3, grade com
   colunas derivadas da largura, paginação pelo foco, abas medidas, anel de foco.
   **Módulo puro, sem SDL**, testado no host: `tests/test_ui_geometry.cpp`,
   **298 checagens**, incluindo os números medidos da proposta (grade termina em
@@ -5494,7 +5584,7 @@ erro.
 - `tools/make-font.py` → `assets/font.a8` (102 KB, cobertura 8 bpp) +
   `assets/font.json`. Tamanhos 12/14/18/21 = os tokens das fontes. Sem
   `SDL2_ttf`/freetype: o atlas é gerado no PC e versionado.
-- `src/launcher/font.cpp` — atlas → uma textura ARGB8888, tingida por
+- `apps/launcher/font.cpp` — atlas → uma textura ARGB8888, tingida por
   `SDL_SetTextureColorMod`; UTF-8 decodificado com code point de substituição;
   recorte `...` medido em PIXELS (o defeito que a §5.2 da proposta aponta no
   `tip[:72]` antigo).
@@ -5699,12 +5789,12 @@ wifi e não rede igual a de celular"* e *"no preview ainda está bugado"*.
 
 **Entregue:**
 
-1. **i18n** (`src/launcher/i18n.{hpp,cpp}` + `assets/locales/{pt_BR,en}.json`):
+1. **i18n** (`apps/launcher/i18n.{hpp,cpp}` + `assets/locales/{pt_BR,en}.json`):
    catálogo JSON plano, 62 chaves em cada idioma com **paridade total**,
    `i18n_normalize()` para `pt_BR`/`pt-BR`/`pt`, resolução por
    `GIOCHI_LANG` → `LANG` → `theme.json` → `pt_BR`, e troca a quente pelo menu
    de configurações sem reiniciar a partida nem recarregar o atlas.
-2. **Indicadores de status** (`src/launcher/status.{hpp,cpp}`): bateria por
+2. **Indicadores de status** (`apps/launcher/status.{hpp,cpp}`): bateria por
    `/sys/class/power_supply`, **Wi-Fi em arcos** (`stroke_arc()`), não barras de
    célula como estava, e cabo de rede por `/sys/class/net/*/carrier`. Sinal de
    `/proc/net/wireless`, cuja linha de dados começa com **dois espaços** depois
