@@ -314,6 +314,18 @@ if [ -d "$ROOT/apps/store" ] && command -v python3 >/dev/null 2>&1; then
     fi
 fi
 
+# Fonte GitHub Releases: le a lista do GithubLauncher, escolhe o build aarch64 e
+# confere o ELF. Sem isso a Loja so' enxerga o que ja' esta' empacotado.
+if [ -d "$ROOT/apps/store" ] && command -v python3 >/dev/null 2>&1; then
+    total=$((total + 1))
+    if (cd "$ROOT" && python3 -m unittest tests.test_fonte) >/dev/null 2>&1; then
+        echo "OK     fonte-github (python)"
+    else
+        echo "FALHA  fonte-github (python)"
+        fail=$((fail + 1))
+    fi
+fi
+
 # Contrato do control.sock: o canal que um app de jogos usa. Roda o
 # giochi-init REAL com GIOCHI_ROOT num temporario (sem root, sem aparelho).
 if [ -x "$ROOT/build/host/bin/giochi-init" ] && command -v python3 >/dev/null 2>&1; then

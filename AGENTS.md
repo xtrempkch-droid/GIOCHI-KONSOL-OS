@@ -4784,3 +4784,73 @@ capturado (o console está ligado há horas e sem power-cycle o serial não
 mostra o passado). Quando o cartão voltar ao leitor, o caminho é:
 `tools/flash-card.sh /dev/sdd` (imagem `d9c9b82b`, com a sonda) e, no boot
 seguinte, `tools/giochi-usb-diag.sh --cartao` — que agora responde.
+
+### 2026-11-01 (25) — Copilot (GithubLauncher: o app não roda, o formato sim)
+
+O mantenedor apontou o [SirDiabo/GithubLauncher](https://github.com/SirDiabo/GithubLauncher)
+(MIT, C#/.NET 9, ~2 mil estrelas) e pediu a viabilidade de suporte. Resposta em
+[docs/LOJA.md](docs/LOJA.md) §5.
+
+**Rodar o app dele aqui: não.** Medido baixando o release `v1.73`:
+
+| Medição | Valor |
+|---|---|
+| `GitHubLauncher-v1.73-Linux-ARM64.zip` | 37,1 MB → **95,9 MB** descomprimido |
+| `GithubLauncher` | ELF64 **AArch64**, mas com `ld-linux-aarch64.so.1` |
+| `libSkiaSharp.so` / `libHarfBuzzSharp.so` | também glibc (`libc.so.6`, GLIBC_2.17) |
+| `dotnet8-runtime` no Alpine aarch64 | **167,9 MB** instalados |
+
+Ou seja: é **glibc** e o nosso rootfs é **musl** (o loader nem existe), e 96 MB
+não cabem num rootfs de 28 MB / partição de 160 MB. Existe build ARM64 oficial
+(`RuntimeIdentifiers` inclui `linux-arm64`) — o bloqueio é a libc, não a
+arquitetura. Recompilar do fonte (MIT permite) para `linux-musl-arm64` é
+possível, mas traz o runtime junto: não compensa para um app de PC.
+
+**O que vale é o formato, e agora é suporte de verdade.** O núcleo dele está num
+submódulo separado (`GitHubLauncher.Core`) e a peça reaproveitável é
+`PlatformAssetMatcher` + o `apps.json`
+(`{name, repository, folderName, appIconUrl}`). Implementado em
+`apps/store/giochi_store/fonte.py` + comando `giochi-store obter`:
+
+```console
+$ python3 -m giochi_store obter --apps-json apps.json --baixar --out ./baixados
+  ok  TIC-80      tic80-v1.4-linux-arm64.zip (1 de 2 candidatos)  v1.4.1   4,9 MB
+  ok  Godot       Godot_v4.7.2-stable_linux.arm64.zip            4.7.2   73,4 MB
+```
+
+É a peça que faltava entre "baixei do GitHub" e "tenho um `.giochi`": o GitHub
+Releases nomeia cada arquivo, então dá para escolher o build de aarch64 — e
+**conferir no ELF** depois.
+
+**Duas diferenças deliberadas em relação ao matcher original:**
+
+1. **ARM de 32 bits é recusado.** O dele aceita `armv7`/`armhf` como "ARM"
+   (certo para um launcher genérico que roda em 32 bits também); o nosso
+   aparelho é aarch64 e binário de 32 bits não roda.
+2. **Formato extraível ganha de pacote de distro.** Não temos dpkg/rpm.
+
+**Dois bugs meus, os dois achados medindo, não lendo:**
+
+- **`arm-` casava dentro de `arm-64`.** O marcador de 32 bits (`arm-`) era
+  testado antes do de 64, então `App-arm-64-linux.tar.gz` era recusado como
+  "ARM de 32 bits". Corrigido com a ordem invertida e teste próprio.
+- **A primeira versão escolheu o `.deb` do TIC-80** em vez do `.zip`, só porque
+  vinha antes no alfabeto — e `.deb` é inútil sem dpkg. Virou o ranking de
+  formato.
+
+Também corrigido no caminho: `baixar()` fazia `mkdir` no diretório **pai** (não
+criava o destino) e o comando saía com `rc=0` mesmo com download falhando.
+
+**Verificação (tudo rodado):** `tests/test_fonte.py` com **22 testes** (formato
+do launcher, campo extra não quebra, lista simples, `armv7`/`armhf`/`x86`
+recusados, `arm-64` não confundido, extraível antes de `.deb`, ELF32/ELF64/
+não-ELF, cliente falso, relatório). **Testado ao contrário**: devolvi a ordem
+errada ARM32/ARM64 → 1 falha; restaurado → OK. **Prova de ponta a ponta com
+rede**: baixou o `tic80-v1.4-linux-arm64.zip` real (5 154 010 B), extraiu o
+binário e `verificar_elf` deu `(True, 'ELF64 AArch64')`, enquanto `/bin/ls`
+(x86-64) deu `e_machine 0x3E` recusado. `make lint` rc=0 e
+`tests/run_tests.sh` **37/37** (suíte nova `fonte-github`).
+
+**Aberto:** o `obter` baixa o arquivo, **não** extrai nem transforma em
+`.giochi` — o empacotamento continua no `giochi-forge store`, e o download de
+um projeto Godot ainda esbarra no template musl (ADR-03).

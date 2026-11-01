@@ -80,7 +80,8 @@ Assinatura Ed25519 + SHA-256 (ADR-01); o `giochi-verify` do console confere.
 
 A Loja só pode **produzir** o `.giochi` no PC — o rootfs do console não tem
 toolchain (nenhum `BR2_PACKAGE_GCC/MAKE/CMAKE`) e tem 1–2 GB de RAM. O
-`giochi-forge store` lê uma pasta de projetos baixados e empacota o que já dá:
+`giochi-forge store` lê uma pasta de projetos **já baixados** e empacota o
+que dá — o download a partir do GitHub é o §5, com o app de loja:
 
 ```console
 $ apps/forge/giochi-forge store --src ~/baixados --out ./pacotes \
@@ -119,7 +120,61 @@ Regras que valem no `store`:
 - não desce dois níveis de pasta (um zip do GitHub extrai como `<repo>-main/`;
   descer mais acharia "projeto" dentro de `examples/` de outro projeto).
 
-## 5. O que falta para a Loja existir
+## 5. Fonte GitHub Releases (formato do GithubLauncher)
+
+O [GithubLauncher](https://github.com/SirDiabo/GithubLauncher) (MIT, C#/.NET 9,
+2 mil estrelas) resolve por outro caminho o que o itch.io não resolvia: ele lê
+uma lista de **repositórios** e baixa o build do **GitHub Releases**. Como cada
+arquivo de um release tem nome próprio, o build de aarch64 pode ser escolhido
+pela convenção do nome — e conferido depois no **cabeçalho ELF**.
+
+**Rodar o app dele no Giochi: não dá.** Medido no release `v1.73`:
+
+| Medição | Valor |
+|---|---|
+| `GitHubLauncher-v1.73-Linux-ARM64.zip` | 37,1 MB (95,9 MB descomprimido) |
+| `GithubLauncher` | ELF64 **AArch64** … mas `ld-linux-aarch64.so.1` |
+| `libSkiaSharp.so` / `libHarfBuzzSharp.so` | glibc também (`libc.so.6`, GLIBC_2.17) |
+| Runtime .NET no Alpine aarch64 | **167,9 MB** (`dotnet8-runtime`) |
+
+Ele é **glibc**; o nosso rootfs é **musl**. E mesmo recompilando do fonte (MIT
+permite), 96 MB num rootfs de 28 MB / partição de 160 MB não cabe.
+
+**O que dá suporte de verdade é o formato.** O comando `obter` lê o `apps.json`
+dele como está:
+
+```console
+$ python3 -m giochi_store obter --apps-json apps.json --baixar --out ./baixados
+lista: apps.json  (3 app(s))
+  ok  TIC-80      tic80-v1.4-linux-arm64.zip (1 de 2 candidatos)  v1.4.1   4,9 MB
+  ok  Godot       Godot_v4.7.2-stable_linux.arm64.zip            4.7.2   73,4 MB
+  --  Inexistente nao-existe/mesmo-999: sem releases
+```
+
+```json
+{"apps": [{"name": "TIC-80", "repository": "nesbox/TIC-80",
+           "folderName": "tic80", "appIconUrl": null}]}
+```
+
+Regras do matcher (`apps/store/giochi_store/fonte.py`), e onde ele é **mais
+rigoroso** que o original:
+
+| Situação | O que faz |
+|---|---|
+| `...linux-arm64.zip`, `...linux-aarch64.tar.gz` | escolhe (aarch64 explícito ganha) |
+| `...armv7`, `...armhf`, `...arm32` | **recusa**: o aparelho é aarch64 e 32 bits não roda |
+| `...linux-x86_64`, `win64`, `macos`, `.apk` | recusa, com o motivo |
+| `.zip`/`.tar.gz` contra `.deb`/`.rpm` | prefere o extraível — não temos dpkg |
+| nome sem marcador de arquitetura | recusa; melhor não baixar 40 MB para descobrir |
+| binário baixado | confere `e_machine == 0xB7`; nome de arquivo mente, ELF não |
+
+Duas diferenças do original, de propósito: o matcher dele aceita `armv7`/`armhf`
+como "ARM" (correto num launcher genérico, que roda também em 32 bits) e não
+tem preferência por formato. As duas coisas foram para o teste porque a segunda
+apareceu **medindo**: a primeira versão escolheu o `.deb` do TIC-80 só por vir
+antes no alfabeto.
+
+## 6. O que falta para a Loja existir
 
 1. **`runtime: "native"`** no schema — hoje um binário aarch64 compilado do
    fonte não tem como ser declarado. Afeta `schemas/metadata.schema.json`,
@@ -137,7 +192,7 @@ Regras que valem no `store`:
    `e_machine=0xB7`, mas **glibc** (`GLIBC_2.17…2.28`), e o rootfs é musl.
    Recompilar contra musl destrava este caso **e** os três jogos padrão.
 
-## 6. Como reconferir
+## 7. Como reconferir
 
 ```sh
 # o enum sem ARM (a prova de por que o itch.io nao serve)

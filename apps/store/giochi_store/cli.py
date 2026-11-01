@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
 
+from . import fonte
 from .catalogo import catalogo, novidades, sha256_de, varrer
 from .destino import descobrir, games_de, resumo, todos
 
@@ -177,6 +179,48 @@ def cmd_destinos(args) -> int:
     return 0
 
 
+def cmd_obter(args) -> int:
+    """Le a lista (apps.json do GithubLauncher) e resolve o build aarch64.
+
+    Isto e' o que faltava entre "baixei um projeto do GitHub" e "tenho um
+    .giochi": o GitHub Releases diz o nome de cada arquivo, entao o build de
+    aarch64 pode ser escolhido -- e conferido no ELF depois do download.
+    """
+    try:
+        entradas = fonte.ler_apps_json(Path(args.apps_json).expanduser())
+    except fonte.FonteError as exc:
+        print(f"giochi-store: {exc}", file=sys.stderr)
+        return 2
+    if not entradas:
+        print("giochi-store: lista sem apps", file=sys.stderr)
+        return 2
+
+    token = args.token or os.environ.get("GITHUB_TOKEN")
+    resultados = fonte.resolver(entradas, token=token)
+    print(f"lista: {args.apps_json}  ({len(entradas)} app(s))")
+    print(fonte.relatorio(resultados))
+
+    falhas = 0
+    if args.baixar:
+        destino = Path(args.out or ".").expanduser()
+        baixados = 0
+        for r in resultados:
+            if not r.ok:
+                continue
+            try:
+                caminho, elf_ok, detalhe = fonte.baixar(r, destino, token=token)
+            except fonte.FonteError as exc:
+                print(f"  erro    {r.entrada.nome:26s} {exc}", file=sys.stderr)
+                falhas += 1
+                continue
+            estado = "ELF ok " if elf_ok else "conferir"
+            print(f"  {estado} {caminho.name:26s} {detalhe}")
+            baixados += 1
+        print(f"  {baixados} arquivo(s) em {destino}")
+
+    return 0 if all(r.ok for r in resultados) and not falhas else 1
+
+
 def cmd_listar(args) -> int:
     pacotes = varrer(Path(args.src).expanduser())
     if args.json:
@@ -221,6 +265,16 @@ def main(argv: list[str] | None = None) -> int:
     d = sub.add_parser("destinos", help="onde o console esta' visivel")
     d.add_argument("--preferir", choices=("cartao", "mtp"), default=None)
     d.set_defaults(func=cmd_destinos)
+
+    o = sub.add_parser(
+        "obter", help="resolve o build aarch64 de uma lista de repositorios")
+    o.add_argument("--apps-json", required=True,
+                   help="lista no formato do GithubLauncher, ou lista de owner/repo")
+    o.add_argument("--out", help="onde gravar os arquivos baixados (com --baixar)")
+    o.add_argument("--baixar", action="store_true",
+                   help="baixa de verdade (sem isto, so' mostra o que escolheria)")
+    o.add_argument("--token", help="token do GitHub (ou GITHUB_TOKEN)")
+    o.set_defaults(func=cmd_obter)
 
     l = sub.add_parser("listar", help="mostra o catalogo em texto")
     l.add_argument("--src", required=True)
