@@ -90,8 +90,11 @@ Ferramentas de PC que **não** vão para a imagem (ver
    **Fonte de catálogo:** o itch.io foi avaliado e **não serve** — o modelo de
    dados dele não tem ARM (`all`/`386`/`amd64`), então a Loja não consegue
    filtrar o que roda em aarch64, e a oferta ARM64 nativa é de dezenas de
-   títulos. Ver [ITCHIO.md](ITCHIO.md). O `PortMaster-New` (MIT) é ARM por
-   construção e é a fonte mais alinhada a avaliar.
+   títulos. Ver [ITCHIO.md](ITCHIO.md). Comparação medida de todas as fontes
+   candidatas em [STORE-SOURCES.md](STORE-SOURCES.md): o `PortMaster-New` (MIT,
+   ≥488 ports com binários `.aarch64` prontos) é a mais alinhada, seguido do
+   **Alpine aarch64** — que, sendo **musl como nós**, serve de binário e de
+   receita — e do **TIC-80** (MIT, engine arm64 de 4,9 MB, cartuchos de ~100 KB).
 2. **`news.json` sem produtor.** A Home mostra as dicas compiladas; a Loja
    deveria alimentar o arquivo.
 3. **`giochi-forge` sem o lado "físico"**: detecção por USB, leitura de

@@ -298,6 +298,10 @@ viabilidade é §3.
 
 ## 6. O que **é** viável (e é o que eu recomendo avaliar em seguida)
 
+> Comparação medida de **todas** as fontes candidatas (PortMaster, Alpine aarch64,
+> TIC-80, Buildroot, itch.io): ver [STORE-SOURCES.md](STORE-SOURCES.md).
+
+
 O problema real do projeto não é "de onde baixar jogos", é **"de onde vêm jogos
 ARM64 nativos que caibam em 700 MB"**. Três fontes reais, em ordem de
 adequação:

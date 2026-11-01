@@ -2805,3 +2805,66 @@ cross-compilado contra o sysroot real (`-Wall -Wextra`, link com
 **Aberto:** o boot com a sonda ainda não aconteceu. **Próximo dado é o log**:
 as linhas `sonda: OK/FALHOU` dizem qual passo do EGL falha, e aí a correção é
 pontual em vez de tentativa.
+
+### 2026-10-31 (24) — Copilot (mapa de fontes de jogos: Alpine é musl, e isso é o achado)
+
+Depois do itch.io, o mantenedor perguntou se havia **outra fonte**. Comparação
+medida em [docs/STORE-SOURCES.md](docs/STORE-SOURCES.md); nada adotado.
+
+**O achado que vale a sessão:** o **Alpine Linux** usa **musl-libc** — a mesma
+escolha do ADR-03 — e publica **24.049 pacotes aarch64** (`main` 5.543 +
+`community` 18.506) com binários linkados a `so:libc.musl-aarch64.so.1`. É a
+única fonte encontrada que entrega **binário aarch64 + musl**, que é exatamente
+a nossa combinação. Serve como binário **e** como receita (`APKBUILD` é o mapa
+do que o Buildroot precisa).
+
+Oferta de jogo medida (tamanho **instalado**): `easyrpg-player` **3,4 MB MIT**,
+`love` **3,8 MB Zlib**, `retroarch` 11,5 MB GPL-2.0, `pingus` 0,8 MB,
+`nethack` 1,7 MB, `minetest` 8,9 MB. E os grandes: `supertux` 5 MB mas
+`supertux-data` **244,2 MB**; `supertuxkart-data` **717,3 MB**; `xonotic-data`
+**1,1 GB**.
+
+**Isso confirma de forma independente a análise do SuperTux**: eu havia medido
+234 MB crus no upstream e estimado ~160 MB comprimido; o pacote real do Alpine
+tem **244 MB instalados para 5 MB de binário**. O problema é dado, não código.
+
+**42 cores `libretro-*`** aarch64; por licença, **10 permissivos** e **32
+copyleft**. Permissivos: `libretro-2048` (Unlicense), `uzem` (MIT), `o2em`,
+`sameboy` (**MIT**), `handy` (Zlib), `craft` (**MIT**), `mgba` (MPL-2.0),
+`mrboom` (MIT), `core-info` e `database` (MIT, 336 MB).
+
+**PortMaster segue sendo a fonte mais alinhada:** medido na árvore,
+**≥488 diretórios de port** (a árvore vem **truncada**, então é piso) e
+**430,7 MB de arquivos `.aarch64`** — binários ARM prontos, não fonte. A
+ferramenta é MIT; **cada port tem a licença do jogo original** (vários exigem os
+arquivos do jogo comercial), então curadoria é obrigatória.
+
+**TIC-80 é o melhor uso de armazenamento que existe:** engine **MIT**, 6.180
+estrelas, binário `tic80-v1.4-linux-arm64.zip` de **4,9 MB**; cartucho `.tic`
+medido no repo: **18–100 KB**. Cem jogos ≈ 10 MB — o oposto dos 244 MB do
+SuperTux.
+
+**Buildroot 2024.02** (conferido por caminho): `solarus` e `minetest`
+**existem**; `retroarch`, `libretro`, `love`, `easyrpg-player`, `tic80` **não**.
+
+**Duas armadilhas de medição nesta sessão (as duas já registradas no doc):**
+
+1. A API de *tree* do PortMaster devolve **~20 MB** de JSON; ler direto do
+   `curl` corta a resposta no meio e o `json.load` morre com `Expecting property
+   name enclosed in double quotes`. **Salve em arquivo** e depois parceie.
+2. O `APKINDEX` do Alpine usa `<campo>:<valor>` (um caractere), **não**
+   `chave=valor`. Parcelei com `=` na primeira tentativa: **0 pacotes**, sem
+   erro. Vale como lembrete do §3.49/§3.55 — formato errado devolve vazio, não
+   exceção.
+
+**Recomendação registrada (ordem por esforço × retorno):** PortMaster →
+TIC-80 → Alpine como referência/receita → Solarus e Minetest (ligar no
+defconfig) → itch.io só como coleção curada Godot → SuperTux fora por tamanho
+(244 MB de dados).
+
+**Verificação:** índices `APKINDEX.tar.gz` de `v3.20/{main,community}/aarch64`
+baixados e parceados (licença e tamanho instalado por pacote); árvore do
+PortMaster baixada em arquivo (488 ports, 430,7 MB de `.aarch64`); release do
+TIC-80 v1.4.1; `check-links` ok (30 arquivos) e `make lint` rc=0. **Não rodou:**
+nenhum binário do Alpine no aparelho — a compatibilidade musl×musl é hipótese
+verificável, não fato medido, e está declarada assim no doc.
