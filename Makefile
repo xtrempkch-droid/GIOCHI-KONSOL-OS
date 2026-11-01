@@ -164,6 +164,8 @@ LAUNCHER_SRC := \
 	src/launcher/library.cpp \
 	src/launcher/ui_geometry.cpp \
 	src/launcher/font.cpp \
+	src/launcher/i18n.cpp \
+	src/launcher/status.cpp \
 	src/launcher/render.cpp \
 	src/launcher/render_null.cpp
 
@@ -196,7 +198,9 @@ TESTS_CXX := \
 	tests/test_settings.cpp \
 	tests/test_buttonsmap.cpp \
 	tests/test_deviceconf.cpp \
-	tests/test_ui_geometry.cpp
+	tests/test_ui_geometry.cpp \
+	tests/test_i18n.cpp \
+	tests/test_status.cpp
 
 TEST_BINS := $(patsubst tests/%.c,$(BIN)/%,$(TESTS_C)) \
              $(patsubst tests/%.cpp,$(BIN)/%,$(TESTS_CXX))
@@ -302,7 +306,15 @@ $(BIN)/test_settings: $(OBJ)/tests/test_settings.o $(OBJ)/launcher/settings.o $(
 	@mkdir -p $(BIN)
 	$(CXX) $^ -o $@ $(LDFLAGS) $(EXTRA_LDFLAGS) $(CRYPTO_LIBS)
 
-$(BIN)/dump-geometry: $(OBJ)/tools/dump-geometry.o $(OBJ)/launcher/ui_geometry.o $(OBJ)/launcher/layout.o $(COMMON_OBJ)
+$(BIN)/dump-geometry: $(OBJ)/tools/dump-geometry.o $(OBJ)/launcher/ui_geometry.o $(OBJ)/launcher/layout.o $(OBJ)/launcher/i18n.o $(OBJ)/launcher/settings.o $(COMMON_OBJ)
+	@mkdir -p $(BIN)
+	$(CXX) $^ -o $@ $(LDFLAGS) $(EXTRA_LDFLAGS) $(CRYPTO_LIBS)
+
+$(BIN)/test_i18n: $(OBJ)/tests/test_i18n.o $(OBJ)/launcher/i18n.o $(OBJ)/launcher/settings.o $(COMMON_OBJ)
+	@mkdir -p $(BIN)
+	$(CXX) $^ -o $@ $(LDFLAGS) $(EXTRA_LDFLAGS) $(CRYPTO_LIBS)
+
+$(BIN)/test_status: $(OBJ)/tests/test_status.o $(OBJ)/launcher/status.o $(COMMON_OBJ)
 	@mkdir -p $(BIN)
 	$(CXX) $^ -o $@ $(LDFLAGS) $(EXTRA_LDFLAGS) $(CRYPTO_LIBS)
 
@@ -357,8 +369,18 @@ font:
 # dump-geometry, sem SDL) e o texto do MESMO atlas que vai para a imagem.
 # Nao ha segundo conjunto de numeros de layout neste caminho.
 ui-preview: $(BIN)/dump-geometry
-	@python3 tools/preview-ui.py --size 1280x720 --tab 1 --items 15 --focus 3
-	@python3 tools/preview-ui.py --size 640x480 --tab 1 --items 6 --focus 1
+	@python3 tools/preview-ui.py --size 1280x720 --tab 1 --items 15 --focus 0 \
+		--out docs/proposta/ui-1280x720.png
+	@python3 tools/preview-ui.py --size 640x480 --tab 1 --items 6 --focus 1 \
+		--out docs/proposta/ui-640x480.png
+	@python3 tools/preview-ui.py --size 1280x720 --tab 2 --items 0 \
+		--out docs/proposta/ui-home-1280x720.png
+	@python3 tools/preview-ui.py --size 1280x720 --tab 1 --items 0 \
+		--out docs/proposta/ui-vazia-1280x720.png
+	@python3 tools/preview-ui.py --size 1280x720 --tab 1 --settings 1 --level 1 \
+		--out docs/proposta/ui-config-1280x720.png
+	@python3 tools/preview-ui.py --size 1280x720 --lang en --tab 1 --items 15 \
+		--out docs/proposta/ui-1280x720-en.png
 
 images:
 	@if [ "$(BUILD)" = "1" ]; then \

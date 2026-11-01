@@ -11,7 +11,9 @@
 #include "layout.hpp"
 #include "library.hpp"
 #include "metadata.hpp"
+#include "i18n.hpp"
 #include "overlay.hpp"
+#include "status.hpp"
 #include "render.hpp"
 #include "settings.hpp"
 #include "theme.hpp"
@@ -49,6 +51,11 @@ struct Launcher {
     giochi_overlay overlay{};
     giochi::InputState input{};
     giochi::UiState ui{};
+    giochi::I18n i18n{};
+    giochi::UiStatus status{};
+    std::vector<giochi::UiMenuItem> menu;
+    std::string menu_title;
+    int menu_level = 0;
     giochi::Renderer *renderer = nullptr;
     giochi_evdev *evdev = nullptr;
     bool running = true;
@@ -206,23 +213,137 @@ void set_usb_mode(Launcher &app, const char *mode)
 }
 
 
+/* A hint bar vem de ui_hint_text (i18n.cpp): a tabela de pares mora num
+ * lugar so', compartilhada com o tools/dump-geometry. Antes cada um tinha a
+ * sua, e o preview mostrava uma dica que o aparelho nao mostrava.
+ *
+ * Item que nao funciona nao aparece: B e' inerte na Home (§4.1.2), entao a
+ * aba Home nao anuncia B. */
 void set_hint(Launcher &app)
 {
-    const char *tab = giochi_layout_tab_id(&app.layout, app.current_tab);
-    const char *hint = "L/R aba  A ok  B voltar  Select ajustes  Home inicio";
+    giochi::UiHintContext ctx = giochi::UI_HINT_TABS;
 
     if (app.overlay.open) {
-        if (app.overlay.level == 0) {
-            hint = "A entrar  B fechar  Select fechar";
-        } else {
-            hint = "A aplicar  B voltar  Select fechar";
+        ctx = app.overlay.level == 0 ? giochi::UI_HINT_SETTINGS_0
+                                     : giochi::UI_HINT_SETTINGS_1;
+    } else {
+        const char *tab = giochi_layout_tab_id(&app.layout, app.current_tab);
+
+        if (std::strcmp(tab, "home") == 0) {
+            ctx = giochi::UI_HINT_HOME;
+        } else if (std::strcmp(tab, "music") == 0) {
+            ctx = giochi::UI_HINT_MUSIC;
+        } else if (std::strcmp(tab, "library") == 0) {
+            ctx = giochi::UI_HINT_LIBRARY;
         }
-    } else if (std::strcmp(tab, "home") == 0) {
-        hint = "L/R aba  A abrir  Select ajustes";
-    } else if (std::strcmp(tab, "music") == 0) {
-        hint = "A play/pause  X proxima  Y anterior  B voltar";
     }
-    app.ui.hint = hint;
+    app.ui.hint = giochi::ui_hint_text(app.i18n, ctx);
+}
+
+/* Idiomas que a imagem entrega: assets/locales/<id>.json. A lista e' curta de
+ * proposito — idioma que nao tem catalogo viraria chaves cruas na tela. */
+static const char *const kIdiomas[] = {"pt_BR", "en"};
+static constexpr int kIdiomaCount =
+    static_cast<int>(sizeof(kIdiomas) / sizeof(kIdiomas[0]));
+
+/* Troca de idioma a quente, sem reiniciar o Launcher: recarrega o catalogo,
+ * grava em settings.json (o init rele esse arquivo) e reconstroi o menu, que
+ * tem os rotulos congelados em app.menu. */
+void cycle_language(Launcher &app)
+{
+    int atual = 0;
+
+    for (int i = 0; i < kIdiomaCount; i++) {
+        if (std::strcmp(kIdiomas[i], app.i18n.lang()) == 0) {
+            atual = i;
+            break;
+        }
+    }
+    const char *proximo = kIdiomas[(atual + 1) % kIdiomaCount];
+
+    if (!app.i18n.load(app.options.asset_dir.c_str(), proximo)) {
+        GLOG_WARN("idioma: '%s' nao carregou; mantendo '%s'", proximo,
+                  app.i18n.lang());
+        return;
+    }
+    giochi_strlcpy(app.settings.language, app.i18n.lang(),
+                   sizeof(app.settings.language));
+
+    char err[128] = {0};
+
+    if (giochi_settings_save(&app.settings, app.options.user_dir.c_str(), err,
+                             sizeof(err)) != 0) {
+        GLOG_WARN("settings.json: nao foi possivel gravar language (%s)", err);
+    }
+    GLOG_INFO("idioma: %s", app.i18n.lang());
+}
+
+/* Monta a lista que o render desenha. O render NAO conhece idioma nem acao:
+ * recebe rotulo ja' traduzido + valor. Antes ele comparava o texto do item com
+ * "Desligar" para decidir a acao, o que quebraria ao traduzir.
+ *
+ * A ordem de kSistema casa com giochi_overlay (overlay.cpp) e com os indices
+ * GIOCHI_SYSTEM_*_INDEX: idioma, fuso, brilho, suspensao, USB, desenvolvedor. */
+void build_menu(Launcher &app)
+{
+    app.menu.clear();
+    app.menu_level = app.overlay.level;
+
+    if (app.overlay.level == 0) {
+        const int n = giochi_overlay_count(&app.overlay);
+
+        app.menu_title = app.i18n.tr("settings.title");
+
+        for (int i = 0; i < n; i++) {
+            static const char *const chaves[GIOCHI_OVERLAY_ITEM_COUNT] = {
+                "settings.appearance", "settings.system", "settings.sound",
+                "settings.store",      "settings.network", "settings.about",
+                "settings.poweroff"};
+
+            giochi::UiMenuItem item;
+
+            item.label = i < GIOCHI_OVERLAY_ITEM_COUNT
+                             ? app.i18n.tr(chaves[i])
+                             : giochi_overlay_item(i);
+            item.has_submenu = i == 1; /* Sistema */
+            app.menu.push_back(item);
+        }
+        return;
+    }
+
+    app.menu_title = app.i18n.tr("settings.system");
+
+    const bool dev = app.settings.developer_ssh_usb_enabled != 0;
+    const bool mass = std::strcmp(app.settings.usb_mode, "mass") == 0;
+
+    /* tr_n, e NAO snprintf com o texto do catalogo como formato: uma traducao
+     * com "%" (ou pior, "%s") viraria leitura de pilha. O catalogo guarda
+     * "{n} min"; a substituicao e' textual e previsivel. */
+    const std::string brilho =
+        app.i18n.tr_n("settings.level", app.settings.brightness);
+    const std::string suspenso = app.i18n.tr_n(
+        "settings.minutes", app.settings.suspend_timeout_s / 60);
+
+    struct Linha {
+        const char *chave;
+        std::string valor;
+    };
+    const Linha linhas[GIOCHI_SYSTEM_ITEM_COUNT] = {
+        {"settings.language", app.i18n.display_name()},
+        {"settings.timezone", app.settings.timezone},
+        {"settings.brightness", brilho},
+        {"settings.suspend", suspenso},
+        {"settings.usb_mode", mass ? "Mass Storage" : "MTP"},
+        {"settings.dev_mode",
+         app.i18n.tr(dev ? "settings.on" : "settings.off")}};
+
+    for (int i = 0; i < GIOCHI_SYSTEM_ITEM_COUNT; i++) {
+        giochi::UiMenuItem item;
+
+        item.label = app.i18n.tr(linhas[i].chave);
+        item.value = linhas[i].valor;
+        app.menu.push_back(item);
+    }
 }
 
 void activate_tab(Launcher &app)
@@ -310,6 +431,9 @@ void handle_action(Launcher &app, giochi::Action action)
                 } else {
                     (void)giochi_overlay_enter(&app.overlay);
                 }
+            } else if (app.overlay.level == 1 && app.overlay.index == 0) {
+                /* Idioma e' o primeiro item do submenu Sistema. */
+                cycle_language(app);
             } else if (app.overlay.index == GIOCHI_SYSTEM_USB_MODE_INDEX) {
                 /* Alterna MTP <-> Mass Storage. A rede USB continua ativa. */
                 const char *next = std::strcmp(app.settings.usb_mode, "mtp") == 0
@@ -441,6 +565,15 @@ bool init(Launcher &app)
     app.current_tab = app.layout.default_index;
 
     giochi_overlay_init(&app.overlay);
+
+    /* Idioma: GIOCHI_LANG -> settings.json -> padrao. Carregado ANTES de
+     * qualquer rotulo existir, senao o primeiro frame sai com chaves cruas. */
+    {
+        const std::string lang =
+            giochi::i18n_resolve_language(app.options.user_dir.c_str());
+
+        app.i18n.load(app.options.asset_dir.c_str(), lang.c_str());
+    }
     giochi::input_reset(&app.input);
 
     /* Secao 2.2: mapa canonico em /etc/giochi/buttons.map. A secao usada
@@ -575,6 +708,26 @@ int main(int argc, char **argv)
         app.ui.focus_index = app.library_focus;
         app.ui.items = app.ui_items.empty() ? nullptr : app.ui_items.data();
         app.ui.item_count = static_cast<int>(app.ui_items.size());
+
+        /* Os indicadores mudam em segundos, nao em quadros: ler /sys a 60 fps
+         * seria desperdicio. Uma vez por segundo basta para bateria e relogio. */
+        if (frames % 60 == 0) {
+            giochi::status_update(&app.status);
+        }
+        app.ui.i18n = &app.i18n;
+        app.ui.status = &app.status;
+        app.ui.settings = &app.settings;
+
+        if (app.overlay.open) {
+            build_menu(app);
+            app.ui.menu = app.menu.empty() ? nullptr : app.menu.data();
+            app.ui.menu_count = static_cast<int>(app.menu.size());
+            app.ui.menu_title = app.menu_title;
+            app.ui.menu_level = app.menu_level;
+        } else {
+            app.ui.menu = nullptr;
+            app.ui.menu_count = 0;
+        }
         set_hint(app);
 
         if (app.renderer != nullptr) {

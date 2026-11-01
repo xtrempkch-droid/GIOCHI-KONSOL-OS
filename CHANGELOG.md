@@ -6,6 +6,38 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 ## [Não publicado]
 
 ### Corrigido
+- **A fonte da UI perdia a METADE DE BAIXO de cada letra** (AGENTS.md §3.72).
+  `tools/make-font.py` trocava `w` e `line_height` ao desempacotar uma lista de
+  tuplas, e o recorte saía 22x11 em vez de 13x22: só a metade de cima do glifo
+  entrava no atlas. Na tela o sintoma era "fonte ruim/borrada", não "fonte
+  quebrada" — passou por cinco imagens.
+  - A montagem virou `render_face()`, com bloco de largura `max(avanço, tinta)`
+    (22 glifos do DejaVu passam 1 px do próprio avanço: `A`, `K`, `T`, `f`, `r`).
+  - Verificado: o glifo do atlas agora é byte a byte igual ao desenho direto do
+    Pillow. Tinta do texto voltou ao da referência (abas 87 528 → 293 233
+    contra 299 228 de `docs/proposta/library-1280x720.png`).
+  - Guarda: `tests/test_font.py` olha a **metade de baixo** da linha do `g` —
+    olhar "pixels pintados" no arquivo inteiro não pegaria, porque a metade de
+    cima continuava lá. Testado ao contrário: 4 falhas.
+- **Fonte com um peso só.** A referência negrita título de tile, aba ativa,
+  tecla da hint bar e título de painel; o atlas só tinha regular. Agora são
+  duas faces por tamanho, e `ui_text_weight(UiTextRole)` (módulo puro) é a
+  fonte única de qual peso cada papel usa — o `dump-geometry` publica a lista e
+  o `preview-ui.py` lê, como já era com o `UiRole`.
+- **Aba medida em negrito nos dois lados**: a ativa é negrita e medir pelo
+  regular fazia ela transbordar a célula. A sublinha usa a largura do negrito
+  (117 px na referência; o regular dava 104).
+- **`hint bar` tinha duas tabelas de pares** (`main.cpp` e
+  `tools/dump-geometry.cpp`) e elas divergiram. Agora `ui_hint_text()`, em
+  `i18n.cpp`, serve os dois; a Home não anuncia `B`, que é inerte nela (§4.1.2).
+- **`build_menu()` e `cycle_language()` estavam chamadas e não definidas** em
+  `main.cpp` — o launcher não compilava. Reescritas, com o submenu Sistema
+  completo. No caminho, `cycle_language` passou a trocar o idioma a quente,
+  gravar em `settings.json` e reconstruir o menu.
+- **Preview com as linhas de separação mais finas que o aparelho**: 1 px fixo
+  contra `scale_pct/50` (3 px em 1280x720). A espessura agora vem do
+  `dump-geometry` (`tokens.divider`).
+
 - **Duas rotações independentes** (AGENTS.md §3.70). A UI girava por
   `ui_present()` com o valor do `device.conf`; o console de vídeo girava por
   `setenv giochi_fbcon N` **à mão no U-Boot**, sem relação com o resto. Elas

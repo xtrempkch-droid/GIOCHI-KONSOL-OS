@@ -74,20 +74,29 @@ Font::~Font()
 #endif
 }
 
-const Font::Face *Font::face_for(int px) const
+const Font::Face *Font::face_for(int px, FontWeight weight) const
 {
     const Face *best = nullptr;
+    const Face *fallback = nullptr;
     int best_delta = 0;
+    int fallback_delta = 0;
 
     for (const auto &face : sizes_) {
         const int delta = face.px > px ? face.px - px : px - face.px;
 
+        if (fallback == nullptr || delta < fallback_delta) {
+            fallback = &face;
+            fallback_delta = delta;
+        }
+        if (face.weight != weight) {
+            continue;
+        }
         if (best == nullptr || delta < best_delta) {
             best = &face;
             best_delta = delta;
         }
     }
-    return best;
+    return best != nullptr ? best : fallback;
 }
 
 int Font::advance_of(const Face &face, unsigned cp) const
@@ -105,9 +114,9 @@ int Font::advance_of(const Face &face, unsigned cp) const
     return face.px / 2;
 }
 
-int Font::measure(const std::string &text, int px) const
+int Font::measure(const std::string &text, int px, FontWeight weight) const
 {
-    const Face *face = face_for(px);
+    const Face *face = face_for(px, weight);
 
     if (face == nullptr) {
         /* Sem atlas: estimativa grosseira, so para o layout nao colapsar. */
@@ -123,12 +132,13 @@ int Font::measure(const std::string &text, int px) const
     return width;
 }
 
-std::string Font::truncate(const std::string &text, int px, int max_w) const
+std::string Font::truncate(const std::string &text, int px, int max_w,
+                           FontWeight weight) const
 {
-    if (max_w <= 0 || measure(text, px) <= max_w) {
+    if (max_w <= 0 || measure(text, px, weight) <= max_w) {
         return text;
     }
-    const int ellipsis = measure("...", px);
+    const int ellipsis = measure("...", px, weight);
 
     if (ellipsis >= max_w) {
         return std::string();
@@ -143,7 +153,7 @@ std::string Font::truncate(const std::string &text, int px, int max_w) const
     while (i < text.size()) {
         const std::size_t start = i;
         const unsigned cp = next_cp(text, i);
-        const Face *face = face_for(px);
+        const Face *face = face_for(px, weight);
         const int adv = face != nullptr ? advance_of(*face, cp) : px / 2;
 
         if (width + adv + ellipsis > max_w) {
@@ -155,16 +165,16 @@ std::string Font::truncate(const std::string &text, int px, int max_w) const
     return out + "...";
 }
 
-int Font::line_height(int px) const
+int Font::line_height(int px, FontWeight weight) const
 {
-    const Face *face = face_for(px);
+    const Face *face = face_for(px, weight);
 
     return face != nullptr ? face->line_height : px + px / 2;
 }
 
-int Font::ascent(int px) const
+int Font::ascent(int px, FontWeight weight) const
 {
-    const Face *face = face_for(px);
+    const Face *face = face_for(px, weight);
 
     return face != nullptr ? face->ascent : px;
 }
@@ -210,6 +220,10 @@ bool Font::load(SDL_Renderer *renderer, const char *dir)
         }
         Face face;
         face.px = gj_as_int(gj_object_get(node, "px"), 0);
+        /* "bold" e' o unico peso nomeado; qualquer outro cai em regular. */
+        const char *peso = gj_as_string(gj_object_get(node, "weight"), "");
+        face.weight = std::strcmp(peso, "bold") == 0 ? FontWeight::Bold
+                                                     : FontWeight::Regular;
         face.line_height = gj_as_int(gj_object_get(node, "line_height"), face.px);
         face.ascent = gj_as_int(gj_object_get(node, "ascent"), face.px);
         face.y = gj_as_int(gj_object_get(node, "y"), 0);
@@ -226,8 +240,15 @@ bool Font::load(SDL_Renderer *renderer, const char *dir)
             entry.cp = gj_as_int(gj_object_get(cell, "cp"), 0);
             entry.x = gj_as_int(gj_object_get(cell, "x"), 0);
             entry.advance = gj_as_int(gj_object_get(cell, "advance"), 0);
+            /* `w` e' o bloco desenhado; o atlas 1.x nao o tinha, e sem ele
+             * os glifos que passam do avanco (A, K, T, f, r) saem cortados na
+             * ponta. Default = advance mantem compatibilidade. */
+            entry.w = gj_as_int(gj_object_get(cell, "w"), entry.advance);
             if (entry.advance <= 0) {
                 entry.advance = face.px / 2;
+            }
+            if (entry.w < entry.advance) {
+                entry.w = entry.advance;
             }
             face.cells.push_back(entry);
         }
@@ -297,15 +318,16 @@ bool Font::load(SDL_Renderer *renderer, const char *dir)
 }
 
 int Font::draw(SDL_Renderer *renderer, const std::string &text, int x,
-               int baseline_y, int px, unsigned rgb, int max_w) const
+               int baseline_y, int px, unsigned rgb, int max_w,
+               FontWeight weight) const
 {
-    const Face *face = face_for(px);
+    const Face *face = face_for(px, weight);
 
     if (renderer == nullptr || face == nullptr || texture_ == nullptr) {
         return 0;
     }
 
-    const std::string shown = truncate(text, px, max_w);
+    const std::string shown = truncate(text, px, max_w, weight);
     const SDL_Color tint = {static_cast<Uint8>((rgb >> 16) & 0xFFU),
                             static_cast<Uint8>((rgb >> 8) & 0xFFU),
                             static_cast<Uint8>(rgb & 0xFFU), 0xFFU};
@@ -337,9 +359,8 @@ int Font::draw(SDL_Renderer *renderer, const std::string &text, int x,
             continue;
         }
 
-        SDL_Rect src{cell->x, face->y, cell->advance, face->line_height};
-        SDL_Rect dst{pen, baseline_y - face->ascent, cell->advance,
-                     face->line_height};
+        SDL_Rect src{cell->x, face->y, cell->w, face->line_height};
+        SDL_Rect dst{pen, baseline_y - face->ascent, cell->w, face->line_height};
 
         if (src.x + src.w > tex_w_) {
             src.w = tex_w_ - src.x;

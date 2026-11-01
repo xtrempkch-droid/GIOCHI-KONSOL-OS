@@ -1812,6 +1812,64 @@ repetir a caçada. Ainda assim, o Launcher passou a ler a rotação do
 `/etc/giochi/device.conf` (regra da §3.47) em vez do ambiente: o caminho de
 inicialização não deve decidir a orientação.
 
+### 3.72 O atlas da fonte perdia a METADE DE BAIXO de cada letra
+
+Relato do mantenedor olhando o preview: *"corrija a fonte. no código até pode
+estar bem escrito mas no print está ruim"*. Não era gosto nem antialiasing:
+era recorte.
+
+Em `tools/make-font.py` a montagem passava por uma comprehension que renomeava
+os campos ao desempacotar:
+
+```python
+rendered.extend((y_off, w, line_h, m, c) for (y_off, line_h, w, m, c) in
+                [(total_height, line_height, w, m, c)
+                 for (_, line_height, w, m, c) in glyphs])
+#                            ^ w recebe cell_w, line_h recebe line_height
+```
+
+O de dentro produzia `(y, cell_w, line_height, mask, cell)` e o de fora lia
+como `(y, line_height, cell_w, ...)` — **troca de posição**. O recorte virava
+`mask.crop((0, 0, 22, 11))` para um glifo de 13x22: só a **metade de cima**
+ia para o atlas, e o resto era preenchido com zero pelo `crop` fora dos limites.
+
+Medições que fecharam o caso:
+
+| Glifo 18 px | tinta no atlas 1.x | tinta do Pillow |
+|---|---|---|
+| `a` | 4 023 | 13 082 |
+| `g` | — (cortado antes do descendente) | 16 830 |
+| `B` | 11 766 | 18 780 |
+
+E o texto inteiro: a tira de rótulos das abas tinha **87 528** de tinta contra
+**299 228** da referência `docs/proposta/library-1280x720.png`.
+
+- A correção é estrutural, não um `+1`: a montagem virou a função
+  `render_face()`, que desenha, mede a tinta **e** monta a faixa no mesmo
+  lugar, com o bloco de largura `max(avanço, tinta)` — 22 glifos do DejaVu
+  passam 1 px do próprio avanço (`A`, `K`, `T`, `V`, `f`, `r`) e recortar no
+  avanço come a ponta.
+- **Fonte com um peso só era o segundo defeito, e ele só apareceu depois de
+  corrigir o primeiro.** A referência desenha título de tile, aba ativa e tecla
+  da hint bar em **negrito**; o atlas só tinha regular. Agora o atlas tem
+  `regular` e `bold` por tamanho, e `ui_text_weight(UiTextRole)` — no módulo
+  puro — é a **fonte única** de qual peso cada papel usa. O `dump-geometry`
+  publica a lista (`font_weights`) e o `preview-ui.py` lê: antes o preview
+  desenhava tudo em regular enquanto o aparelho negritava, que é a mesma classe
+  do §3.47/§3.71 (duas verdades para o mesmo dado).
+- Guarda: `tests/test_font.py` (6230 checagens) passou a olhar **região**, não
+  total: a metade de baixo da linha do `g` tem de ter tinta. Testado ao
+  contrário (apagando a metade de baixo do atlas com o Pillow): 4 falhas, uma
+  por tamanho. Olhar "pixels pintados" no arquivo inteiro **não** pegaria —
+  a metade de cima continuava lá.
+- Regra que fica: **comprehension que renomeia campos é armadilha de silêncio**.
+  Se a tupla tem mais de dois valores, desempacote por nome na função, não com
+  `for (a, b, c, d, e) in [...]` trocando a ordem.
+- Custo medido do segundo peso: `font.a8` 207 612 → **458 042 B** (xz no
+  SquashFS: 63 KiB contra 11 KiB) e a textura ARGB8888 em RAM/VRAM 830 KiB →
+  **1,75 MiB**, dentro do teto de 4 MB da §4.1.6 mas agora com 2,25 MB de
+  folga em vez de 3,2 MB.
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):
@@ -3791,3 +3849,73 @@ caminho de software. `S20graphics` na imagem não tem mais nenhum
 
 **Aberto:** o boot com swrast + kmsro não aconteceu. Se o driver do barramento
 passar, a UI usa a GPU; se não, cai para software e o log diz qual dos dois.
+
+### 2026-10-31 (31) — Copilot (a fonte: metade de cada letra não existia)
+
+O mantenedor olhou o preview e disse *"corrija a fonte. no código até pode estar
+bem escrito mas no print está ruim"*. Estava certo, e a causa não era gosto:
+**metade de baixo de cada glifo não estava no atlas** (§3.72). O texto saía
+fino, cortado e irregular — e como a metade de cima ficava, parecia "fonte
+ruim", não "fonte quebrada". Atravessou cinco imagens e duas sessões.
+
+**Como foi encontrado (medição, não leitura):** comparei tinta
+(`|pixel − fundo|`) do meu preview contra `docs/proposta/library-1280x720.png`,
+a referência que o próprio mantenedor apontou como correta —
+
+| Região | referência | antes | depois |
+|---|---|---|---|
+| rótulos das abas | 299 228 | 87 528 | 293 233 |
+| hint bar | 298 103 | 134 112 | 260 772 |
+| título de tile | 170 646 | — | 171 564 |
+
+A razão de ~2,6× apareceu no glifo isolado: `a` 18 px tinha 4 023 de tinta
+contra 13 082 do Pillow, com o **mesmo** arquivo de fonte. Aí bastou reproduzir
+a geração e comparar o `crop`.
+
+**Feito:**
+
+1. `tools/make-font.py` reescrito: `render_face()` desenha, mede a tinta e monta
+   a faixa; bloco = `max(avanço, tinta)`; sem comprehension renomeando campos.
+   Verificado: o glifo do atlas agora é **byte a byte igual** ao desenho direto
+   do Pillow para `a`, `g` e `A`.
+2. **Dois pesos** (`regular`, `bold`), 4 tamanhos × 2 = 8 faixas. A referência
+   negrita título de tile, aba ativa, tecla da hint bar e título de painel.
+3. `ui_text_weight(UiTextRole)` no módulo **puro** decide o peso por papel; o
+   `dump-geometry` publica (`font_weights`) e o `preview-ui.py` lê — mesma
+   disciplina do `UiRole` (§3.71). Enquanto a regra vivia em dois arquivos, o
+   preview desenhava tudo em regular e o aparelho negritava.
+4. Aba é **medida em negrito nos dois lados**: a ativa é negrita e medir pelo
+   regular faria ela transbordar a célula (e a barra tremeria ao trocar de aba).
+   A sublinha usa a largura do negrito — na referência ela mede 117 px, que é
+   exatamente o negrito; o regular dava 104.
+5. `font.hpp/.cpp`: `FontWeight`, `Cell.w` (bloco) separado de `Cell.advance`
+   (passo), e `face_for()` cai para o **mesmo peso** antes de cair para outro
+   tamanho — título em regular passa desapercebido, título em 12 px não.
+6. **Dois defeitos de arrumação que a sessão anterior tinha deixado**: a
+   `hint bar` tinha **duas tabelas** (`main.cpp` e `dump-geometry.cpp`) e elas
+   divergiram — agora `ui_hint_text()` em `i18n.cpp` serve os dois, e a Home
+   não anuncia `B` porque `B` é inerte nela (§4.1.2). E `build_menu()` /
+   `cycle_language()` estavam **chamadas e não definidas** em `main.cpp`
+   (o launcher não compilava); foram escritas de novo, com o submenu Sistema
+   completo (idioma, fuso, brilho, suspensão, USB, Modo Desenvolvedor).
+7. Preview: espessura das linhas de separação agora vem do `dump-geometry`
+   (`tokens.divider` = `scale_pct/50`, 3 px em 1280x720) em vez de 1 px fixo —
+   o preview estava 2 px mais fino que o aparelho.
+
+**Verificação (tudo rodado):** `make test` **29/29**; `make lint` rc=0;
+`tests/test_font.py` 6230 checagens, incluindo o check de **região** (metade de
+baixo da linha do `g`), testado ao contrário — apagando a metade de baixo com o
+Pillow, 4 falhas, uma por tamanho; `tests/test_locales.py` 164 checagens, agora
+cobrando a ordem de `UiTextRole` **e** que título/aba ativa/tecla/painel sejam
+`UI_WEIGHT_BOLD` na tabela; `make ui-preview` gerando as 6 imagens; `giochi-launcher`
+e `dump-geometry` compilados sem warning.
+
+**Custo medido:** `font.a8` 207 612 → **458 042 B**; no SquashFS o par
+a8+json sai de 13 KiB para **68 KiB** (xz); textura ARGB8888 830 KiB →
+**1,75 MiB** de RAM/VRAM — dentro do teto de 4 MB da §4.1.6, com 2,25 MB de
+folga.
+
+**Aberto:** nada disso foi visto no aparelho ainda — a próxima imagem leva o
+atlas novo. Se o texto na tela parecer grande/grosso demais, os tokens de
+tamanho (`font_tab` 21, `font_title` 18) são o lugar de mexer, **não** o peso:
+o peso agora está medido contra a referência.

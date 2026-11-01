@@ -18,6 +18,7 @@
 #include "giochi_util.h"
 #include "ui_geometry.hpp"
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -264,33 +265,222 @@ void draw_ring(SDL_Renderer *sdl, unsigned rgb, const UiRect &box, int thickness
 }
 
 /* Rotulo da aba. O id vem do layout.json; o texto e o que o usuario le. */
-const char *tab_label(const char *id)
+/* Rotulo da aba, do catalogo de idioma. O id vem do layout.json e e' estavel;
+ * o texto e' o que o usuario le'. Chave "tab.<id>". */
+std::string tab_label(const I18n &i18n, const char *id)
 {
-    if (std::strcmp(id, "music") == 0) {
-        return "Musica";
-    }
-    if (std::strcmp(id, "library") == 0) {
-        return "Biblioteca";
-    }
-    if (std::strcmp(id, "home") == 0) {
-        return "Home";
-    }
-    if (std::strcmp(id, "store") == 0) {
-        return "Loja";
-    }
-    if (std::strcmp(id, "ports") == 0) {
-        return "Ports";
-    }
-    return id;
+    const std::string key = std::string("tab.") + id;
+
+    return std::string(i18n.tr(key.c_str()));
 }
 
 void text_centered(SDL_Renderer *sdl, const Font &font, const std::string &text,
-                   const UiRect &box, int px, unsigned rgb)
+                   const UiRect &box, int px, unsigned rgb,
+                   FontWeight weight = FontWeight::Regular)
 {
-    const int w = font.measure(text, px);
-    const int baseline = box.y + (box.h + font.ascent(px)) / 2 - px / 4;
+    const int w = font.measure(text, px, weight);
+    const int baseline = box.y + (box.h + font.ascent(px, weight)) / 2 - px / 4;
 
-    (void)font.draw(sdl, text, box.x + (box.w - w) / 2, baseline, px, rgb, box.w);
+    (void)font.draw(sdl, text, box.x + (box.w - w) / 2, baseline, px, rgb,
+                    box.w, weight);
+}
+
+/* --- icones -----------------------------------------------------------------
+ *
+ * Desenhados por retangulo/circulo, sem textura: sao ~40 px de lado e cabem
+ * dentro do teto de VRAM da §4.1.6 sem ocupar um byte. Um PNG por icone
+ * custaria import, cache e um caminho de erro a mais.
+ *
+ * O indicador de rede e' de **Wi-Fi** (arcos), nao de celular (barras
+ * verticais): um portatil nao tem modem, e barras de celular mentem sobre o
+ * que o aparelho sabe fazer. Cabo (USB gadget ECM) tem icone proprio.
+ */
+/* Arco estampado: percorre o angulo e carimba quadradinhos de `thickness`.
+ *
+ * Sem SDL2_gfx nao existe "desenhar arco"; a alternativa barata e' esta. Com
+ * raio de 10-20 px o resultado e' identico a um arco vetorial.
+ * Angulos em GRAUS, 0 = direita, 90 = cima (y cresce para baixo, por isso o
+ * sinal negativo em sin).
+ */
+void stroke_arc(SDL_Renderer *sdl, unsigned rgb, int cx, int cy, int radius,
+                int thickness, int from_deg, int to_deg)
+{
+    if (radius <= 0 || thickness <= 0 || to_deg <= from_deg) {
+        return;
+    }
+    set_color(sdl, rgb);
+
+    const int passos = (to_deg - from_deg) * 2 + 1;
+
+    for (int i = 0; i <= passos; i++) {
+        const double deg =
+            from_deg + (static_cast<double>(to_deg - from_deg) * i) / passos;
+        const double rad = deg * 3.14159265358979323846 / 180.0;
+        const int x = cx + static_cast<int>(radius * std::cos(rad) + 0.5);
+        const int y = cy - static_cast<int>(radius * std::sin(rad) + 0.5);
+
+        SDL_Rect r{x - thickness / 2, y - thickness / 2, thickness, thickness};
+
+        (void)SDL_RenderFillRect(sdl, &r);
+    }
+}
+
+/* Wi-Fi: tres arcos concentricos abertos para CIMA + o ponto da base.
+ *
+ * A primeira versao desenhava tiras horizontais empilhadas — na tela isso le'
+ * como BARRAS DE CELULAR, justamente o que o indicador nao deve ser (um
+ * portatil nao tem modem). Arco e' arco.
+ *
+ * `signal_pct` < 0 = desconhecido (aceso); sem associacao, tudo em `off`.
+ */
+void draw_wifi(SDL_Renderer *sdl, int cx, int base_y, int size, unsigned rgb,
+               int signal_pct, int up)
+{
+    const unsigned off = 0x3A3A3A;
+    const int thickness = size / 9 > 1 ? size / 9 : 2;
+    /* 0..4 arcos acesos conforme o sinal; desconhecido acende todos. */
+    const int lit = up ? (signal_pct < 0 ? 3
+                                         : 1 + (signal_pct * 3) / 100)
+                       : 0;
+
+    for (int i = 0; i < 3; i++) {
+        /* r = size/3, 2*size/3... do menor (mais perto do ponto) para o maior */
+        const int r = size / 3 + i * (size / 5);
+        const unsigned cor = i < lit ? rgb : off;
+
+        stroke_arc(sdl, cor, cx, base_y, r, thickness, 40, 140);
+    }
+
+    /* Ponto da base: sempre presente, aceso quando ha associacao. */
+    const int d = thickness + 1;
+
+    fill_rect(sdl, up ? rgb : off, cx - d / 2, base_y - d / 2, d, d);
+}
+
+void draw_ethernet(SDL_Renderer *sdl, int x, int y, int size, unsigned rgb,
+                   int up)
+{
+    /* Tomada RJ45 estilizada: um retangulo com tres "pinos". */
+    const unsigned colour = up ? rgb : 0x404040;
+
+    fill_rect(sdl, colour, x, y, size, size / 2);
+    for (int i = 0; i < 3; i++) {
+        fill_rect(sdl, 0x101010, x + size / 6 + i * (size / 3),
+                  y + size / 6, size / 8, size / 3);
+    }
+}
+
+void draw_battery(SDL_Renderer *sdl, int x, int y, int w, int h, unsigned rgb,
+                  int pct, int charging)
+{
+    if (pct < 0) {
+        return; /* sem bateria conhecida: nao desenhar e' melhor que "0%" */
+    }
+
+    const int border = h / 8 > 1 ? h / 8 : 1;
+
+    /* Corpo: contorno + terminal. */
+    fill_rect(sdl, rgb, x, y, w, border);
+    fill_rect(sdl, rgb, x, y + h - border, w, border);
+    fill_rect(sdl, rgb, x, y, border, h);
+    fill_rect(sdl, rgb, x + w - border, y, border, h);
+    fill_rect(sdl, rgb, x + w, y + h / 3, border, h / 3);
+
+    /* Carga. Vermelho abaixo de 15% (o aviso que importa), verde carregando. */
+    const unsigned fill = charging ? 0x3FB950 : (pct <= 15 ? 0xE50914 : rgb);
+    const int inner_w = w - 2 * border;
+    const int inner_h = h - 2 * border;
+    const int bar = inner_w * pct / 100;
+
+    fill_rect(sdl, fill, x + border, y + border, bar, inner_h);
+
+    /* Raio: um triangulo feito de tiras, sobre a carga. */
+    if (charging) {
+        const int cw = w / 3;
+        const int cx = x + (w - cw) / 2;
+
+        for (int i = 0; i < cw; i++) {
+            fill_rect(sdl, 0x101010, cx + i, y + border + i, 2,
+                      inner_h - 2 * i > 0 ? inner_h - 2 * i : 1);
+        }
+    }
+}
+
+void paint_status_right(SDL_Renderer *sdl, const Font &font,
+                        const UiGeometry &geo, const UiState &ui)
+{
+    if (ui.status == nullptr || ui.i18n == nullptr) {
+        return;
+    }
+
+    const UiStatus &st = *ui.status;
+    const unsigned divider = giochi_theme_rgb(ui.theme->divider, 0x333333);
+    const unsigned primary = giochi_theme_rgb(ui.theme->text_primary, 0xE5E5E5);
+    const unsigned secondary =
+        giochi_theme_rgb(ui.theme->text_secondary, 0xA0A0A0);
+
+    const int gap = geo.gap;
+    const int icon = geo.topbar.h / 3;
+    const int mid = geo.topbar.h / 2;
+    int x = geo.topbar.w - geo.margin;
+
+    (void)divider;
+
+    /* Da direita para a esquerda (§4.1): relogio, bateria+%, cabo, wi-fi. */
+    if (st.valid_time) {
+        char relogio[8];
+
+        std::snprintf(relogio, sizeof(relogio), "%02d:%02d", st.hour, st.minute);
+
+        const FontWeight peso =
+            ui_text_weight(UI_TEXT_STATUS) == UI_WEIGHT_BOLD
+                ? FontWeight::Bold
+                : FontWeight::Regular;
+        const int w = font.measure(relogio, geo.font_body, peso);
+
+        x -= w;
+        (void)font.draw(sdl, relogio, x,
+                        (geo.topbar.h + font.ascent(geo.font_body, peso)) / 2,
+                        geo.font_body, secondary, 0, peso);
+        x -= gap;
+    }
+
+    if (st.battery_pct >= 0) {
+        char pct[16];
+
+        std::snprintf(pct, sizeof(pct), "%d%%", st.battery_pct);
+
+        const FontWeight peso =
+            ui_text_weight(UI_TEXT_STATUS) == UI_WEIGHT_BOLD
+                ? FontWeight::Bold
+                : FontWeight::Regular;
+        const int text_w = font.measure(pct, geo.font_body, peso);
+
+        x -= text_w;
+        (void)font.draw(sdl, pct, x,
+                        (geo.topbar.h + font.ascent(geo.font_body, peso)) / 2,
+                        geo.font_body, secondary, 0, peso);
+        x -= gap / 2;
+
+        const int bw = icon * 2;
+
+        x -= bw;
+        draw_battery(sdl, x, mid - icon / 2, bw - icon / 3, icon, primary,
+                     st.battery_pct, st.charging);
+        x -= gap;
+    }
+
+    if (st.ethernet_up) {
+        x -= icon;
+        draw_ethernet(sdl, x, mid - icon / 2, icon, secondary, 1);
+        x -= gap / 2;
+    }
+
+    if (st.wifi_present) {
+        x -= icon;
+        draw_wifi(sdl, x + icon / 2, mid + icon / 2 - 1, icon, secondary,
+                  st.wifi_signal, st.wifi_up);
+    }
 }
 
 void paint_topbar(SDL_Renderer *sdl, const Font &font, const UiGeometry &geo,
@@ -299,8 +489,7 @@ void paint_topbar(SDL_Renderer *sdl, const Font &font, const UiGeometry &geo,
     const unsigned surface = giochi_theme_rgb(ui.theme->surface, 0x1E1E1E);
     const unsigned divider = giochi_theme_rgb(ui.theme->divider, 0x333333);
     const unsigned accent = giochi_theme_rgb(ui.theme->accent, 0xE50914);
-    const unsigned primary =
-        giochi_theme_rgb(ui.theme->text_primary, 0xE5E5E5);
+    const unsigned primary = giochi_theme_rgb(ui.theme->text_primary, 0xE5E5E5);
     const unsigned secondary =
         giochi_theme_rgb(ui.theme->text_secondary, 0xA0A0A0);
 
@@ -308,7 +497,6 @@ void paint_topbar(SDL_Renderer *sdl, const Font &font, const UiGeometry &geo,
     fill_rect(sdl, divider, 0, geo.topbar.h - geo.scale_pct / 50, geo.topbar.w,
               geo.scale_pct / 50);
 
-    /* Baseline das abas: centralizado verticalmente na barra. */
     const int baseline = (geo.topbar.h + font.ascent(geo.font_tab)) / 2;
 
     for (int i = 0; i < geo.tab_count && i < GIOCHI_MAX_TABS; i++) {
@@ -318,110 +506,171 @@ void paint_topbar(SDL_Renderer *sdl, const Font &font, const UiGeometry &geo,
             continue;
         }
         const bool active = i == geo.tab_active;
-        const char *label = tab_label(giochi_layout_tab_id(ui.layout, i));
+        const std::string label =
+            tab_label(*ui.i18n, giochi_layout_tab_id(ui.layout, i));
+        const FontWeight peso = active ? FontWeight::Bold : FontWeight::Regular;
 
         (void)font.draw(sdl, label, t.x, baseline, geo.font_tab,
-                        active ? primary : secondary, t.w);
+                        active ? primary : secondary, t.w, peso);
 
         if (active) {
-            /* Sublinhado alinhado ao TEXTO, nao ao padding (§4.1). */
-            const int w = font.measure(label, geo.font_tab);
+            /* A sublinha acompanha a largura do texto NEGRITO — o mesmo que
+             * ui_geometry_tabs usou para medir a celula, entao ela termina
+             * onde a palavra termina (referencia: library-1280x720.png). */
+            const int w = font.measure(label, geo.font_tab, peso);
 
             fill_rect(sdl, accent, t.x, t.y + t.h - geo.accent_h - 1, w,
                       geo.accent_h);
         }
     }
+
+    paint_status_right(sdl, font, geo, ui);
 }
 
-void paint_empty_grid(SDL_Renderer *sdl, const Font &font, const UiGeometry &geo,
-                      const UiState &ui, const std::string &text)
+/* Papel do tema -> cor. O papel vem de ui_tile_style(), que e' a fonte unica
+ * da aparencia do tile: o preview-ui.py le os MESMOS papeis pelo
+ * dump-geometry. Duas regras de desenho foi o que fez a grade virar parede de
+ * caixas claras (§3.71). */
+static unsigned cor_papel(const giochi_theme *t, giochi::UiRole papel)
 {
-    const unsigned secondary =
-        giochi_theme_rgb(ui.theme->text_secondary, 0xA0A0A0);
-    const UiRect box{geo.inset, geo.topbar.h, geo.screen_w - 2 * geo.inset,
-                     geo.content.h};
-
-    text_centered(sdl, font, text, box, geo.font_body, secondary);
+    switch (papel) {
+    case giochi::UI_ROLE_BACKGROUND:
+        return giochi_theme_rgb(t->background, 0x0F0F0F);
+    case giochi::UI_ROLE_SURFACE:
+        return giochi_theme_rgb(t->surface, 0x1E1E1E);
+    case giochi::UI_ROLE_ELEVATED:
+        return giochi_theme_rgb(t->surface_elevated, 0x2A2A2A);
+    case giochi::UI_ROLE_DIVIDER:
+        return giochi_theme_rgb(t->divider, 0x333333);
+    case giochi::UI_ROLE_ACCENT:
+        return giochi_theme_rgb(t->accent, 0xE50914);
+    case giochi::UI_ROLE_TEXT_PRIMARY:
+        return giochi_theme_rgb(t->text_primary, 0xE5E5E5);
+    case giochi::UI_ROLE_TEXT_SECONDARY:
+        return giochi_theme_rgb(t->text_secondary, 0xA0A0A0);
+    case giochi::UI_ROLE_NONE:
+        break;
+    }
+    return 0;
 }
 
+/* --- grade da Biblioteca ---------------------------------------------------
+ *
+ * Detalhes que a §5.2 pede e que a primeira versao nao tinha:
+ *   - scrollbar na sarjeta direita (largura do token, nao 2 px improvisados);
+ *   - titulo recortado por PIXEL, nunca por caractere;
+ *   - contagem de pacotes no canto, porque "0 pacotes" e' diagnostico.
+ */
 void paint_grid(SDL_Renderer *sdl, const Font &font, const UiGeometry &geo,
                 const UiState &ui)
 {
-    const unsigned elevated =
-        giochi_theme_rgb(ui.theme->surface_elevated, 0x2A2A2A);
-    const unsigned surface = giochi_theme_rgb(ui.theme->surface, 0x1E1E1E);
     const unsigned accent = giochi_theme_rgb(ui.theme->accent, 0xE50914);
-    const unsigned primary =
-        giochi_theme_rgb(ui.theme->text_primary, 0xE5E5E5);
     const unsigned secondary =
         giochi_theme_rgb(ui.theme->text_secondary, 0xA0A0A0);
 
     for (int i = 0; i < geo.tile_count; i++) {
         const UiRect &t = geo.tile[i];
         const int index = geo.first_index + i;
-        const bool valid =
-            ui.items != nullptr && index < ui.item_count && ui.items[index].valid;
+        const bool valid = ui.items != nullptr && index < ui.item_count &&
+                           ui.items[index].valid;
+        const giochi::UiTileStyle st =
+            giochi::ui_tile_style(geo, i == geo.focus_slot, valid);
 
-        /* Placeholder da capa: o thumb .rgba so existe depois que o
-         * thumbgen rodar; um bloco em `surface` ja comunica "tile vazio"
-         * (a proposta §5.2 pede o mesmo para o hero sem capa). */
-        fill_rounded(sdl, elevated, t, geo.corner);
-        if (!valid) {
-            const UiRect inner{t.x + geo.corner, t.y + geo.corner,
-                               t.w - 2 * geo.corner, t.h - 2 * geo.corner};
+        fill_rounded(sdl, cor_papel(ui.theme, st.fill), t, geo.corner);
 
-            fill_rounded(sdl, surface, inner, geo.corner);
+        if (st.inset != giochi::UI_ROLE_NONE) {
+            const int recuo = geo.corner / 2 > 0 ? geo.corner / 2 : 1;
+            const UiRect inner{t.x + recuo, t.y + recuo, t.w - 2 * recuo,
+                               t.h - 2 * recuo};
+
+            fill_rounded(sdl, cor_papel(ui.theme, st.inset), inner,
+                         geo.corner - recuo > 0 ? geo.corner - recuo : 0);
+        }
+
+        if (st.outline != giochi::UI_ROLE_NONE) {
+            draw_ring(sdl, cor_papel(ui.theme, st.outline), t,
+                      geo.focus_ring > 0 ? geo.focus_ring : 1);
         }
 
         if (ui.items != nullptr && index < ui.item_count) {
-            const int baseline = t.y + t.h + font.ascent(geo.font_title) +
-                                 geo.gap / 2;
+            const std::string &title = ui.items[index].title;
+            const int baseline = t.y + t.h + st.title_dy;
+            const int largura = t.w - st.pad > 0 ? t.w - st.pad : t.w;
 
-            (void)font.draw(sdl, ui.items[index].title, t.x, baseline,
-                            geo.font_title, valid ? primary : secondary, t.w);
+            const FontWeight peso =
+                ui_text_weight(UI_TEXT_TITLE) == UI_WEIGHT_BOLD
+                    ? FontWeight::Bold
+                    : FontWeight::Regular;
+
+            (void)font.draw(sdl, title, t.x + st.pad, baseline, geo.font_title,
+                            cor_papel(ui.theme, st.title), largura, peso);
         }
     }
 
     if (geo.focus_slot >= 0) {
-        draw_ring(sdl, accent, ui_geometry_focus_ring(geo, geo.focus_slot),
-                  geo.focus_ring);
+        const giochi::UiTileStyle st =
+            giochi::ui_tile_style(geo, true, true);
+
+        if (st.ring > 0) {
+            draw_ring(sdl, accent,
+                      ui_geometry_focus_ring(geo, geo.focus_slot), st.ring);
+        }
+    }
+
+    /* Scrollbar na sarjeta: so' quando ha mais de uma pagina. O trilho e' o
+     * `divider`; o cursor, o acento. */
+    if (ui.item_count > geo.capacity && geo.capacity > 0) {
+        const int sb_w = geo.focus_ring;
+        const int x = geo.screen_w - geo.inset - sb_w;
+        const int total = geo.rows;
+        const int pages = (ui.item_count + geo.capacity - 1) / geo.capacity;
+        const int page = geo.capacity > 0 ? geo.first_index / geo.capacity : 0;
+        const int cell_h = geo.tile_h + geo.title_h + geo.gap;
+        const int track_h = total * cell_h - geo.gap;
+        const int bar_h = track_h / (pages > 0 ? pages : 1);
+        const int y = geo.topbar.h + geo.margin +
+                      (pages > 1 ? (track_h - bar_h) * page / (pages - 1) : 0);
+
+        fill_rect(sdl, giochi_theme_rgb(ui.theme->divider, 0x333333), x,
+                  geo.topbar.h + geo.margin, sb_w, track_h);
+        fill_rect(sdl, accent, x, y, sb_w, bar_h > geo.gap ? bar_h : geo.gap);
+    }
+
+    /* Contador: o numero de pacotes diz mais que a grade vazia.
+     * A posicao vem de ui_geometry_count_rect — desenhar "logo abaixo da
+     * topbar" punha o texto EM CIMA do primeiro tile (medido no preview). */
+    if (ui.i18n != nullptr) {
+        const std::string contagem =
+            ui.i18n->tr_n("library.count", ui.item_count);
+        const UiRect linha = ui_geometry_count_rect(geo);
+        const int w = font.measure(contagem, geo.font_body);
+
+        (void)font.draw(sdl, contagem, linha.x + linha.w - w,
+                        linha.y + font.ascent(geo.font_body), geo.font_body,
+                        secondary, linha.w);
     }
 }
 
-void paint_placeholder_tab(SDL_Renderer *sdl, const Font &font,
-                           const UiGeometry &geo, const UiState &ui,
-                           const char *text)
-{
-    const unsigned elevated =
-        giochi_theme_rgb(ui.theme->surface_elevated, 0x2A2A2A);
-    const unsigned primary =
-        giochi_theme_rgb(ui.theme->text_primary, 0xE5E5E5);
-    const unsigned secondary =
-        giochi_theme_rgb(ui.theme->text_secondary, 0xA0A0A0);
-    const int pad = geo.margin;
-
-    const UiRect panel{geo.margin, geo.topbar.h + geo.margin,
-                       geo.screen_w - 2 * geo.margin,
-                       geo.content.h - 2 * geo.margin};
-
-    fill_rounded(sdl, elevated, panel, geo.corner);
-
-    const int baseline = panel.y + pad + font.ascent(geo.font_tab);
-    const int id = geo.tab_active;
-
-    (void)font.draw(sdl, tab_label(giochi_layout_tab_id(ui.layout, id)),
-                    panel.x + pad, baseline, geo.font_tab, primary,
-                    panel.w - 2 * pad);
-    (void)font.draw(sdl, text, panel.x + pad,
-                    baseline + font.line_height(geo.font_body) + geo.gap / 2,
-                    geo.font_body, secondary, panel.w - 2 * pad);
-}
+/* --- hint bar por par (botao, acao) ----------------------------------------
+ *
+ * A §4.2 pede uma LISTA de pares, com chip do botao, e nao uma frase: a frase
+ * antiga juntava os rotulos numa unica string e colidia com a dica da direita.
+ * Aqui cada item e' medido e o que nao couber e' omitido inteiro — nunca
+ * cortado no meio.
+ */
+struct HintItem {
+    const char *button; /* "A", "B", "Select", "Home" */
+    const char *action; /* ja' traduzido */
+};
 
 void paint_hint_bar(SDL_Renderer *sdl, const Font &font, const UiGeometry &geo,
                     const UiState &ui)
 {
     const unsigned bg = giochi_theme_rgb(ui.theme->hint_bar_bg, 0x181818);
     const unsigned divider = giochi_theme_rgb(ui.theme->divider, 0x333333);
+    const unsigned elevated =
+        giochi_theme_rgb(ui.theme->surface_elevated, 0x2A2A2A);
+    const unsigned primary = giochi_theme_rgb(ui.theme->text_primary, 0xE5E5E5);
     const unsigned secondary =
         giochi_theme_rgb(ui.theme->text_secondary, 0xA0A0A0);
 
@@ -434,64 +683,242 @@ void paint_hint_bar(SDL_Renderer *sdl, const Font &font, const UiGeometry &geo,
         return;
     }
 
+    const int px = geo.font_body;
+    /* Tecla em NEGRITO, acao em regular (ui_text_weight). Tudo o que mede ou
+     * desenha usa o peso do seu papel — misturar os dois foi o que deixou o
+     * texto fino na primeira versao. */
+    const FontWeight peso_tecla =
+        ui_text_weight(UI_TEXT_HINT_KEY) == UI_WEIGHT_BOLD ? FontWeight::Bold
+                                                          : FontWeight::Regular;
+    const FontWeight peso_acao =
+        ui_text_weight(UI_TEXT_HINT_ACTION) == UI_WEIGHT_BOLD
+            ? FontWeight::Bold
+            : FontWeight::Regular;
+    const int px_tecla = geo.font_body - 2;
     const int baseline =
-        geo.hint_bar.y + (geo.hint_bar.h + font.ascent(geo.font_body)) / 2;
+        geo.hint_bar.y + (geo.hint_bar.h + font.ascent(px, peso_acao)) / 2;
+    const int pad_x = geo.gap;
+    const int pad_y = (geo.hint_bar.h - font.line_height(px, peso_acao)) / 3;
+    const int chip_h = font.line_height(px_tecla, peso_tecla) + 2 * pad_y;
 
-    (void)font.draw(sdl, ui.hint, geo.hint_bar.x + geo.margin, baseline,
-                    geo.font_body, secondary,
-                    geo.hint_bar.w - 2 * geo.margin);
+    /* O main monta a string no formato "A:Abrir|B:Voltar|...": pares ja'
+     * traduzidos e separados, para o desenho nao conhecer idioma nem acao. */
+    int x = geo.hint_bar.x + geo.margin;
+    const int limit = geo.hint_bar.x + geo.hint_bar.w - geo.margin;
+    std::size_t pos = 0;
+
+    while (pos <= ui.hint.size()) {
+        const std::size_t bar = ui.hint.find('|', pos);
+
+        const std::string pair = ui.hint.substr(
+            pos, bar == std::string::npos ? std::string::npos : bar - pos);
+
+        if (!pair.empty()) {
+            const std::size_t colon = pair.find(':');
+            const std::string button = colon == std::string::npos
+                                           ? pair
+                                           : pair.substr(0, colon);
+            const std::string action = colon == std::string::npos
+                                           ? std::string()
+                                           : pair.substr(colon + 1);
+
+            const int bw = font.measure(button, px_tecla, peso_tecla);
+            const int chip_w = bw + 2 * pad_x;
+            const int aw =
+                action.empty() ? 0 : font.measure(action, px, peso_acao);
+            const int need = chip_w + (aw > 0 ? geo.gap / 2 + aw : 0);
+
+            /* O ultimo item nao tem gap depois dele. */
+            if (x + need > limit) {
+                break; /* omite o resto inteiro: meio item e' pior */
+            }
+
+            fill_rounded(sdl, elevated,
+                         UiRect{x, geo.hint_bar.y + (geo.hint_bar.h - chip_h) / 2,
+                                chip_w, chip_h},
+                         geo.corner / 2 > 1 ? geo.corner / 2 : 2);
+            text_centered(sdl, font, button,
+                          UiRect{x, geo.hint_bar.y, chip_w, geo.hint_bar.h},
+                          px_tecla, primary, peso_tecla);
+
+            x += chip_w;
+
+            if (aw > 0) {
+                x += geo.gap / 2;
+                (void)font.draw(sdl, action, x, baseline, px, secondary, 0,
+                                peso_acao);
+                x += aw;
+            }
+            x += geo.gap * 2;
+        }
+
+        if (bar == std::string::npos) {
+            break;
+        }
+        pos = bar + 1;
+    }
 }
 
+/* --- Configuracoes ---------------------------------------------------------
+ *
+ * A lista vem pronta do main (rotulo traduzido + valor). O render NAO compara
+ * com texto de item: a versao anterior fazia `strcmp(item, "Desligar")` para
+ * decidir a acao, o que quebraria ao traduzir.
+ */
 void paint_settings(SDL_Renderer *sdl, const Font &font, const UiGeometry &geo,
                     const UiState &ui)
 {
     const unsigned elevated =
         giochi_theme_rgb(ui.theme->surface_elevated, 0x2A2A2A);
+    const unsigned surface = giochi_theme_rgb(ui.theme->surface, 0x1E1E1E);
     const unsigned accent = giochi_theme_rgb(ui.theme->accent, 0xE50914);
-    const unsigned primary =
-        giochi_theme_rgb(ui.theme->text_primary, 0xE5E5E5);
+    const unsigned primary = giochi_theme_rgb(ui.theme->text_primary, 0xE5E5E5);
+    const unsigned secondary =
+        giochi_theme_rgb(ui.theme->text_secondary, 0xA0A0A0);
 
     const int pad = geo.margin;
-    const UiRect panel{geo.margin * 2, geo.topbar.h + geo.margin,
-                       geo.screen_w / 2, geo.content.h - 2 * geo.margin};
+    const int panel_w = geo.screen_w / 2;
+    const UiRect panel{geo.margin * 2, geo.topbar.h + geo.margin, panel_w,
+                       geo.content.h - 2 * geo.margin};
 
     fill_rounded(sdl, elevated, panel, geo.corner);
     draw_ring(sdl, accent, panel, geo.focus_ring);
 
-    (void)font.draw(sdl, "Configuracoes", panel.x + pad,
-                    panel.y + pad + font.ascent(geo.font_tab), geo.font_tab,
-                    primary, panel.w - 2 * pad);
+    const FontWeight peso_titulo =
+        ui_text_weight(UI_TEXT_PANEL_TITLE) == UI_WEIGHT_BOLD ? FontWeight::Bold
+                                                             : FontWeight::Regular;
+    const FontWeight peso_linha =
+        ui_text_weight(UI_TEXT_MENU_ROW) == UI_WEIGHT_BOLD ? FontWeight::Bold
+                                                          : FontWeight::Regular;
+    const int title_baseline =
+        panel.y + pad + font.ascent(geo.font_tab, peso_titulo);
+
     (void)font.draw(sdl,
-                    "Item " + std::to_string(ui.settings_index + 1) +
-                        " (overlay)",
-                    panel.x + pad,
-                    panel.y + pad + font.ascent(geo.font_tab) +
-                        font.line_height(geo.font_body) + geo.gap,
-                    geo.font_body, primary, panel.w - 2 * pad);
+                    ui.menu_title.empty() ? std::string("Configuracoes") :
+                                            ui.menu_title,
+                    panel.x + pad, title_baseline, geo.font_tab, primary,
+                    panel.w - 2 * pad, peso_titulo);
+    fill_rect(sdl, accent, panel.x + pad,
+              title_baseline + font.line_height(geo.font_body) / 2,
+              panel.w / 5, geo.accent_h / 2 > 0 ? geo.accent_h / 2 : 1);
+
+    const int row_h = font.line_height(geo.font_tab) + geo.gap;
+    int y = title_baseline + font.line_height(geo.font_tab) + geo.gap;
+
+    for (int i = 0; i < ui.menu_count; i++) {
+        const UiMenuItem &item = ui.menu[i];
+
+        if (y + row_h > panel.y + panel.h - pad) {
+            break; /* nao desenha fora do painel */
+        }
+
+        const bool sel = i == ui.settings_index;
+        const UiRect row{panel.x + pad / 2, y, panel.w - pad, row_h};
+
+        if (sel) {
+            fill_rounded(sdl, surface, row, geo.corner);
+            fill_rect(sdl, accent, row.x, row.y + geo.gap / 2, geo.accent_h,
+                      row.h - geo.gap);
+        }
+
+        const int row_baseline =
+            row.y + (row_h + font.ascent(geo.font_body, peso_linha)) / 2 -
+            geo.font_body / 8;
+
+        (void)font.draw(sdl, item.label, row.x + pad, row_baseline,
+                        geo.font_body, sel ? primary : secondary,
+                        row.w / 2, peso_linha);
+
+        /* Valor a' direita; seta quando ha submenu. */
+        const std::string right = item.has_submenu ? std::string(">") :
+                                                     item.value;
+
+        if (!right.empty()) {
+            const int w = font.measure(right, geo.font_body, peso_linha);
+
+            (void)font.draw(sdl, right, row.x + row.w - pad - w, row_baseline,
+                            geo.font_body, sel ? primary : secondary, 0,
+                            peso_linha);
+        }
+        y += row_h;
+    }
+}
+
+/* --- abas sem conteudo ----------------------------------------------------
+ *
+ * Loja e Ports apontam para apps que ainda nao existem (docs/APPS.md). Dizer
+ * isso e' diagnostico; tela vazia nao e'. Home e Musica mostram a origem do
+ * dado pelo mesmo motivo.
+ */
+void paint_message_tab(SDL_Renderer *sdl, const Font &font,
+                       const UiGeometry &geo, const UiState &ui,
+                       const char *titulo, const char *linha1,
+                       const char *linha2)
+{
+    const unsigned elevated =
+        giochi_theme_rgb(ui.theme->surface_elevated, 0x2A2A2A);
+    const unsigned primary = giochi_theme_rgb(ui.theme->text_primary, 0xE5E5E5);
+    const unsigned secondary =
+        giochi_theme_rgb(ui.theme->text_secondary, 0xA0A0A0);
+    const unsigned accent = giochi_theme_rgb(ui.theme->accent, 0xE50914);
+    const int pad = geo.margin;
+
+    const UiRect panel{geo.margin, geo.topbar.h + geo.margin,
+                       geo.screen_w - 2 * geo.margin,
+                       geo.content.h - 2 * geo.margin};
+
+    fill_rounded(sdl, elevated, panel, geo.corner);
+    fill_rect(sdl, accent, panel.x + pad, panel.y + pad, panel.w / 8,
+              geo.accent_h);
+
+    const FontWeight peso_titulo =
+        ui_text_weight(UI_TEXT_PANEL_TITLE) == UI_WEIGHT_BOLD ? FontWeight::Bold
+                                                             : FontWeight::Regular;
+    int baseline =
+        panel.y + pad + geo.accent_h + font.ascent(geo.font_tab, peso_titulo);
+    const int text_w = panel.w - 2 * pad;
+
+    (void)font.draw(sdl, titulo, panel.x + pad, baseline, geo.font_tab, primary,
+                    text_w, peso_titulo);
+
+    baseline += font.line_height(geo.font_tab) + geo.gap / 2;
+    if (linha1 != nullptr && *linha1 != '\0') {
+        (void)font.draw(sdl, linha1, panel.x + pad, baseline, geo.font_body,
+                        secondary, text_w);
+        baseline += font.line_height(geo.font_body) + geo.gap / 4;
+    }
+    if (linha2 != nullptr && *linha2 != '\0') {
+        (void)font.draw(sdl, linha2, panel.x + pad, baseline, geo.font_body,
+                        secondary, text_w);
+    }
 }
 
 void paint_ui(SDL_Renderer *sdl, const Font &font, const UiGeometry &geo,
               const UiState &ui)
 {
+    const I18n &i18n = *ui.i18n;
     const char *tab_id = giochi_layout_tab_id(ui.layout, geo.tab_active);
 
     if (std::strcmp(tab_id, "library") == 0) {
         if (ui.item_count <= 0) {
-            paint_empty_grid(sdl, font, geo, ui,
-                             "Copie um pacote .giochi via USB");
+            paint_message_tab(sdl, font, geo, ui, i18n.tr("tab.library"),
+                              i18n.tr("library.empty"),
+                              i18n.tr("library.empty_hint"));
         } else {
             paint_grid(sdl, font, geo, ui);
         }
-    } else if (std::strcmp(tab_id, "music") == 0) {
-        paint_placeholder_tab(sdl, font, geo, ui,
-                              "giochi-musicd: biblioteca em /user/music");
     } else if (std::strcmp(tab_id, "home") == 0) {
-        paint_placeholder_tab(
-            sdl, font, geo, ui,
-            "Continuar / Novidades / Recentes (assets/devices/home.json)");
+        paint_message_tab(sdl, font, geo, ui, i18n.tr("tab.home"),
+                          i18n.tr("home.tip.scan"), i18n.tr("home.tip.usb"));
+    } else if (std::strcmp(tab_id, "music") == 0) {
+        paint_message_tab(sdl, font, geo, ui, i18n.tr("tab.music"),
+                          i18n.tr("music.empty"), "");
+    } else if (std::strcmp(tab_id, "store") == 0) {
+        paint_message_tab(sdl, font, geo, ui, i18n.tr("tab.store"),
+                          i18n.tr("store.missing"), "");
     } else {
-        paint_placeholder_tab(sdl, font, geo, ui,
-                              "app externo (layout.json \"layouts\")");
+        paint_message_tab(sdl, font, geo, ui, i18n.tr("tab.ports"),
+                          i18n.tr("ports.missing"), "");
     }
 
     paint_topbar(sdl, font, geo, ui);
@@ -786,9 +1213,18 @@ private:
     {
         int widths[GIOCHI_MAX_TABS] = {0};
 
+        static const I18n kVazio;
+
+        const I18n &i18n = ui.i18n != nullptr ? *ui.i18n : kVazio;
+
         for (int i = 0; i < ui.layout->tab_count && i < GIOCHI_MAX_TABS; i++) {
+            /* Medido em NEGRITO de proposito: a aba ativa e' negrita e a
+             * inativa nao. Medir pelo regular faria o negrito transbordar a
+             * celula; medir pelo negrito deixa folga na inativa, que e'
+             * invisivel. E nao faz a barra tremer ao trocar de aba. */
             widths[i] = font_.measure(
-                tab_label(giochi_layout_tab_id(ui.layout, i)), geo_.font_tab);
+                tab_label(i18n, giochi_layout_tab_id(ui.layout, i)),
+                geo_.font_tab, FontWeight::Bold);
         }
         ui_geometry_tabs(&geo_, widths, ui.layout->tab_count, ui.current_tab);
     }

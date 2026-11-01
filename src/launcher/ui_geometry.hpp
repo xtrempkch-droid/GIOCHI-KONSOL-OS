@@ -70,6 +70,7 @@ struct UiGeometry {
     int font_tab = 14;
     int font_title = 12;
     int font_body = 12;
+    int line_h = 15; /* altura de uma linha de font_body (do atlas) */
 };
 
 /* Preenche as barras e os tokens. Chamar antes de ui_geometry_tabs e
@@ -86,6 +87,88 @@ void ui_geometry_grid(UiGeometry *g, int item_count, int focus_index);
 
 /* Retangulo do anel de foco do slot — por FORA do tile (§5.2). */
 UiRect ui_geometry_focus_ring(const UiGeometry &g, int slot);
+
+/* Onde vai o contador de pacotes.
+ *
+ * Medido no preview: desenhado logo abaixo da topbar, ele CAIA EM CIMA do
+ * primeiro tile (o conteudo comeca em topbar + margem). A faixa livre e' entre
+ * o fim da grade e a hint bar — e e' onde ele passa a ficar.
+ * Devolve um retangulo de altura de linha, alinhado a' direita, na sarjeta. */
+UiRect ui_geometry_count_rect(const UiGeometry &g);
+
+/* Intersecao de dois retangulos (0 = nao se tocam). Usado pelos testes para
+ * provar que um elemento nao invade outro. */
+int ui_rect_intersects(const UiRect &a, const UiRect &b);
+
+/* --- Aparencia do tile: papeis do tema, nao cores ---------------------
+ *
+ * Por que isto existe (armadilha §3.71): o render.cpp e o preview-ui.py
+ * desenhavam o tile cada um com a sua regra, e as duas divergiram — o preview
+ * pintava TODOS os tiles com `surface_elevated`, o que transforma a grade numa
+ * parede de caixas claras e apaga a hierarquia (o foco tem de ser o unico
+ * elemento "aceso"). O usuario viu isso como "preview bugado".
+ *
+ * A regra agora mora AQUI, uma vez, e os dois lados so' traduzem papel -> cor.
+ */
+enum UiRole {
+    UI_ROLE_NONE = 0, /* nao desenhar */
+    UI_ROLE_BACKGROUND,
+    UI_ROLE_SURFACE,
+    UI_ROLE_ELEVATED,
+    UI_ROLE_DIVIDER,
+    UI_ROLE_ACCENT,
+    UI_ROLE_TEXT_PRIMARY,
+    UI_ROLE_TEXT_SECONDARY
+};
+
+struct UiTileStyle {
+    UiRole fill = UI_ROLE_SURFACE;    /* corpo do tile */
+    UiRole inset = UI_ROLE_NONE;      /* recorte interno (slot sem pacote) */
+    UiRole outline = UI_ROLE_NONE;    /* borda do tile */
+    UiRole title = UI_ROLE_TEXT_SECONDARY;
+    int ring = 0;   /* espessura do anel de foco por FORA (0 = sem) */
+    int pad = 0;    /* recuo do titulo a partir da borda esquerda do tile */
+    int title_dy = 0; /* deslocamento da BASE do titulo a partir de tile.y+tile.h */
+};
+
+/* --- Peso tipografico por papel -------------------------------------
+ *
+ * Mora aqui, e nao no render.cpp, porque o preview (tools/preview-ui.py) tem
+ * de escolher a MESMA face: quando a escolha vivia em dois lugares, o preview
+ * passou a desenhar tudo em regular enquanto a proposta pedia negrito.
+ *
+ * A referencia visual e' docs/proposta/library-1280x720.png: titulo de tile,
+ * aba ativa, tecla da hint bar e titulo de painel em NEGRITO; corpo, estado
+ * vazio, acao da hint bar e relogio em regular.
+ *
+ * Os indices sao contrato com o dump-geometry JSON (campo `font_weights`) —
+ * mesma regra do UiRole. Nao reordene sem atualizar tools/preview-ui.py e
+ * tests/test_locales.py.
+ */
+enum UiTextRole {
+    UI_TEXT_TAB_ACTIVE = 0,
+    UI_TEXT_TAB_IDLE,
+    UI_TEXT_TITLE,
+    UI_TEXT_BODY,
+    UI_TEXT_HINT_KEY,
+    UI_TEXT_HINT_ACTION,
+    UI_TEXT_STATUS,
+    UI_TEXT_PANEL_TITLE,
+    UI_TEXT_MENU_ROW,
+    UI_TEXT_COUNT
+};
+
+enum UiWeight { UI_WEIGHT_REGULAR = 0, UI_WEIGHT_BOLD = 1 };
+
+UiWeight ui_text_weight(UiTextRole role);
+
+/* "regular" | "bold" — o mesmo nome que o font.json usa. */
+const char *ui_weight_name(UiWeight weight);
+
+/* Estilo de um tile. Referencia: docs/proposta/library-1280x720.png — tile
+ * normal fica no `surface` (recua), o focado sobe para `surface_elevated` com
+ * borda e anel de acento, e o titulo acompanha (secundario -> primario). */
+UiTileStyle ui_tile_style(const UiGeometry &g, bool focused, bool valid);
 
 /* --- Apresentacao: painel fisico x painel logico ----------------------
  *

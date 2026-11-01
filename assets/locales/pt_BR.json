@@ -1,0 +1,75 @@
+{
+ "schema_version": "1.0",
+ "language": "pt-BR",
+ "name": "Português (Brasil)",
+
+ "tab.music": "Música",
+ "tab.library": "Biblioteca",
+ "tab.home": "Início",
+ "tab.store": "Loja",
+ "tab.ports": "Ports",
+
+ "library.empty": "Copie um pacote .giochi via USB",
+ "library.empty_hint": "A partição GIOCHI_USER aparece como unidade removível",
+ "library.count": "{n} pacotes",
+ "library.invalid": "inválido",
+ "library.unknown_title": "Sem título",
+
+ "home.continue": "Continuar",
+ "home.continue_empty": "Nada em andamento",
+ "home.news": "Novidades",
+ "home.recent": "Recentes",
+ "home.nothing": "vazio",
+ "home.tip.scan": "O sistema varre a partição GIOCHI_USER a cada boot",
+ "home.tip.usb": "Conecte o cabo USB para enviar jogos",
+ "home.tip.select": "Select abre as Configurações",
+
+ "music.now_playing": "Tocando agora",
+ "music.empty": "Nenhuma faixa em /user/music",
+ "music.stopped": "parado",
+ "music.playing": "tocando",
+
+ "store.missing": "giochi-store ainda não faz parte desta imagem",
+ "ports.missing": "portmaster ainda não faz parte desta imagem",
+ "app.missing": "app externo não instalado",
+
+ "settings.title": "Configurações",
+ "settings.appearance": "Aparência",
+ "settings.system": "Sistema",
+ "settings.sound": "Som",
+ "settings.store": "Loja",
+ "settings.network": "Rede",
+ "settings.about": "Sobre",
+ "settings.poweroff": "Desligar",
+
+ "settings.language": "Idioma",
+ "settings.timezone": "Fuso horário",
+ "settings.brightness": "Brilho",
+ "settings.suspend": "Suspensão",
+ "settings.usb_mode": "Modo USB",
+ "settings.dev_mode": "Modo Desenvolvedor",
+
+ "settings.on": "ligado",
+ "settings.off": "desligado",
+ "settings.level": "{n}%",
+ "settings.minutes": "{n} min",
+
+ "hint.open": "Abrir",
+ "hint.back": "Voltar",
+ "hint.select": "Configurações",
+ "hint.home": "Início",
+ "hint.play": "Tocar",
+ "hint.adjust": "Ajustar",
+ "hint.tabs": "Trocar aba",
+ "hint.choose": "Escolher",
+ "hint.inert": "B não faz nada nesta aba",
+
+ "status.battery": "{n}%",
+ "status.charging": "carregando",
+ "status.net_on": "rede",
+ "status.net_off": "sem rede",
+
+ "error.title": "A interface gráfica não iniciou.",
+ "error.reason": "Motivo",
+ "error.where": "Diagnóstico completo na partição GIOCHI_BOOT, arquivo giochi-boot.log — procure as linhas 'sonda:' e 'render:'."
+}

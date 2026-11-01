@@ -18,6 +18,11 @@ define GIOCHI_ASSETS_INSTALL_TARGET_CMDS
 	# Atlas da fonte embutida (gerado por tools/make-font.py). Sem ele o
 	# Launcher desenha as caixas sem rotulo: diagnostico, nao tela preta.
 	$(INSTALL) -m 0644 $(@D)/assets/font.a8 $(TARGET_DIR)/usr/share/giochi/font.a8
+	# Catalogos de idioma. Sem eles o Launcher mostra as CHAVES ("tab.home")
+	# em vez do rotulo — visivel, mas inutil.
+	mkdir -p $(TARGET_DIR)/usr/share/giochi/locales
+	$(INSTALL) -m 0644 $(@D)/assets/locales/*.json \
+		$(TARGET_DIR)/usr/share/giochi/locales/
 endef
 
 $(eval $(generic-package))

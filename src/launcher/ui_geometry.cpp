@@ -134,6 +134,7 @@ void ui_geometry_base(UiGeometry *g, int screen_w, int screen_h)
     g->font_tab = sc(FONT_TAB, screen_h);
     g->font_title = sc(FONT_TITLE, screen_h);
     g->font_body = sc(FONT_BODY, screen_h);
+    g->line_h = sc(15, screen_h);
 
     g->topbar = UiRect{0, 0, screen_w, sc(TOPBAR_H, screen_h)};
     g->hint_bar = UiRect{0, screen_h - sc(HINT_H, screen_h), screen_w,
@@ -274,6 +275,73 @@ UiRect ui_geometry_focus_ring(const UiGeometry &g, int slot)
     const int r = g.focus_ring;
 
     return UiRect{t.x - r, t.y - r, t.w + 2 * r, t.h + 2 * r};
+}
+
+UiRect ui_geometry_count_rect(const UiGeometry &g)
+{
+    /* Altura de uma linha de corpo + respiro, encostada na hint bar. */
+    const int line = g.line_h > 0 ? g.line_h : g.font_body + g.font_body / 2;
+    const int y = g.hint_bar.y - g.margin - line;
+
+    return UiRect{g.content.x, y > 0 ? y : 0, g.content.w, line};
+}
+
+int ui_rect_intersects(const UiRect &a, const UiRect &b)
+{
+    if (a.w <= 0 || a.h <= 0 || b.w <= 0 || b.h <= 0) {
+        return 0;
+    }
+    return !(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y ||
+             b.y + b.h <= a.y);
+}
+
+UiWeight ui_text_weight(UiTextRole role)
+{
+    /* Uma tabela, sem `if` espalhado: assim o dump-geometry pode publicar a
+     * lista inteira e o preview reproduz a mesma escolha sem repetir regra. */
+    static const UiWeight kTabela[UI_TEXT_COUNT] = {
+        UI_WEIGHT_BOLD,    /* UI_TEXT_TAB_ACTIVE  */
+        UI_WEIGHT_REGULAR, /* UI_TEXT_TAB_IDLE    */
+        UI_WEIGHT_BOLD,    /* UI_TEXT_TITLE       */
+        UI_WEIGHT_REGULAR, /* UI_TEXT_BODY        */
+        UI_WEIGHT_BOLD,    /* UI_TEXT_HINT_KEY    */
+        UI_WEIGHT_REGULAR, /* UI_TEXT_HINT_ACTION */
+        UI_WEIGHT_REGULAR, /* UI_TEXT_STATUS      */
+        UI_WEIGHT_BOLD,    /* UI_TEXT_PANEL_TITLE */
+        UI_WEIGHT_REGULAR  /* UI_TEXT_MENU_ROW    */
+    };
+
+    if (role < 0 || role >= UI_TEXT_COUNT) {
+        return UI_WEIGHT_REGULAR;
+    }
+    return kTabela[role];
+}
+
+const char *ui_weight_name(UiWeight weight)
+{
+    return weight == UI_WEIGHT_BOLD ? "bold" : "regular";
+}
+
+UiTileStyle ui_tile_style(const UiGeometry &g, bool focused, bool valid)
+{
+    UiTileStyle s;
+
+    /* Hierarquia da referencia (docs/proposta/library-1280x720.png): a grade
+     * RECUA e o foco sobe. Fazer o contrario — tudo claro e o foco so' com
+     * anel — vira parede de caixas e some a leitura de "onde eu estou". */
+    s.fill = focused ? UI_ROLE_ELEVATED : UI_ROLE_SURFACE;
+    s.outline = focused ? UI_ROLE_ACCENT : UI_ROLE_NONE;
+    s.ring = focused ? g.focus_ring : 0;
+    s.title = focused ? UI_ROLE_TEXT_PRIMARY : UI_ROLE_TEXT_SECONDARY;
+    s.pad = g.gap / 2;
+    s.title_dy = (g.title_h - g.line_h) / 2 + g.line_h;
+
+    /* Slot sem pacote: um recorte mais escuro que o corpo. Nao e' decoracao —
+     * e' o que diz "aqui cabe um jogo e nao tem nenhum". */
+    if (!valid) {
+        s.inset = UI_ROLE_BACKGROUND;
+    }
+    return s;
 }
 
 }  // namespace giochi

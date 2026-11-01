@@ -1,0 +1,75 @@
+{
+ "schema_version": "1.0",
+ "language": "en",
+ "name": "English",
+
+ "tab.music": "Music",
+ "tab.library": "Library",
+ "tab.home": "Home",
+ "tab.store": "Store",
+ "tab.ports": "Ports",
+
+ "library.empty": "Copy a .giochi package over USB",
+ "library.empty_hint": "The GIOCHI_USER partition shows up as a removable drive",
+ "library.count": "{n} packages",
+ "library.invalid": "invalid",
+ "library.unknown_title": "Untitled",
+
+ "home.continue": "Continue",
+ "home.continue_empty": "Nothing in progress",
+ "home.news": "What's new",
+ "home.recent": "Recent",
+ "home.nothing": "empty",
+ "home.tip.scan": "The system scans the GIOCHI_USER partition on every boot",
+ "home.tip.usb": "Connect the USB cable to send games",
+ "home.tip.select": "Select opens Settings",
+
+ "music.now_playing": "Now playing",
+ "music.empty": "No tracks in /user/music",
+ "music.stopped": "stopped",
+ "music.playing": "playing",
+
+ "store.missing": "giochi-store is not part of this image yet",
+ "ports.missing": "portmaster is not part of this image yet",
+ "app.missing": "external app not installed",
+
+ "settings.title": "Settings",
+ "settings.appearance": "Appearance",
+ "settings.system": "System",
+ "settings.sound": "Sound",
+ "settings.store": "Store",
+ "settings.network": "Network",
+ "settings.about": "About",
+ "settings.poweroff": "Power off",
+
+ "settings.language": "Language",
+ "settings.timezone": "Time zone",
+ "settings.brightness": "Brightness",
+ "settings.suspend": "Suspend",
+ "settings.usb_mode": "USB mode",
+ "settings.dev_mode": "Developer mode",
+
+ "settings.on": "on",
+ "settings.off": "off",
+ "settings.level": "{n}%",
+ "settings.minutes": "{n} min",
+
+ "hint.open": "Open",
+ "hint.back": "Back",
+ "hint.select": "Settings",
+ "hint.home": "Home",
+ "hint.play": "Play",
+ "hint.adjust": "Adjust",
+ "hint.tabs": "Switch tab",
+ "hint.choose": "Choose",
+ "hint.inert": "B does nothing on this tab",
+
+ "status.battery": "{n}%",
+ "status.charging": "charging",
+ "status.net_on": "network",
+ "status.net_off": "no network",
+
+ "error.title": "The graphical interface did not start.",
+ "error.reason": "Reason",
+ "error.where": "Full diagnostics in the GIOCHI_BOOT partition, file giochi-boot.log — look for the 'sonda:' and 'render:' lines."
+}

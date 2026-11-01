@@ -24,6 +24,10 @@ struct SDL_Texture;
 
 namespace giochi {
 
+/* Peso da face. O atlas traz duas (assets/font.json -> "weights"); quem
+ * escolhe e' ui_text_weight(), para o render e o preview nao divergirem. */
+enum class FontWeight { Regular = 0, Bold = 1 };
+
 class Font {
 public:
     Font() = default;
@@ -40,35 +44,43 @@ public:
      * `max_w` > 0 recorta com "..." medido em pixels.
      * Devolve a largura desenhada. */
     int draw(SDL_Renderer *renderer, const std::string &text, int x,
-             int baseline_y, int px, unsigned rgb, int max_w) const;
+             int baseline_y, int px, unsigned rgb, int max_w,
+             FontWeight weight = FontWeight::Regular) const;
 #endif
 
     /* Largura em pixels, sem recorte. Disponivel mesmo sem SDL (o
      * posicionamento do layout depende dela). */
-    int measure(const std::string &text, int px) const;
+    int measure(const std::string &text, int px,
+                FontWeight weight = FontWeight::Regular) const;
 
     /* Versao recortada: devolve `text` ou um prefixo + "...". */
-    std::string truncate(const std::string &text, int px, int max_w) const;
+    std::string truncate(const std::string &text, int px, int max_w,
+                         FontWeight weight = FontWeight::Regular) const;
 
-    int line_height(int px) const;
-    int ascent(int px) const;
+    int line_height(int px, FontWeight weight = FontWeight::Regular) const;
+    int ascent(int px, FontWeight weight = FontWeight::Regular) const;
     bool loaded() const { return !sizes_.empty(); }
 
 private:
     struct Cell {
         int cp = 0;
         int x = 0;
-        int advance = 0;
+        int w = 0;       /* largura do bloco no atlas (>= advance) */
+        int advance = 0; /* passo do cursor */
     };
     struct Face {
         int px = 0;
+        FontWeight weight = FontWeight::Regular;
         int line_height = 0;
         int ascent = 0;
         int y = 0;
         std::vector<Cell> cells;
     };
 
-    const Face *face_for(int px) const;
+    /* Melhor face para (px, peso): o px mais proximo DENTRO do peso pedido.
+     * Cair para o outro peso seria pior que cair para outro tamanho — um
+     * titulo em regular passa desapercebido, um titulo em 12 px nao. */
+    const Face *face_for(int px, FontWeight weight) const;
     int advance_of(const Face &face, unsigned cp) const;
 
 #ifdef GIOCHI_HAVE_SDL2

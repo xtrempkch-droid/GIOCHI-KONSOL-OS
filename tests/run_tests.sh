@@ -85,6 +85,18 @@ if command -v python3 >/dev/null 2>&1; then
     fi
 fi
 
+# Catalogos de idioma: os dois tem de ter as MESMAS chaves, senao trocar de
+# idioma deixa rotulo em pt num menu em ingles.
+if command -v python3 >/dev/null 2>&1; then
+    total=$((total + 1))
+    if python3 "$ROOT/tests/test_locales.py" >/dev/null 2>&1; then
+        echo "OK     idiomas (python)"
+    else
+        echo "FALHA  idiomas (python)"
+        fail=$((fail + 1))
+    fi
+fi
+
 # Atlas da fonte embutida: o arquivo e gerado, entao o tamanho em bytes, os
 # tamanhos que a UI pede e a cobertura dos glifos tem de casar com o codigo.
 # Quando saem de sincronia os rotulos somem e o sintoma se confunde com

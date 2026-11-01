@@ -276,6 +276,49 @@ void test_apresentacao_recusa_rotacao_incoerente(void)
     CHECK(e.ok == 0);
 }
 
+/* O contador de pacotes NAO pode cair em cima de um tile.
+ *
+ * Medido no preview: desenhado logo abaixo da topbar, ele invadia o primeiro
+ * tile da grade (o conteudo comeca em topbar + margem). A faixa livre e' entre
+ * o fim da grade e a hint bar. */
+void test_contador_nao_invade_grade(void)
+{
+    const int sizes[][2] = {{640, 480}, {1280, 720}, {800, 480}};
+
+    for (const auto &s : sizes) {
+        UiGeometry g;
+
+        giochi::ui_geometry_base(&g, s[0], s[1]);
+        giochi::ui_geometry_grid(&g, 15, 0);
+
+        const UiRect count = giochi::ui_geometry_count_rect(g);
+
+        CHECK(count.h > 0);
+        CHECK(count.y >= g.topbar.y + g.topbar.h);
+        CHECK(count.y + count.h <= g.hint_bar.y);
+
+        for (int i = 0; i < g.tile_count; i++) {
+            CHECK(giochi::ui_rect_intersects(count, g.tile[i]) == 0);
+
+            /* O titulo do tile fica logo abaixo dele: tambem nao pode tocar. */
+            const UiRect titulo{g.tile[i].x, g.tile[i].y + g.tile[i].h, g.tile[i].w,
+                                g.title_h};
+
+            CHECK(giochi::ui_rect_intersects(count, titulo) == 0);
+        }
+    }
+}
+
+void test_intersecao(void)
+{
+    const UiRect a{0, 0, 10, 10};
+
+    CHECK(giochi::ui_rect_intersects(a, UiRect{5, 5, 10, 10}) == 1);
+    CHECK(giochi::ui_rect_intersects(a, UiRect{10, 0, 5, 5}) == 0); /* encosta */
+    CHECK(giochi::ui_rect_intersects(a, UiRect{20, 20, 5, 5}) == 0);
+    CHECK(giochi::ui_rect_intersects(a, UiRect{0, 0, 0, 10}) == 0); /* vazio */
+}
+
 /* Entradas absurdas nao podem gerar retangulo negativo. */
 void test_entradas_invalidas(void)
 {
@@ -307,6 +350,8 @@ int main(void)
     test_apresentacao_x55();
     test_apresentacao_sem_rotacao();
     test_apresentacao_recusa_rotacao_incoerente();
+    test_contador_nao_invade_grade();
+    test_intersecao();
     test_entradas_invalidas();
     TEST_SUMMARY("test_ui_geometry");
 }
