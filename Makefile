@@ -484,6 +484,11 @@ lint:
 	@python3 tests/test_font.py
 	@echo "== desenho SDL2 compila (mesmo sem SDL2 no host) =="
 	@sh tools/check-sdl2-compile.sh
+	@echo "== cliente do control.sock do console (giochi-ctl) =="
+	@$(CC) -std=c11 -D_GNU_SOURCE -Wall -Wextra -Wshadow -Wformat=2 -Werror \
+	    -Isrc/common -o /tmp/giochi-ctl-lint \
+	    src/tools/giochi-ctl.c src/common/giochi_sock.c src/common/giochi_util.c \
+	    && rm -f /tmp/giochi-ctl-lint && echo "ok"
 	@echo "== ferramentas python =="
 	@python3 -m py_compile tools/make-screenshots.py \
 	           tools/make-layout-proposal.py \

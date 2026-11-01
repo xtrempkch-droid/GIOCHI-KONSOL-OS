@@ -3,12 +3,18 @@ CONFIG_FEATURE_MDEV_CONF=y
 CONFIG_FEATURE_MDEV_RENAME=y
 CONFIG_MDEV=y
 CONFIG_UDHCPC=y
-CONFIG_FEATURE_UDHCPC_SCRIPT=y
-CONFIG_WPA_SUPPLICANT=n
-CONFIG_IWCONFIG=n
+# CONFIG_WPA_SUPPLICANT, CONFIG_IWCONFIG: NAO EXISTEM no BusyBox. O
+# wpa_supplicant e o iw vem dos pacotes do Buildroot
+# (BR2_PACKAGE_WPA_SUPPLICANT, BR2_PACKAGE_IW), nao de applet do BusyBox —
+# pedi-los aqui era descartado em silencio.
+# CONFIG_FEATURE_UDHCPC_SCRIPT tambem nao existe: o udhcpc aceita -s em
+# qualquer configuracao.
 CONFIG_POWERTOP=y
 CONFIG_REBOOT=y
-CONFIG_SWAPONOFF=y
+# O applet e' dois: SWAPON e SWAPOFF. `CONFIG_SWAPONOFF` nao existe e era
+# descartado calado (o swap do S30swap dependia dele).
+CONFIG_SWAPON=y
+CONFIG_SWAPOFF=y
 CONFIG_MKSWAP=y
 CONFIG_FEATURE_SWAPON_PRI=y
 CONFIG_FEATURE_MOUNT_FLAGS=y
@@ -44,7 +50,7 @@ CONFIG_IP=y
 CONFIG_FEATURE_IP_ADDRESS=y
 CONFIG_FEATURE_IP_LINK=y
 CONFIG_MOUNTPOINT=y
-CONFIG_DROPBEAR=n
+# CONFIG_DROPBEAR NAO e' applet do BusyBox (e' pacote: BR2_PACKAGE_DROPBEAR).
 # --- nc -U: o cliente do control.sock (docs/APP-SDK.md / giochi-ctl) ----
 # O console nao tem Python, e o unico jeito de um script do PC falar com
 # /run/giochi/control.sock (via `ssh ... "printf ... | nc -U ..."`) e' o nc
@@ -55,6 +61,8 @@ CONFIG_DROPBEAR=n
 #   $ ssh root@10.55.0.2 'printf "PING\n" | nc -U /run/giochi/control.sock'
 #   sh: nc: not found
 #
-# NC_UNIX e' o que habilita -U (soquete de dominio Unix), nao so' TCP/UDP.
+# ATENCAO: NAO existe CONFIG_NC_UNIX no BusyBox 1.36.1 (conferido em
+# networking/nc.c: zero ocorrencias de AF_UNIX). O nc do BusyBox so' fala
+# TCP/UDP — nao ha -U. Quem conversa com o control.sock e' o binario
+# giochi-ctl do proprio console (src/tools), pelo mesmo giochi_sock_*.
 CONFIG_NC=y
-CONFIG_NC_UNIX=y

@@ -344,5 +344,74 @@ class ImagePiecesTest(unittest.TestCase):
         self.assertIn("-debug", bi)
 
 
+
+class FragmentoDoBusyBoxSoPedeSimboloQueExiste(unittest.TestCase):
+    """Símbolo inventado no fragmento é descartado em silêncio (§3.2, §3.103).
+
+    Aconteceu duas vezes nesta sessão: `CONFIG_NC` sem estar no fragmento
+    (default desligado) e `CONFIG_NC_UNIX`, que **não existe** no BusyBox
+    1.36.1 (zero `AF_UNIX` em `networking/nc.c`). O kconfig aceita e ignora,
+    e o defeito só aparece no aparelho como "sh: nc: not found".
+
+    Percorre o fragmento e cobra que todo `CONFIG_*` pedido exista no fonte
+    do BusyBox baixado (quando houver árvore de build) ou na lista de
+    conhecidos.
+    """
+
+    FRAG = os.path.join(BOARD, "busybox.fragment")
+
+    def simbolos_pedidos(self) -> set[str]:
+        import re
+
+        with open(self.FRAG, encoding="utf-8") as fh:
+            corpo = fh.read()
+        return {m.group(1) for m in re.finditer(r"^(CONFIG_[A-Z0-9_]+)=",
+                                                corpo, re.M)}
+
+    def test_nc_esta_ligado(self):
+        """`nc` sem `CONFIG_NC` fica desligado: o default do BusyBox é n."""
+        self.assertIn("CONFIG_NC", self.simbolos_pedidos(),
+                      "sem CONFIG_NC=y o applet nc nao existe na imagem")
+
+    def test_nc_unix_nao_existe_e_nao_pode_ser_pedido(self):
+        """`-U` (soquete Unix) não existe no nc do BusyBox, em config nenhuma.
+
+        Quem precisa falar com `/run/giochi/control.sock` é o binário
+        `giochi-ctl` do console (src/tools), não o nc.
+        """
+        self.assertNotIn("CONFIG_NC_UNIX", self.simbolos_pedidos(),
+                         "CONFIG_NC_UNIX nao existe no BusyBox 1.36.1: "
+                         "pedi-lo nao liga nada e esconde a falta do cliente "
+                         "de verdade (src/tools/giochi-ctl.c)")
+
+    def test_todo_simbolo_existe_no_fonte_baixado(self):
+        import glob
+
+        fontes = glob.glob(os.path.join(ROOT, "dist", "*", "build", "build",
+                                        "busybox-*"))
+        fontes = [f for f in fontes if os.path.isdir(f)]
+        if not fontes:
+            self.skipTest("sem arvore do busybox construida")
+        pedidos = self.simbolos_pedidos()
+        for arvore in fontes:
+            # A definicao de cada simbolo esta em algum Kconfig/Config.in.
+            texto = ""
+            for raiz, _, arquivos in os.walk(arvore):
+                for nome in arquivos:
+                    if nome in ("Kconfig", "Config.in"):
+                        try:
+                            with open(os.path.join(raiz, nome),
+                                      encoding="utf-8", errors="replace") as fh:
+                                texto += fh.read()
+                        except OSError:
+                            pass
+            inexistentes = sorted(s for s in pedidos
+                                  if ("config " + s[7:]) not in texto)
+            self.assertEqual(
+                [], inexistentes,
+                "o fragmento pede simbolo que o BusyBox de %s nao define "
+                "(descartado em silencio)" % os.path.basename(arvore))
+
+
 if __name__ == "__main__":
     unittest.main()

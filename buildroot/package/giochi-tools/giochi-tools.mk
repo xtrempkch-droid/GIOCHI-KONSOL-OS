@@ -39,6 +39,15 @@ GIOCHI_TOOLS_GPU_LIBS = -ldrm -lgbm -lEGL -lGLESv2
 GIOCHI_TOOLS_GPU_INCS = -I$(STAGING_DIR)/usr/include \
 	-I$(STAGING_DIR)/usr/include/libdrm
 
+# giochi-ctl: o cliente do control.sock DENTRO do console. O nc do BusyBox
+# nao fala soquete Unix (networking/nc.c: zero AF_UNIX, e nao existe
+# CONFIG_NC_UNIX), entao o PC nao tem com o que falar pelo SSH. Este binario
+# usa o mesmo giochi_sock_* do supervisor — 20 KB, sem dependencia nova.
+# giochi_util.c entra por causa de giochi_strlcpy, que giochi_sock.c usa.
+GIOCHI_TOOLS_CTL_SRC = $(@D)/src/tools/giochi-ctl.c \
+	$(@D)/src/common/giochi_sock.c $(@D)/src/common/giochi_util.c
+GIOCHI_TOOLS_CTL_INCS = -I$(@D)/src/common
+
 define GIOCHI_TOOLS_BUILD_CMDS
 	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D) HOST_BUILD=0 \
 		BUILD_DIR=build OPT="-O2" \
@@ -53,6 +62,9 @@ define GIOCHI_TOOLS_BUILD_CMDS
 	$(TARGET_CC) $(GIOCHI_TOOLS_EXTRA_CFLAGS) $(GIOCHI_TOOLS_GPU_INCS) \
 		-o $(@D)/build/target/bin/giochi-gpu-probe \
 		$(GIOCHI_TOOLS_GPU_SRC) $(TARGET_LDFLAGS) $(GIOCHI_TOOLS_GPU_LIBS)
+	$(TARGET_CC) $(GIOCHI_TOOLS_EXTRA_CFLAGS) $(GIOCHI_TOOLS_CTL_INCS) \
+		-o $(@D)/build/target/bin/giochi-ctl \
+		$(GIOCHI_TOOLS_CTL_SRC) $(TARGET_LDFLAGS)
 endef
 
 define GIOCHI_TOOLS_INSTALL_TARGET_CMDS
@@ -64,6 +76,8 @@ define GIOCHI_TOOLS_INSTALL_TARGET_CMDS
 		$(TARGET_DIR)/usr/bin/giochi-thumbgen
 	$(INSTALL) -D -m 0755 $(@D)/build/target/bin/giochi-gpu-probe \
 		$(TARGET_DIR)/usr/bin/giochi-gpu-probe
+	$(INSTALL) -D -m 0755 $(@D)/build/target/bin/giochi-ctl \
+		$(TARGET_DIR)/usr/bin/giochi-ctl
 endef
 
 $(eval $(generic-package))

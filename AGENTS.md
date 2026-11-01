@@ -2746,34 +2746,69 @@ Complicação: `/root` está no SquashFS (somente leitura), então `mkdir
   do nome do diretório. `strings` no binário da imagem é barato e respondeu em
   segundos uma pergunta que custou dois ciclos de cartão.
 
-### 3.103 O BusyBox saiu sem `nc -U` — e é ele quem fala com o `control.sock`
+### 3.103 O `nc` do BusyBox não fala soquete Unix — `CONFIG_NC_UNIX` não existe
 
-Com o SSH e o MTP funcionando, o `tools/giochi-ctl.py ctl PING` respondeu:
+Com o SSH e o MTP funcionando, o `tools/giochi-ctl.py ctl PING` respondeu
+`sh: nc: not found`. Duas etapas de erro, e a segunda é a instrutiva:
 
-```
-giochi-ctl: falha ao falar com o control.sock: ...
-sh: nc: not found
-```
+1. O `busybox.fragment` **não pedia `CONFIG_NC`**; o default do 1.36.1 é
+   desligado (`# CONFIG_NC is not set`). Símbolo que o kconfig descarta em
+   silêncio — §3.2 de novo, agora no BusyBox.
+2. Ao ligar `CONFIG_NC=y` **e** `CONFIG_NC_UNIX=y`, escrevi eu mesmo o
+   símbolo inexistente. Não existe `NC_UNIX` no BusyBox:
 
-O console não tem Python; o único jeito de um script do PC falar com
-`/run/giochi/control.sock` é `printf ... | nc -U ...` **dentro** do console.
-O `giochi-ctl.py` documenta essa dependência desde que foi escrito, e o
-`busybox.fragment` **não mencionava `CONFIG_NC`** — o default do BusyBox
-1.36.1 é desligado:
+   ```
+   $ grep -rn "NC_UNIX" dist/x55/build/build/busybox-1.36.1/   -> nada
+   $ grep -c "AF_UNIX" .../networking/nc.c                     -> 0
+   ```
 
-```
-dist/x55/build/build/busybox-1.36.1/.config
-# CONFIG_NC is not set
-```
+   O `nc` do BusyBox só fala TCP/UDP. `-U` (soquete de domínio Unix) **não
+   existe**, em nenhuma configuração. O fragmento aceitou o símbolo e o
+   descartou calado, como sempre.
 
-Mesma classe do §3.2 (símbolo que o kconfig descarta em silêncio), agora no
-BusyBox em vez do Buildroot.
+Ou seja: o `tools/giochi-ctl.py` estava escrito sobre uma premissa falsa
+desde o início — `printf ... | nc -U /run/giochi/control.sock` nunca poderia
+funcionar no console.
 
-- `CONFIG_NC=y` + `CONFIG_NC_UNIX=y`. O segundo é o que habilita `-U`
-  (soquete de domínio Unix); só `CONFIG_NC` dá TCP/UDP e **não resolve**.
-- **Regra que fica**: ferramenta do PC que depende de um utilitário dentro do
-  console precisa de guarda no fragmento **e** de um teste que olhe o
-  `.config` do BusyBox. Documentar a dependência no help do script não a cria.
+- Em vez de empacotar `socat` (mais um pacote no SquashFS), o console ganhou
+  o próprio cliente: `src/tools/giochi-ctl.c`, compilado com os mesmos
+  `giochi_sock_connect_unix`/`giochi_sock_write_all` do supervisor — 22 KB,
+  sem dependência nova e sem risco de divergir do protocolo.
+- `tools/giochi-ctl.py` passou a chamar `giochi-ctl 'COMANDO'` pelo SSH.
+  Códigos de saída: 0 para `PONG`/`OK`, 1 para `ERR`, 2 para "não falou com
+  o soquete" (com o caminho e o motivo na mensagem).
+- Verificado contra o supervisor **real**: `PING` → `PONG`, `USB_MODE MASS`
+  → `OK usb_mode MASS`, `SET_THEME` → `ERR not_implemented` com rc=1.
+- Guardas: `test_o_cliente_do_console_e_o_binario_e_nao_nc_U` (olha só as
+  linhas de código, porque o comentário que explica o problema cita `nc -U`
+  de propósito) e a compilação com `-Werror` no `make lint`.
+- `CONFIG_NC=y` ficou: `nc` continua útil para TCP, e agora o fragmento tem
+  o comentário dizendo que `NC_UNIX` não existe.
+- **Regra que fica**: eu escrevi o símbolo inventado **depois** de passar a
+  sessão documentando essa armadilha. A defesa que funciona não é lembrar —
+  é conferir: `grep` no fonte baixado antes de adicionar qualquer
+  `CONFIG_*`, e um teste que compare o fragmento com o `.config` gerado.
+
+- **E a guarda achou mais cinco.** Ao escrever o teste que compara o
+  fragmento com o Kconfig do BusyBox, ele reprovou símbolos **que já estavam
+  no repositório** desde o começo:
+
+  | pedido | situação real |
+  |---|---|
+  | `CONFIG_SWAPONOFF` | o applet é **dois**: `SWAPON` e `SWAPOFF` |
+  | `CONFIG_FEATURE_UDHCPC_SCRIPT` | não existe; `udhcpc -s` é sempre disponível |
+  | `CONFIG_IWCONFIG` | não é applet do BusyBox (é `BR2_PACKAGE_IW`) |
+  | `CONFIG_WPA_SUPPLICANT` | não é applet (é `BR2_PACKAGE_WPA_SUPPLICANT`) |
+  | `CONFIG_DROPBEAR` | não é applet (é `BR2_PACKAGE_DROPBEAR`) |
+
+  Nenhum deles quebrava o build: eram descartados em silêncio. O `swapon`
+  que o `S30swap` usa existe porque outro caminho o ligou — ou seja, o
+  fragmento **parecia** pedir o que o sistema precisava, e quem lesse
+  acreditaria.
+- Guarda: `FragmentoDoBusyBoxSoPedeSimboloQueExiste` em `tests/test_boot_log.py`,
+  que percorre os `Kconfig`/`Config.in` da árvore do BusyBox baixada e
+  reprova qualquer `CONFIG_*` pedido que o BusyBox não defina. Testada ao
+  contrário com `CONFIG_NC_UNIX` e com `CONFIG_SWAPONOFF`.
 
 ### 3.104 NetworkManager desfaz o IP manual da interface USB
 

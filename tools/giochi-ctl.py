@@ -17,10 +17,15 @@ Este script tem tres papeis:
   `echo`      roda um comando de shell no console (para ler logs, `dmesg`,
               conferir o tema ativo, ver se o dropbear subiu).
 
-O console nao tem Python. O cliente do protocolo e' o `nc -U` do BusyBox
-(`CONFIG_NC_UNIX`): `printf ... | nc -U /run/giochi/control.sock`. Se o build
-saiu sem essa opcao, o erro e' classificado e dito com essas palavras — em vez
-de um "falhou" generico.
+O console nao tem Python e o `nc` do BusyBox NAO fala soquete de dominio
+Unix (`networking/nc.c` do 1.36.1 tem zero ocorrencias de `AF_UNIX`, e nao
+existe simbolo `CONFIG_NC_UNIX`). Por isso o console traz o proprio cliente:
+`/usr/bin/giochi-ctl` (src/tools/giochi-ctl.c), que usa o mesmo
+`giochi_sock_*` do supervisor. Este script manda `giochi-ctl COMANDO` pelo
+SSH.
+
+Se a imagem for antiga e nao tiver o binario, o erro e' classificado e dito
+com essas palavras — em vez de um "falhou" generico.
 
 USO
     tools/giochi-ctl.py preparar                  # configura usb0 e testa SSH
@@ -249,20 +254,24 @@ def ssh_exec(remoto: str, timeout: float = 30.0) -> subprocess.CompletedProcess:
         return subprocess.CompletedProcess(cmd, 124, "", "timeout")
 
 
-# Cliente do control.sock: `nc -U` (UNIX socket) do BusyBox.
+# Cliente do control.sock: o binario `giochi-ctl` DENTRO do console.
 #
-# NAO ha' sonda: `nc --help` nao serve para decidir. Medido — o OpenBSD
-# netcat suporta -U e imprime `[-46CDdFhklNnrStUuvZz]`, onde "-U" nao aparece
-# como substring; o probe reprovava um nc que funciona. Em vez de adivinhar,
-# o cliente roda o comando e classifica o ERRO: se a mensagem fala de opcao
-# invalida, o problema e' o nc; qualquer outra coisa e' o console.
-MARCAS_NC_SEM_U = ("invalid option", "unrecognized option", "unknown option",
-                   "illegal option", "not supported", "unsupported option")
+# Nao da' para usar `nc -U`: o nc do BusyBox nao tem soquete Unix (zero
+# `AF_UNIX` em networking/nc.c do 1.36.1) e `CONFIG_NC_UNIX` nao existe —
+# pedi-lo no fragmento nao liga nada. O console traz `/usr/bin/giochi-ctl`
+# (src/tools/giochi-ctl.c), compilado com o mesmo giochi_sock_* do
+# supervisor, e este script so' o invoca pelo SSH.
+CLIENTE_CONSOLE = os.environ.get("GIOCHI_CTL_CONSOLE", "/usr/bin/giochi-ctl")
+
+MARCAS_SEM_CLIENTE = ("not found", "No such file", "Permission denied")
 
 
 def ctl(comando: str, timeout: float = 20.0) -> subprocess.CompletedProcess:
     """Manda `comando` ao control.sock pelo SSH e devolve a resposta."""
-    remoto = f'printf "%s\\n" "{comando}" | nc -U {SOCK}'
+    # Aspas simples no remoto: o comando pode ter argumento com espaco
+    # (`LAUNCH_APP /user/ports/x`); o shell do console repassa os args.
+    seguro = comando.replace("'", "'\\''")
+    remoto = f"{CLIENTE_CONSOLE} '{seguro}'"
     return ssh_exec(remoto, timeout=timeout)
 
 
@@ -274,10 +283,11 @@ def cmd_ctl(args) -> int:
 
     if r.returncode != 0 and not resposta:
         juntou = f"{r.stderr}".lower()
-        if any(marca in juntou for marca in MARCAS_NC_SEM_U):
-            erro("o `nc` do console nao aceita -U (BusyBox sem CONFIG_NC_UNIX).")
-            erro("o protocolo so' pode ser exercitado de dentro do console; "
-                 "use `echo` para ler o log.")
+        if any(marca.lower() in juntou for marca in MARCAS_SEM_CLIENTE):
+            erro(f"o console nao tem o cliente do control.sock "
+                 f"({CLIENTE_CONSOLE}).")
+            erro("  ele vem do pacote giochi-tools (BR2_PACKAGE_GIOCHI_TOOLS);")
+            erro("  numa imagem antiga, atualize o cartao.")
             return 5
         erro(f"falha ao falar com o control.sock: {r.stderr.strip()}")
         return r.returncode if r.returncode else 1

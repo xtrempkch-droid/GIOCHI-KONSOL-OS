@@ -32,6 +32,19 @@ for ultimo; do :; done
 exec sh -c "$ultimo"
 """
 
+# O console tem `/usr/bin/giochi-ctl` (src/tools/giochi-ctl.c), que fala o
+# protocolo de verdade com o control.sock do giochi-init. Aqui ele e' um
+# script que faz o mesmo com o `nc` do HOST — o que se testa e' o cliente
+# Python (montagem do comando remoto, leitura da resposta, codigo de saida),
+# nao o binario C, que tem compilacao propria na imagem.
+CTL_CONSOLE_FALSO = """#!/bin/sh
+# $1 = comando (pode ter argumento com espaco)
+printf '%s\\n' "$1" | nc -U "$GIOCHI_CTL_SOCK"
+rc=$?
+[ $rc -eq 0 ] || exit $rc
+exit 0
+"""
+
 # `ip` falso: a maquina de desenvolvimento TEM interface de gadget quando o
 # console esta' plugado (foi assim que este teste comecou a falhar — ele
 # assumia "nenhuma interface USB no host"). A deteccao continua sendo a real;
@@ -65,6 +78,10 @@ class CtlTest(unittest.TestCase):
         cls.ip = base / "bin" / "ip"
         cls.ip.write_text(IP_FALSO)
         cls.ip.chmod(0o755)
+
+        cls.ctl_console = base / "bin" / "giochi-ctl"
+        cls.ctl_console.write_text(CTL_CONSOLE_FALSO)
+        cls.ctl_console.chmod(0o755)
 
         profile = base / "profile.json"
         profile.write_text(
@@ -101,6 +118,7 @@ class CtlTest(unittest.TestCase):
                    PATH=f"{self.base / 'bin'}:{os.environ['PATH']}",
                    GIOCHI_SSH="ssh",
                    GIOCHI_CTL_SOCK=str(self.sock),
+                   GIOCHI_CTL_CONSOLE=str(self.ctl_console),
                    GIOCHI_HOST="127.0.0.1")
         return subprocess.run(["python3", str(CTL), *args],
                               capture_output=True, text=True, env=env,
@@ -158,6 +176,77 @@ class CtlTest(unittest.TestCase):
                         fonte.index('"addr", "add"'),
                         "soltar o NM depois de atribuir o IP nao resolve: o "
                         "NM ja' apagou")
+
+
+    def test_o_cliente_do_console_e_o_binario_e_nao_nc_U(self):
+        """O nc do BusyBox não fala soquete Unix — `nc -U` nunca funcionou.
+
+        `networking/nc.c` do BusyBox 1.36.1 tem ZERO ocorrências de `AF_UNIX`,
+        e `CONFIG_NC_UNIX` não existe (pedir no fragmento é descartado em
+        silêncio). Medido na X55: `sh: nc: not found` mesmo com
+        `CONFIG_NC=y` ligado.
+
+        O console agora traz `/usr/bin/giochi-ctl`, compilado com o mesmo
+        `giochi_sock_*` do supervisor.
+        """
+        import pathlib
+
+        fonte = pathlib.Path(CTL).read_text()
+        # So' as LINHAS DE CODIGO: o comentario que explica por que o nc nao
+        # serve cita `nc -U` de proposito.
+        codigo = [l for l in fonte.splitlines()
+                  if l.strip() and not l.lstrip().startswith("#")]
+        self.assertFalse(any("nc -U" in l for l in codigo),
+                         "o cliente do PC nao pode chamar `nc -U`: o nc do "
+                         "BusyBox nao suporta soquete Unix")
+        self.assertIn("giochi-ctl", fonte,
+                      "o cliente tem de invocar o binario do console")
+
+        # E o binario tem de estar no build do alvo, senao o erro vira
+        # "not found" no aparelho, que foi o sintoma original.
+        mk = (pathlib.Path(ROOT) / "buildroot/package/giochi-tools"
+              / "giochi-tools.mk").read_text()
+        self.assertIn("src/tools/giochi-ctl.c", mk,
+                      "o giochi-ctl nao e' compilado para o alvo")
+        bloco = mk.split("INSTALL_TARGET_CMDS")[1].split("endef")[0]
+        self.assertIn("giochi-ctl", bloco,
+                      "o giochi-ctl nao e' instalado no rootfs")
+
+
+    def test_receita_do_alvo_compila_de_verdade(self):
+        """Compila EXATAMENTE os arquivos que o `.mk` lista.
+
+        Divergir entre "o que eu compilei para testar" e "o que a receita
+        compila" e' o mesmo padrao do §3.88b (patch gerado contra a arvore
+        errada): o teste passa e o build quebra. Aconteceu aqui — o `.mk`
+        nao listava `giochi_util.c`, e o link falhou em `giochi_strlcpy`.
+        """
+        import pathlib
+        import shutil
+        import subprocess
+        import tempfile
+
+        if not shutil.which("gcc"):
+            self.skipTest("sem gcc no host")
+        mk = (pathlib.Path(ROOT) / "buildroot/package/giochi-tools"
+              / "giochi-tools.mk").read_text()
+        bloco = mk.split("GIOCHI_TOOLS_CTL_SRC = ")[1].split("\n\n")[0]
+        # $(@D) e' o diretorio do pacote = raiz do repo (SITE local).
+        fontes = [t.replace("$(@D)/", "").replace("\\", "").strip()
+                  for t in bloco.split()]
+        fontes = [f for f in fontes if f.endswith(".c")]
+        self.assertTrue(fontes, "a receita nao lista fonte nenhum: %r" % bloco)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            saida = pathlib.Path(tmp) / "giochi-ctl"
+            r = subprocess.run(
+                ["gcc", "-std=c11", "-D_GNU_SOURCE", "-Wall", "-Wextra",
+                 "-Werror", "-Isrc/common", "-o", str(saida), *fontes],
+                cwd=ROOT, capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0,
+                             "a receita do giochi-ctl nao compila:\n%s"
+                             % r.stderr[-2000:])
+            self.assertTrue(saida.is_file())
 
     def test_comandos_lista_o_protocolo(self):
         r = self.rodar("comandos")
