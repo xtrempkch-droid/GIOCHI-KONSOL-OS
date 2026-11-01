@@ -17,9 +17,12 @@ armazenamento em microSD (slot único ou duplo). Rede e Bluetooth são
 
 > **Estado:** v1.2. O núcleo (supervisor, launcher, daemon de música,
 > empacotamento/assinatura, update A/B, USB com MTP e SSH) está implementado e
-> testado. A renderização dos widgets e a decodificação de áudio ainda são
-> esqueletos — a tabela [Estado da implementação](#estado-da-implementação) diz
-> exatamente o que roda hoje.
+> testado, e o sistema **boota em hardware** na X55 (kernel, SquashFS por
+> `PARTUUID`, `giochi-init` e Launcher em ~4 s). A renderização dos widgets e a
+> decodificação de áudio ainda são esqueletos — a tabela
+> [Estado da implementação](#estado-da-implementação) diz exatamente o que roda
+> hoje, e [AGENTS.md §4](AGENTS.md) lista o que **não** foi verificado no
+> aparelho.
 
 ---
 
@@ -84,6 +87,7 @@ Um tema é um JSON em [`assets/themes/`](assets/themes) — crie o seu e rode
 | `giochi-init`: supervisor, `control.sock`, FIFO, hotkey, `device_profile.json` | ✅ funcional | [src/init](src/init) |
 | Ciclo de vida Launcher/jogo/app (§2.2/§4.7) | ✅ funcional, testado | [tests/integration](tests/integration/lifecycle_test.sh) |
 | Launcher C++17: layout 1.6, 5 abas, `buttons.map`, biblioteca, overlay 2 níveis | 🟡 motor pronto, widgets pendentes | [apps/launcher](apps/launcher) |
+| Launcher como **app**: `/apps/giochi-launcher` vence o binário da imagem | ✅ funcional, testado | [docs/LAUNCHER-APP.md](docs/LAUNCHER-APP.md) |
 | `giochi-musicd`: socket/protocolo §4.8.4 | 🟡 protocolo pronto, decode ALSA pendente | [src/musicd](src/musicd) |
 | `.giochi`: pack, extract (ustar embutido), thumbgen | ✅ pack/extract, 🟡 thumbnails | [tools/](tools/) |
 | Update A/B com Ed25519 + SHA-256 | ✅ funcional (verificado ponta a ponta) | [tools/giochi-verify.c](tools/giochi-verify.c) |
@@ -91,6 +95,9 @@ Um tema é um JSON em [`assets/themes/`](assets/themes) — crie o seu e rode
 | USB: MTP + rede/SSH + Mass Storage (gadget composto) | ✅ funcional | [scripts/giochi-usb-mode](scripts/giochi-usb-mode), [docs/USB.md](docs/USB.md) |
 | Modo Desenvolvedor (SSH via USB, §4.6.1) | ✅ funcional, testado | [tests/integration/devmode_test.sh](tests/integration/devmode_test.sh) |
 | Dongles USB Wi-Fi/BT | ✅ hotplug e scripts, 🟡 UI de rede | [scripts/init.d/S40dongle](scripts/init.d/S40dongle) |
+| `/apps`: programas do console em partição gravável | ✅ funcional | [apps/README.md](apps/README.md) |
+| PPSSPP (cliente PSP, GLES2 via SDL2) e PortMaster | 🟡 compilam e vão na imagem, **não testados no aparelho** | [docs/APPS.md](docs/APPS.md) |
+| Relógio sem RTC: data corrigível por MTP ou `control.sock` | ✅ funcional, testado | [docs/RELÓGIO.md](docs/RELÓGIO.md) |
 
 ---
 
@@ -118,13 +125,19 @@ Só precisa de `gcc`/`g++` (C99/C++17) e `python3`. As bibliotecas opcionais
 elas o código usa os stubs previstos na especificação.
 
 ```sh
-make            # build/host/bin/{giochi-init,giochi-musicd,giochi-launcher,...}
-make test       # unitários, integração (ciclo de vida, USB, Modo
-                # Desenvolvedor), bootlogo e forge
-make lint       # shell, JSON, defconfigs, links, arquivos versionados e
-                # símbolos do Buildroot/U-Boot (quando as árvores existem)
+make            # build/host/bin/{giochi-init,giochi-musicd,giochi-launcher,
+                #                 giochi-ctl, giochi-verify, giochi-extract, ...}
+make test       # unitários C/C++ + integração (ciclo de vida, USB, Modo
+                # Desenvolvedor) + suítes Python (relógio, apps, clientes do
+                # control.sock, layout, temas, cartão, Forge, Loja)
+make lint       # shell, JSON, defconfigs, links, arquivos versionados,
+                # símbolos do Buildroot/U-Boot e conteúdo da imagem
 make info       # mostra o que o pkg-config detectou
 ```
+
+`make test` e `make lint` são os únicos comandos que você precisa guardar: o
+número de suítes muda com o tempo, então a lista canônica é
+[tests/run_tests.sh](tests/run_tests.sh).
 
 ### Imagem para o cartão
 
@@ -136,9 +149,22 @@ tools/build-image.sh x55                # dist/x55/giochi-x55-sdcard.img
 tools/build-image.sh --all --jobs 8     # todos os aparelhos
 ```
 
-Grave com `dd if=dist/x55/giochi-x55-sdcard.img of=/dev/sdX bs=4M conv=fsync`
-ou Balena Etcher. O cartão sai com A/B (SquashFS), partição `/user` (ext4) e
-`extlinux.conf` apontando para o DTB do aparelho.
+Grave o **artefato comprimido**. O `.img` cru tem **936 MB** de tamanho e o
+`.img.xz` sai com ~72 MB — mesmo conteúdo, e o Etcher descomprime sozinho:
+
+```sh
+xz -dc dist/x55/giochi-x55-sdcard.img.xz | \
+    sudo dd of=/dev/sdX bs=4M conv=fsync && sync
+```
+
+> `du -h` no `dist/` mostra ~215 MB para o `.img` porque ele é **esparso**
+> (~90% de zeros são buracos). O `dd` grava os 936 MB do tamanho real — é essa
+> a conta que vale para o tamanho do cartão e para o tempo de gravação.
+
+O cartão sai com A/B (SquashFS), partição `/user` (ext4, que **cresce até o fim
+do cartão no primeiro boot**) e `extlinux.conf` apontando para o DTB do
+aparelho. `/apps` é um symlink para `/user/apps`, e os programas que não são do
+sistema (PPSSPP, PortMaster) já nascem lá dentro.
 
 Para a **X55** o U-Boot mainline (`powkiddy-x55-rk3566`, desde a v2024.07) é
 compilado junto, com BL31 e DDR vindos do `rkbin` — a imagem é bootável de
@@ -166,11 +192,16 @@ root definida no build (`GIOCHI_ROOT_PASSWORD`). Detalhes em
 
 ```
 BootROM → U-Boot (A/B + bootcount) → kernel 6.12 → BusyBox init (/etc/inittab)
-        → giochi-init (supervisor) → Gamescope (DRM/KMS) → giochi-launcher
-                                        ↘ jogo / app externo
+        → giochi-init (supervisor) → Launcher em SDL2 sobre KMS/DRM
+                                        ↘ jogo / app externo (em /apps)
                                         ↘ giochi-musicd (persistente)
                                         ↘ umtprd (MTP) + usb0 (SSH)
 ```
+
+> A especificação (§4.1) prevê Gamescope sobre DRM. A implementação **não** o
+> empacota: o Launcher fala direto com o KMS/DRM pelo backend KMSDRM do SDL2
+> (`/dev/dri/card0`), que é o que roda hoje na X55. Gamescope continua sendo o
+> caminho previsto para *jogo* com composição — não para a UI.
 
 - **Supervisor** (`giochi-init`): dono do Launcher, jogos, apps e daemons.
   Um único `poll()` sobre self-pipe de sinais, `/run/giochi/control.sock`, a
@@ -195,19 +226,28 @@ BootROM → U-Boot (A/B + bootcount) → kernel 6.12 → BusyBox init (/etc/init
 ```
 src/common/     JSON, log, sockets, SHA-256, Ed25519, hotkey, FIFO
 src/init/       giochi-init: supervisor, control.sock, power, device_profile, game
-apps/launcher/   motor de layout, tema, settings, overlay, evdev, render SDL2
 src/musicd/     giochi-musicd (ALSA + música)
 src/thumbgen/   thumbnails 152x85 RGBA
+src/tools/      giochi-ctl (cliente do control.sock no console), gpu_probe
+apps/launcher/  o Launcher (UI do console): layout, tema, settings, overlay,
+                evdev, render SDL2 — é app, não núcleo, para poder ser mexido
+                sem tocar no sistema nem nos jogos
+apps/forge/     ferramenta de PC: empacota e assina .giochi
+apps/store/     ferramenta de PC: catálogo da Loja, news.json, cópia no cartão
 device/<id>/    FONTE ÚNICA por aparelho: device.conf, theme.json e layout/
-apps/           apps de PC: forge (empacota e assina) e store (catálogo da Loja)
 assets/         layouts base, themes/ (6 temas), locales/, buttons.map, bootlogo/
 schemas/        JSON Schema (metadata, forge, settings, layout, theme)
 scripts/        init.d/* e helpers (USB gadget)
 buildroot/      BR2_EXTERNAL: defconfigs, board, packages
-tools/          build-image, gen-defconfigs, bootlogo, screenshots, pack, sign, verify, QA
-tests/          unitários (C/C++), forge (Python) e integração
+tools/          build-image, gen-defconfigs, bootlogo, screenshots, pack, sign,
+                verify, check-* (guardas do lint) e QA
+tests/          unitários (C/C++), Python (uma suíte por frente) e integração
 docs/           arquitetura, hardware, build, aparelhos, USB, QA, handoff
+Jogos/          jogos padrão do sistema (Godot 4.3) usados também como benchmark
 ```
+
+Regra de organização: **se o diretório tem um `main`, é app e mora em `apps/`**;
+`src/` é o núcleo compartilhado. Detalhes em [apps/README.md](apps/README.md).
 
 ---
 
@@ -225,7 +265,14 @@ docs/           arquitetura, hardware, build, aparelhos, USB, QA, handoff
 | [docs/BUILD.md](docs/BUILD.md) | buildroot, kernel, cross-compile, assinatura |
 | [docs/BOOT-DEBUG.md](docs/BOOT-DEBUG.md) | **a tela não acendeu**: log de boot no cartão, imagem com fbcon, serial |
 | [docs/QA-CHECKLIST.md](docs/QA-CHECKLIST.md) | checklist por camada e matriz de testes |
-| [docs/APPS.md](docs/APPS.md) | inventário dos 11 apps + artefatos: o que roda no console e no PC, o que falta |
+| [docs/APPS.md](docs/APPS.md) | inventário dos apps + artefatos: o que roda no console e no PC, o que falta |
+| [docs/LAUNCHER-APP.md](docs/LAUNCHER-APP.md) | o Launcher como app: como substituir a UI no cartão sem regravar o sistema |
+| [docs/RELÓGIO.md](docs/RELÓGIO.md) | o console **não tem RTC**: como a data é restaurada e como corrigi-la (MTP ou `SET_DATE`) |
+| [docs/APP-SDK.md](docs/APP-SDK.md) | protocolo do `control.sock` e do `transition`, com códigos de saída |
+| [docs/TEMAS.md](docs/TEMAS.md) | os seis temas: cor + métrica, contraste medido e como criar um |
+| [docs/GAMES.md](docs/GAMES.md) | jogos padrão do sistema, licenças e benchmark |
+| [docs/LOJA.md](docs/LOJA.md) | a Loja: formato do catálogo e contrato do pacote |
+| [docs/LAYOUT-PROPOSTA.md](docs/LAYOUT-PROPOSTA.md) | proposta de layout das 5 abas, token por token |
 | [docs/roadmap.md](docs/roadmap.md) | o que falta, em ordem de risco, com critério de aceite |
 | [docs/HANDOFF.md](docs/HANDOFF.md) | estado por sessão, decisões e pendências |
 | [AGENTS.md](AGENTS.md) | direcionamentos para agentes de IA: armadilhas e protocolo |
