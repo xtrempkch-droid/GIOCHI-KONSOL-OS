@@ -94,10 +94,75 @@ static void test_missing_dir(void)
     giochi_music_player_free(&p);
 }
 
+/* O daemon varria uma vez, no boot, e nao tinha como pedir de novo: musica
+ * copiada depois (MTP/SSH) ficava invisivel ate' reiniciar. Medido no aparelho
+ * em 2026-11-01: "0 faixas" no boot e "1 faixas" so' apos matar o processo. */
+static void test_rescan_ve_arquivo_novo(void)
+{
+    char dir[] = "/tmp/giochi-music-XXXXXX";
+    giochi_player p;
+    char out[4096];
+
+    CHECK(mkdtemp(dir) != NULL);
+    touch(dir, "primeira.mp3");
+
+    giochi_music_player_init(&p);
+    CHECK(giochi_music_scan(&p, dir) == 0);
+    CHECK(p.count == 1);
+
+    /* arquivo que aparece DEPOIS do boot */
+    touch(dir, "segunda.mp3");
+    CHECK(p.count == 1); /* ainda nao viu: a fila e' do boot */
+
+    CHECK(giochi_music_command(&p, "RESCAN", out, sizeof(out)) ==
+          GIOCHI_MUSIC_OK);
+    CHECK(p.count == 2);
+    CHECK(strstr(out, "\"tracks\":2") != NULL);
+
+    /* sem diretorio guardado nao ha o que varrer */
+    {
+        giochi_player vazio;
+        giochi_music_player_init(&vazio);
+        CHECK(giochi_music_command(&vazio, "RESCAN", out, sizeof(out)) ==
+              GIOCHI_MUSIC_ERR_INTERNAL);
+        CHECK(strstr(out, "no_dir") != NULL);
+        giochi_music_player_free(&vazio);
+    }
+
+    giochi_music_player_free(&p);
+}
+
+/* Adicionar musica nao pode trocar a faixa que esta' tocando. */
+static void test_rescan_preserva_a_faixa_atual(void)
+{
+    char dir[] = "/tmp/giochi-music-XXXXXX";
+    giochi_player p;
+    char out[4096];
+
+    CHECK(mkdtemp(dir) != NULL);
+    touch(dir, "a.mp3");
+    touch(dir, "c.mp3");
+
+    giochi_music_player_init(&p);
+    CHECK(giochi_music_scan(&p, dir) == 0);
+    CHECK(p.count == 2);
+    p.current = 1; /* "c.mp3" (ordem por caminho) */
+
+    touch(dir, "b.mp3");
+    CHECK(giochi_music_command(&p, "RESCAN", out, sizeof(out)) ==
+          GIOCHI_MUSIC_OK);
+    CHECK(p.count == 3);
+    CHECK_STR_EQ(p.tracks[p.current].title, "c");
+
+    giochi_music_player_free(&p);
+}
+
 int main(void)
 {
     test_empty_player();
     test_scan_and_queue();
     test_missing_dir();
+    test_rescan_ve_arquivo_novo();
+    test_rescan_preserva_a_faixa_atual();
     TEST_SUMMARY("test_musicd");
 }

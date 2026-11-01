@@ -3631,6 +3631,50 @@ dois mundos: o usuário não sabe se instalou.
 `/user/games` → `sha256` **idêntico** à origem (`17725af3cac5031b`), conferido
 por SSH no console. `make test` 42/42, `make lint` rc=0.
 
+### 3.129 O `musicd` varria `/user/music` UMA VEZ, no boot
+
+Relato do mantenedor: o Launcher não acha os arquivos de música, com o `.mp3`
+visível em `MTP://Giochi/music`. Medido no aparelho (X55, imagem nova), com o
+arquivo **já presente** em `/user/music`:
+
+```
+[   7.325] I: musica: 0 faixas em /user/music     <- boot, pasta vazia
+[ 273.211] I: musica: 1 faixas em /user/music     <- SO' apos matar o daemon
+```
+
+Três fatos que fecham o caso:
+
+1. `giochi_music_scan` é chamada **uma vez**, em `main.c:136`, antes do laço de
+   `poll` — o daemon sobe com a foto do boot e nunca revarre.
+2. Não existia verbo de rescan: o protocolo tinha
+   `PLAY|PAUSE|NEXT|PREV|SEEK|STATUS|QUEUE`. Quem copia música por MTP/SSH
+   dependia de **reiniciar o aparelho**.
+3. O Launcher piora a impressão: ele nunca pede `QUEUE` — a aba Música é o
+   painel `paint_message_tab` (`music.empty`) —, então a tela diz "vazia" mesmo
+   com faixa na fila.
+
+- Correção: verbo **`RESCAN`** no `musicd`. Revarre o diretório guardado no
+  player (`giochi_player.dir`, novo) e responde
+  `{"status":"ok","tracks":N}`; sem diretório, `{"status":"error","reason":"no_dir"}`.
+  **Não mexe na faixa atual** se ela ainda existir — adicionar música não pode
+  trocar o que está tocando.
+- O Launcher manda `RESCAN` no startup (logo depois de `carregar_novidade`),
+  então a faixa copiada depois do boot aparece já na primeira sessão.
+- Guardas em `tests/test_musicd.c`: `test_rescan_ve_arquivo_novo` (arquivo que
+  aparece depois do scan; `no_dir` sem diretório) e
+  `test_rescan_preserva_a_faixa_atual`. Testadas ao contrário: com `RESCAN`
+  neutralizado, **7 checagens falham**; restaurado, 36/36 verdes.
+- **Armadilha de método**: `make` **não** compila os binários de teste (eles
+  estão em `TEST_BINS`, não em `TARGETS`). Rodei `make` e o `test_musicd`
+  continuou com as 21 checagens velhas, de 18:35 — o binário era o antigo e eu
+  quase concluí que os testes novos não pegavam nada. O comando certo é
+  `make build/host/bin/test_musicd` (ou `make test`, que os compila).
+
+**Aberto**: a aba Música continua sendo painel de mensagem; listar a fila e
+mostrar capa/posição é trabalho de UI (`cover_pct` foi removido justamente por
+não ter consumidor, §3.79b). E a correção só chega ao aparelho com **imagem
+nova** — `giochi-musicd` mora no SquashFS, que é somente leitura.
+
 ### 3.104 NetworkManager desfaz o IP manual da interface USB
 
 `tools/giochi-ctl.py preparar` atribuía `10.55.0.1/24` com `ip addr add` e

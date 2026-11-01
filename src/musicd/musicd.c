@@ -104,6 +104,9 @@ int giochi_music_scan(giochi_player *p, const char *dir)
         GLOG_WARN("musica: diretorio '%s' inacessivel", dir);
         return -1;
     }
+    /* Guarda o diretorio para o RESCAN: o daemon sobe uma vez e ficaria com a
+     * fila congelada no estado do boot. */
+    giochi_strlcpy(p->dir, dir, sizeof(p->dir));
 
     while ((entry = readdir(dp)) != NULL) {
         char path[GIOCHI_TRACK_PATH_MAX];
@@ -358,7 +361,42 @@ int giochi_music_command(giochi_player *p, const char *cmd, char *out,
     }
     giochi_log(GIOCHI_LOG_DEBUG, "music.sock <- '%s'", cmd);
 
-    if (strcasecmp(verb, "PLAY") == 0) {
+    if (strcasecmp(verb, "RESCAN") == 0) {
+        /* Revarre o diretorio de musica e devolve quantas faixas existem AGORA.
+         *
+         * O daemon varre uma vez, no boot. Musica copiada depois (MTP, SSH,
+         * cartao no PC) so' aparecia apos reiniciar — medido no aparelho:
+         * "0 faixas em /user/music" no boot e "1 faixas" so' depois de matar
+         * o processo. Sem este verbo nao havia como pedir a varredura.
+         *
+         * Nao mexe na faixa atual se ela ainda existir: quem esta' ouvindo nao
+         * perde a musica por adicionar um arquivo. */
+        char tocando[GIOCHI_TRACK_PATH_MAX];
+
+        tocando[0] = '\0';
+        if (p->count > 0 && p->current < p->count) {
+            giochi_strlcpy(tocando, p->tracks[p->current].path, sizeof(tocando));
+        }
+        if (p->dir[0] == '\0') {
+            app_raw(&a, "{\"status\":\"error\",\"reason\":\"no_dir\"}");
+            return GIOCHI_MUSIC_ERR_INTERNAL;
+        }
+        if (giochi_music_scan(p, p->dir) != 0) {
+            app_raw(&a, "{\"status\":\"error\",\"reason\":\"scan_failed\"}");
+            return GIOCHI_MUSIC_ERR_INTERNAL;
+        }
+        if (tocando[0] != '\0') {
+            size_t i;
+
+            for (i = 0; i < p->count; i++) {
+                if (strcmp(p->tracks[i].path, tocando) == 0) {
+                    p->current = i;
+                    break;
+                }
+            }
+        }
+        app_fmt(&a, "{\"status\":\"ok\",\"tracks\":%zu}", p->count);
+    } else if (strcasecmp(verb, "PLAY") == 0) {
         if (p->count == 0) {
             app_raw(&a, "{\"status\":\"empty\"}");
             rc = GIOCHI_MUSIC_ERR_EMPTY;

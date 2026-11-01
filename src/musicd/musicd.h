@@ -23,6 +23,17 @@ typedef struct {
     int playing;
     int decoder_ready;
     unsigned pos_s;
+    /* Diretorio da ultima varredura, para o verbo RESCAN.
+     *
+     * Sem isto o musicd varria /user/music UMA VEZ, no boot, e nunca mais. Uma
+     * musica copiada depois (MTP, SSH, cartao no PC) ficava invisivel ate'
+     * reiniciar o aparelho — e nada no protocolo permitia pedir a varredura de
+     * novo. Medido no aparelho em 2026-11-01:
+     *
+     *   [   7.325] musica: 0 faixas em /user/music    <- boot, pasta vazia
+     *   [ 273.211] musica: 1 faixas em /user/music    <- so' apos reiniciar
+     */
+    char dir[GIOCHI_TRACK_PATH_MAX];
 } giochi_player;
 
 enum {

@@ -748,6 +748,15 @@ bool init(Launcher &app)
 
     giochi_overlay_init(&app.overlay);
 
+    /* O giochi-musicd varre /user/music UMA VEZ, quando sobe — que e' antes de
+     * o usuario copiar musica por MTP/SSH. Sem pedir a varredura agora, uma
+     * faixa adicionada depois do boot nunca aparece (medido no aparelho:
+     * "0 faixas" no boot, "1 faixas" so' apos reiniciar o daemon). O RESCAN
+     * nao mexe na faixa atual, entao tambem e' seguro ao voltar do jogo. */
+    if (!app.music_sock.empty()) {
+        music_command(app, "RESCAN");
+    }
+
     /* Idioma: GIOCHI_LANG -> settings.json -> padrao. Carregado ANTES de
      * qualquer rotulo existir, senao o primeiro frame sai com chaves cruas. */
     {

@@ -189,6 +189,28 @@ escrever nele — dois escritores intercalam mensagens e o init lê lixo.
 
 ---
 
+## 3b. `music.sock` — o canal do daemon de música
+
+`/run/giochi/music.sock`, uma linha por comando. Atende o Launcher.
+
+| Comando | Resposta |
+|---|---|
+| `PLAY` / `PAUSE` | `{"status":"playing"...}` / `{"status":"paused","pos":N}` |
+| `NEXT` / `PREV` | `{"status":"playing"...}` |
+| `SEEK <segundos>` | `{"status":...}` / `invalid_position` |
+| `STATUS` | `{"queue":[...]}` |
+| `QUEUE` | a fila completa |
+| **`RESCAN`** | `{"status":"ok","tracks":N}` — revarre `/user/music` |
+
+> **`RESCAN` existe porque o daemon varre a pasta UMA VEZ, quando sobe.**
+> Música copiada depois (MTP, SSH, cartão no PC) ficava invisível até
+> reiniciar o aparelho — medido no console: `0 faixas` no boot e `1 faixas`
+> só após matar o processo. O Launcher manda `RESCAN` no startup. Ele **não
+> troca** a faixa que está tocando, então serve também ao voltar de um jogo.
+> Sem diretório guardado, responde `{"status":"error","reason":"no_dir"}`.
+
+---
+
 ## 4. O `.giochi` (o pacote que a Loja produz e o init consome)
 
 Layout obrigatório, nesta ordem (ADR-11 — o `giochi-extract` do console lê em
