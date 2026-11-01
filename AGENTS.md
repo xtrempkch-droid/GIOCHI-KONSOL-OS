@@ -26,6 +26,8 @@ em que ordem em [docs/roadmap.md](docs/roadmap.md); inventário de cada app
 | Kernel, DTB e raiz na X55 | **bootou**: `Mounted root (squashfs) on device 179:2` por `root=PARTUUID` |
 | Painel do X35S/X35H | **bloqueado** por driver fora da árvore (GPL, licenciamento adiado — §3.43) |
 | Gravação do cartão | **verificada byte a byte** (`tools/verify-card.py`); SDXC de 116 GB falhou com `EIO` |
+| `/user` ocupa o cartão inteiro (`grow-user.sh`) | **pronto**: `partx -u` + `e2fsck` em laço + `resize2fs -f`; 12 testes sobre arquivo esparso. **Não validado no aparelho** |
+| Relógio: o aparelho **não tem RTC** e o kernel acorda em 2017 | **corrigido** com `S01relogio` + gravação no `rcK` (§3.110); errado no **primeiro** boot após gravar o cartão |
 | USB: gadget composto (MTP + rede/SSH + Mass Storage) | **pronto** no código; **não ancora na X55**: o UDC existe, o bind é tentado e o `SETEPCONFIG` do ep0 dá **`-110` (timeout)** (§3.88). Não é `dr_mode` (medido nos dois) nem config (comparada com firmware que roda). Patch 0004 imprime `GCTL`/`DSTS`/`DCTL`; **resultado pendente de um boot** |
 | Modo Desenvolvedor (§4.6.1): SSH via USB desligado por padrão | **pronto**, testado |
 | Launcher: motor de layout, tema, `settings.json`, overlay 2 níveis, biblioteca | **pronto** |
@@ -2969,6 +2971,97 @@ o `util-linux` não. Não investiguei por que um e não o outro — o que import
 - Guarda: `test_defconfig_pede_as_ferramentas_do_grow` cobra os símbolos, e
   o próprio script diz `ERRO: sfdisk ausente` se rodar sem eles.
 
+### 3.110 O aparelho NÃO tem relógio: o kernel acorda em 2017
+
+Zero linhas `rtc` no `dmesg` completo do boot da X55 (`grep -ci rtc` = 0) e
+nenhum `/dev/rtc0`. O RK817 tem RTC, mas sem bateria de backup e sem
+`CONFIG_RTC_DRV_RK808` no `linux.fragment` ele nunca aparece. Medido,
+console contra PC, no mesmo instante:
+
+```
+console: Sat Aug  5 09:03:57 UTC 2017   (epoch 1501923837)
+PC:      dom 01 nov 2026 15:10          (epoch 1793556647)
+```
+
+Não é cosmético — três coisas quebram:
+
+| Efeito | Por quê |
+|---|---|
+| `resize2fs` recusa **para sempre** | §3.111 |
+| certificado TLS da Loja "ainda não válido" | erro de data, não de rede |
+| log com data de 9 anos atrás | comparar dois logs deixa de fazer sentido |
+
+- Correção: `scripts/init.d/S01relogio` restaura `date -s @<epoch>` a partir
+  de `/user/.giochi/relogio`, que o `rcK` grava **antes** dos `umount` (depois
+  de desmontar não há onde escrever). É o princípio do `fake-hwclock` do
+  Debian — sem RTC não existe fonte de verdade entre boots; a melhor
+  disponível é "a hora do último desligamento".
+- `S01relogio` é chamado **antes** do `S00bootlog` dentro do `rcS`: sem isso o
+  próprio log de boot nasce datado de 2017, justamente na linha que diz se o
+  boot anterior terminou.
+- Ambos os lados recusam época implausível (`< 2020` ou `> 2100`). Salvar um
+  relógio errado perpetuaria o erro; restaurar lixo jogaria o sistema para
+  1970, pior que 2017.
+- **Limite honesto**: no primeiro boot depois de gravar o cartão não há
+  arquivo salvo, então o relógio continua errado até o primeiro desligamento.
+  É o preço de não ter RTC; se a placa ganhar um, o script passa a `hwclock -s`
+  e o arquivo vira só fallback.
+- Guarda: suíte `relogio` (`tests/test_relogio.py`, 11 testes), com
+  `mountpoint`/`date`/`logger` simulados no `PATH`. Testada ao contrário: tirar
+  a faixa de sanidade reprova 2, voltar o `log()` quebrado reprova 3.
+
+### 3.111 `resize2fs` recusa quando `lastcheck < mtime` — e o console não consegue inverter isso
+
+O `grow-user.sh` rodava `e2fsck -f -y` com sucesso e o `resize2fs` em seguida
+falhava, no aparelho, com:
+
+```
+resize2fs: Por favor, execute 'e2fsck -f <part>' em primeiro lugar.
+```
+
+A checagem está em `resize/main.c` (`checkit`): se `s_lastcheck < s_mtime`,
+recusa — **a menos que `-f` seja passado**. Com o §3.110 no meio, a ordem
+nunca se acerta:
+
+1. o cartão é gravado no PC, e o PC monta a partição para escrever
+   `settings.json` → `s_mtime` = 2026;
+2. o console acorda em 2017 e o `e2fsck` grava `s_lastcheck` = 2017;
+3. `2017 < 2026` é verdade em todo boot. **Nenhum** `e2fsck` conserta isso
+   enquanto o relógio estiver atrás do PC.
+
+- Correção: `resize2fs -f`. O `-f` pula a checagem de **tempo**, não a de
+  consistência — o `e2fsck` já rodou e devolveu 0 na linha acima.
+- Reprodução sem root, e é o que o teste faz: `truncate` + `mkfs.ext4` +
+  `debugfs -w -R "ssv mtime <futuro>"` + `debugfs -w -R "ssv lastcheck
+  <passado>"` → `resize2fs` falha com a mesma mensagem e `resize2fs -f`
+  cresce normalmente.
+- Guarda: `tests/test_grow_user.py::RelogioAtrasDoPC` — reproduz o cenário e
+  afirma os **dois** lados (sem `-f` tem de recusar, com `-f` tem de crescer).
+  Sem a segunda asserção o teste passaria com o script quebrado.
+
+### 3.112 `logger -s ... 2>/dev/null` apaga a mensagem
+
+Escrito por mim, e o defeito é invisível: o `-s` do `logger` do BusyBox existe
+para escrever em **stderr**, e `2>/dev/null` descarta exatamente esse
+descritor. O `||` nunca dispara (o logger sai 0), então o `echo` de fallback
+também não roda. Resultado: um script de init de 90 linhas que não imprimia
+nada em lugar nenhum — só o efeito, sem o motivo.
+
+- Padrão do repositório (é o que `grow-user.sh` e `S10storage` fazem):
+
+```sh
+log() {
+    logger -t "$TAG" -- "$*" 2>/dev/null || true   # syslog -> log no cartao
+    echo "$TAG: $*" >&2                            # stderr -> tee do rcS
+}
+```
+
+- Os dois destinos são de propósito: o `S00bootlog` grava o syslog na partição
+  FAT, e o `rcS` duplica o stderr para o mesmo arquivo. Um só já basta para
+  aparecer; os dois aparecem no lugar certo.
+- Guarda: os testes de `S01relogio` afirmam a mensagem em `stdout + stderr` e
+  reprovam com a versão quebrada (testado ao contrário: 3 falhas).
+
 ### 3.104 NetworkManager desfaz o IP manual da interface USB
 
 `tools/giochi-ctl.py preparar` atribuía `10.55.0.1/24` com `ip addr add` e
@@ -2995,6 +3088,72 @@ gadget.
   sair do gerenciamento. Verificar "tem IP agora" uma vez não prova nada —
   provar é medir **depois** de alguns segundos, ou depois de outro comando.
 
+
+### 2026-11-01 (26) — Copilot (o `/user` não crescia: o aparelho não tem relógio)
+
+Continuação da entrada anterior. O `grow-user.sh` estava correto e mesmo assim
+falhava no aparelho — e a causa não estava nele.
+
+**A caçada, camada por camada (quatro boots):**
+
+1. `blockdev --rereadpt` devolve *"device or resource busy"* → `partx -u`
+   (ioctl BLKPG, funciona com a p2 montada). Já corrigido antes.
+2. A mensagem do `resize2fs` era engolida → passou a ser capturada. Já.
+3. `e2fsck -f -y` sai 1 quando conserta → laço até devolver 0. Já.
+4. **A causa real**: o `resize2fs` recusa quando `s_lastcheck < s_mtime`
+   (`resize/main.c`, `checkit`), e com o console em **2017** contra o PC em
+   **2026** essa ordem nunca se acerta.
+
+**Medição que fechou o caso** (comparação de relógios, não dedução):
+
+```
+console: Sat Aug  5 09:03:57 UTC 2017   (epoch 1501923837)
+PC:      dom 01 nov 2026 15:10          (epoch 1793556647)
+```
+
+E `grep -ci rtc` no `dmesg` **completo** do boot da X55 devolve **ZERO**:
+o aparelho não tem relógio de hardware. Não é um bug de fuso, é ausência de
+fonte de tempo.
+
+- Correção: `resize2fs -f` no `grow-user.sh` (pula a checagem de **tempo**; a
+  de consistência já foi feita pelo `e2fsck` acima).
+- Correção da causa: `scripts/init.d/S01relogio` + gravação no `rcK`
+  (`/user/.giochi/relogio`) — §3.110. Roda **antes** do `S00bootlog` dentro do
+  `rcS`, senão o log de boot nasce datado de 2017.
+- Defeito **meu**, achado pelo teste: `log()` usava `logger -s ... 2>/dev/null`
+  e o `-s` escreve em stderr — as mensagens do script não apareciam em lugar
+  nenhum. §3.112.
+
+**Verificação (tudo rodado):**
+
+- Reprodução do erro do aparelho no host, sem root: `truncate` + `mkfs.ext4` +
+  `debugfs -w -R "ssv mtime <2026>"` + `ssv lastcheck <2017>` → `resize2fs`
+  falha com a **mesma** mensagem; `resize2fs -f` cresce. É o teste
+  `RelogioAtrasDoPC`, e ele afirma os dois lados.
+- `tests/test_relogio.py` novo (11 testes): restauração, primeiro boot sem
+  arquivo, lixo no arquivo, época fora de faixa, `/user` fora do ar, gravação
+  pelo `rcK`, `rcK` **antes** do `umount`, relógio implausível não salvo,
+  `S01relogio` antes do `S00bootlog`, `continue` no laço do `rcS` (a armadilha
+  do §3.45) e presença nas duas listas obrigatórias.
+- Guardas ao contrário: tirar a faixa de sanidade → 2 falhas; voltar o `log()`
+  quebrado → 3 falhas.
+- Três defeitos **do meu próprio teste** corrigidos no caminho, e todos são a
+  mesma classe: (a) simulador de `mountpoint` preso ao texto `/user`, que não
+  casa com o diretório temporário; (b) `logger` simulado sem o `-s`, apagando
+  as mensagens — o teste "passava" sem verificar nada; (c)
+  `replace("/user2", ...)` depois de `replace("/user", ...)` produzia
+  `<tmp>/<tmp>/user2`, porque `/user2` **contém** `/user`.
+- `make test` → **39/39**. `make lint` → rc=0.
+
+**Correção de fato:** eu tinha registrado nas entradas anteriores que o
+`resize2fs` falhava por "fs não limpo" (`EXT2_VALID_FS`). É verdade que ele
+também checa isso, mas o que travava **este** aparelho era a comparação de
+**tempo** — a mensagem é literalmente a mesma, e só a reprodução com os dois
+relógios separa as duas.
+
+**Aberto:** nada disto foi validado no aparelho ainda (imagem a regravar); o
+relógio continua errado no **primeiro** boot após gravar o cartão (não há o que
+restaurar); e TLS da Loja só passa a funcionar do segundo boot em diante.
 
 ## 4. O que NÃO foi verificado
 

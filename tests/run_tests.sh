@@ -164,6 +164,20 @@ if command -v python3 >/dev/null 2>&1; then
     fi
 fi
 
+# Relogio: o aparelho nao tem RTC (zero linhas "rtc" no dmesg da X55), entao
+# S01relogio restaura a epoca salva pelo rcK no desligamento anterior. Sem
+# isso o console acorda em 2017 e `resize2fs` recusa, o certificado TLS da
+# Loja aparece como "ainda nao valido" e o log sai datado de nove anos atras.
+if command -v python3 >/dev/null 2>&1; then
+    total=$((total + 1))
+    if (cd "$ROOT" && python3 -m unittest tests.test_relogio) >/dev/null 2>&1; then
+        echo "OK     relogio (python)"
+    else
+        echo "FALHA  relogio (python)"
+        fail=$((fail + 1))
+    fi
+fi
+
 # Verificador do cartao (tools/verify-card.py). Distingue "a gravacao nao
 # terminou" de "o cartao tem setor ruim" -- medido num boot real que parou em
 # "No working init found" com a imagem integra e o cartao devolvendo EIO.

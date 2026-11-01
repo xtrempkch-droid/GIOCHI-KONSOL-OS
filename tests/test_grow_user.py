@@ -307,6 +307,62 @@ class E2fsckAteFicarLimpo(unittest.TestCase):
                          "escondia que o fs ficava sujo")
 
 
+
+class RelogioAtrasDoPC(unittest.TestCase):
+    """`resize2fs` recusa quando lastcheck < mtime, e o console nao tem RTC.
+
+    Medido no aparelho:
+
+        console: Sat Aug  5 09:03:57 UTC 2017   (epoch 1501923837)
+        PC:      dom 01 nov 2026 15:10          (epoch 1793556647)
+
+    O cartao e' gravado no PC (mtime = 2026). O console acorda em 2017 e o
+    e2fsck grava lastcheck = 2017. `resize2fs` recusa enquanto
+    `s_lastcheck < s_mtime` (resize/main.c), o que nenhum e2fsck conserta
+    com o relogio atras. `-f` pula a checagem de TEMPO (a de consistencia
+    ja' foi feita pelo e2fsck).
+    """
+
+    def test_reproduz_e_resolve(self):
+        import shutil
+
+        if not shutil.which("debugfs") or not shutil.which("resize2fs"):
+            self.skipTest("sem e2fsprogs no host")
+        with tempfile.TemporaryDirectory() as tmp:
+            img = os.path.join(tmp, "r.img")
+            with open(img, "wb") as fh:
+                fh.truncate(64 * 1024 * 1024)
+            subprocess.run(["mkfs.ext4", "-q", "-F", img], check=True,
+                           capture_output=True)
+            # mtime em 2026 (o PC gravou), lastcheck em 2017 (relogio do console)
+            for campo, valor in (("mtime", 1793556647),
+                                 ("lastcheck", 1501923837)):
+                subprocess.run(["debugfs", "-w", "-R",
+                                f"ssv {campo} {valor}", img],
+                               check=True, capture_output=True)
+            with open(img, "r+b") as fh:
+                fh.truncate(128 * 1024 * 1024)
+
+            sem_force = subprocess.run(["resize2fs", img],
+                                       capture_output=True, text=True)
+            self.assertNotEqual(0, sem_force.returncode,
+                                "o cenario do relogio atras tinha de recusar")
+            self.assertIn("2", sem_force.stderr + sem_force.stdout)
+
+            com_force = subprocess.run(["resize2fs", "-f", img],
+                                       capture_output=True, text=True)
+            self.assertEqual(0, com_force.returncode,
+                             "com -f tem de crescer: %r"
+                             % (com_force.stderr + com_force.stdout))
+
+    def test_script_usa_force(self):
+        with open(GROW, encoding="utf-8") as fh:
+            fonte = fh.read()
+        self.assertIn('resize2fs -f "$user_part"', fonte,
+                      "sem -f o script falha em todo cartao gravado no PC, "
+                      "porque o relogio do console esta' atras do PC")
+
+
 class OrdemDosDigitosDaParticao(unittest.TestCase):
     """`giochi_disk_of` precisa aceitar 10, 11... sem comer um caractere."""
 

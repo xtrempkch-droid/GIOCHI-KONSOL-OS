@@ -83,7 +83,7 @@ INIT_DIR="$TARGET_DIR/etc/init.d"
 INI_MANIFEST="$(dirname "$TARGET_DIR")/.giochi-init-managed"
 install -d "$INIT_DIR"
 
-ini_list="S00bootlog S05modules S05update S10storage S30swap
+ini_list="S01relogio S00bootlog S05modules S05update S10storage S30swap
           S40dongle S50usb S55usbnet S62sshd S90graphics"
 
 # Nomes que nunca chegaram a entrar no manifesto (limpeza unica):

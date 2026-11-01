@@ -1,0 +1,103 @@
+#!/bin/sh
+# Giochi Konsol OS v1.2 — S01relogio: acerta o relogio no boot.
+#
+# POR QUE ISTO EXISTE (medido, nao suposto)
+# -----------------------------------------
+# O aparelho NAO tem relogio de hardware: `grep -ci rtc` no dmesg completo do
+# boot da X55 devolve ZERO, e nao ha' `/dev/rtc0`. O RK817 tem RTC, mas sem
+# bateria de backup e sem `CONFIG_RTC_DRV_RK808` no linux.fragment ele nunca
+# aparece. Consequencia medida, comparando console e PC:
+#
+#     console: Sat Aug  5 09:03:57 UTC 2017   (epoch 1501923837)
+#     PC:      dom 01 nov 2026 15:10          (epoch 1793556647)
+#
+# O relogio do console fica NO PASSADO — e isso nao e' cosmetico:
+#
+#   * `grow-user.sh` roda antes deste script (inittab, antes do `mount -a`) e
+#     por isso usa `resize2fs -f`; com o relogio atras, `s_lastcheck` fica
+#     menor que o `s_mtime` gravado pelo PC e o resize2fs recusaria para sempre;
+#   * certificado TLS de servidor (a Loja baixa por https) aparece como
+#     "ainda nao valido" — o handshake falha sem mensagem util;
+#   * todo log sai com data de 2017, e comparar dois logs deixa de fazer
+#     sentido;
+#   * `known_hosts` e a validade da chave do dropbear ficam no passado.
+#
+# O QUE FAZ
+# ---------
+# Grava `date +%s` num arquivo da particao de dados no desligamento (rcK) e
+# restaura no boot seguinte. E' o mesmo principio do `fake-hwclock` do Debian.
+# Sem RTC nao existe fonte de verdade entre um boot e outro; o melhor
+# disponivel e' "a hora do ultimo desligamento", que erra no maximo o tempo em
+# que o aparelho ficou desligado — aceitavel, e MUITO melhor que 9 anos atras.
+#
+# LIMITE HONESTO: no PRIMEIRO boot depois de gravar o cartao nao ha' arquivo
+# salvo, entao o relogio continua errado ate' o primeiro desligamento. E' o
+# preco de nao ter RTC; se algum dia a placa ganhar um, este script passa a
+# ler `hwclock -s` e o arquivo vira so' fallback.
+#
+# Nunca aborta o boot: sem /user gravavel apenas registra e segue.
+
+if [ -r /etc/giochi/lib.sh ]; then
+    . /etc/giochi/lib.sh
+fi
+
+# Duas saidas de proposito: o syslog (que o S00bootlog grava no cartao) e o
+# stderr (que o rcS duplica com `tee`). Usar `logger -s ... 2>/dev/null`
+# parecia razoavel e apagava a mensagem: o `-s` do BusyBox escreve em STDERR,
+# exatamente o descritor que o `2>/dev/null` descartava. As mensagens deste
+# script nao apareciam em lugar nenhum — so' o efeito, sem o motivo.
+log() {
+    logger -t relogio -- "$*" 2>/dev/null || true
+    echo "relogio: $*" >&2
+}
+
+# A particao de dados e' a unica gravavel e persiste entre boots. Se ela nao
+# estiver montada, nao ha' onde guardar/ler: sai sem mexer no relogio.
+ARQUIVO=""
+for base in /user /user2; do
+    if mountpoint -q "$base" 2>/dev/null; then
+        ARQUIVO="$base/.giochi/relogio"
+        break
+    fi
+done
+
+if [ -z "$ARQUIVO" ]; then
+    log "particao de dados fora do ar; relogio fica como esta'"
+    exit 0
+fi
+
+if [ ! -d "${ARQUIVO%/*}" ]; then
+    mkdir -p "${ARQUIVO%/*}" 2>/dev/null || {
+        log "nao consegui criar ${ARQUIVO%/*}"
+        exit 0
+    }
+fi
+
+# ---- restaura -------------------------------------------------------------
+# O arquivo tem de conter UM inteiro (epoch). Qualquer outra coisa e' lixo de
+# desligamento bruto: ignorar em vez de setar uma data absurda.
+if [ -r "$ARQUIVO" ]; then
+    salvo=$(cat "$ARQUIVO" 2>/dev/null | tr -dc '0-9')
+    case "$salvo" in
+        ''|*[!0-9]*)
+            log "arquivo de relogio invalido; ignorando"
+            ;;
+        *)
+            # Sanidade: recusa epoca absurda (antes de 2020 ou depois de 2100).
+            # Um cartao com lixo no arquivo nao pode jogar o relogio para 1970.
+            if [ "$salvo" -gt 1577836800 ] && [ "$salvo" -lt 4102444800 ]; then
+                if date -s "@$salvo" >/dev/null 2>&1; then
+                    log "relogio restaurado: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+                else
+                    log "date -s falhou; relogio fica como esta'"
+                fi
+            else
+                log "relogio salvo fora de faixa ($salvo); ignorando"
+            fi
+            ;;
+    esac
+else
+    log "sem relogio salvo (primeiro boot apos gravar o cartao): $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+fi
+
+exit 0

@@ -267,8 +267,24 @@ fi
 # (BLKGETSIZE64), nao do /sys. Medido na X55: no boot ele falhou; a MESMA
 # chamada, a mao depois, cresceu para 28,8 GB. Um segundo de diferenca.
 _erro=
+# `-f` e' o que faz isto funcionar no aparelho, e a causa esta' medida:
+#
+#   console: Sat Aug  5 09:03:57 UTC 2017   (epoch 1501923837)
+#   PC:      dom 01 nov 2026 15:10          (epoch 1793556647)
+#
+# O cartao e' gravado no PC, entao `s_mtime` (ultima montagem) fica em 2026.
+# O console nao tem RTC com bateria e acorda achando que e' 2017; o e2fsck
+# grava `s_lastcheck` = 2017. O resize2fs recusa quando
+# `s_lastcheck < s_mtime` (resize/main.c: "Please run 'e2fsck -f' first"),
+# e nenhum e2fsck no console consegue inverter essa ordem enquanto o relogio
+# estiver atras do PC.
+#
+# `-f` pula essa checagem de TEMPO, nao a de CONSISTENCIA — o e2fsck acima
+# ja' rodou e devolveu 0. Testado no host (tests/test_grow_user.py):
+# com lastcheck 2017 e mtime 2026, `resize2fs` recusa e `resize2fs -f`
+# cresce normalmente.
 for _tentativa in 1 2; do
-    if _erro=$(resize2fs "$user_part" 2>&1); then
+    if _erro=$(resize2fs -f "$user_part" 2>&1); then
         log "pronto: $user_part com $((tam_novo / 2048)) MiB de sistema de arquivos"
         exit 0
     fi

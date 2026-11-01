@@ -2,6 +2,28 @@
 # Giochi Konsol OS v1.2 — rcK: desmonta e sincroniza no shutdown.
 set -u
 
+# ---- guarda o relogio -----------------------------------------------------
+# O aparelho nao tem RTC (zero linhas "rtc" no dmesg da X55), entao a unica
+# forma de o proximo boot saber que horas sao e' gravar aqui. TEM de ser
+# ANTES dos `umount`: depois de desmontar a particao de dados nao ha' onde
+# escrever. Ver scripts/init.d/S01relogio.
+for base in /user /user2; do
+    if mountpoint -q "$base" 2>/dev/null; then
+        if [ -d "$base/.giochi" ]; then
+            agora=$(date +%s 2>/dev/null | tr -dc '0-9')
+            # So' grava epoca plausivel: um relogio errado salvo aqui seria
+            # restaurado no proximo boot e o erro se perpetuaria.
+            if [ -n "${agora:-}" ] && [ "$agora" -gt 1577836800 ] 2>/dev/null; then
+                printf '%s\n' "$agora" > "$base/.giochi/relogio" 2>/dev/null \
+                    || echo "rcK: nao consegui gravar o relogio" >&2
+            else
+                echo "rcK: relogio implausivel ($agora); nao gravado" >&2
+            fi
+        fi
+        break
+    fi
+done
+
 sync
 swapoff -a 2>/dev/null || true
 for fs in /user /user2; do
