@@ -214,15 +214,21 @@ fi
 # diretorio do espelho existia e estava VAZIO, com o dropbear rodando porque
 # a particao ainda estava montada.
 if command -v giochi_ssh_snapshot >/dev/null 2>&1; then
+    _cache=${GIOCHI_SSH_CACHE:-/run/giochi/dropbear}
     _espelhou=0
-    for _d in "$KeysDir" "$AuthDir"; do
-        [ -d "$_d" ] || continue
-        giochi_ssh_snapshot "$_d" >/dev/null 2>&1 && _espelhou=1
-    done
+    # 1. As chaves de HOST: ficam em KeysDir (`/user/.ssh`).
+    giochi_ssh_snapshot "$KeysDir" >/dev/null 2>&1 && _espelhou=1
+    # 2. A authorized_keys vem de $Origem, que quase nunca e' `$AuthDir`:
+    #    o caminho normal e' /user/ssh/authorized_keys, escrito pelo PC
+    #    (giochi-dev-mode.sh, ou MTP). Copiar `$AuthDir` copiava o vazio.
+    if [ -n "${Origem:-}" ] && [ -f "$Origem" ]; then
+        mkdir -p "$_cache" 2>/dev/null && \
+            cp "$Origem" "$_cache/authorized_keys" 2>/dev/null && _espelhou=1
+    fi
     if [ "$_espelhou" = "1" ]; then
-        log "chaves do dropbear espelhadas em ${GIOCHI_SSH_CACHE:-/run/giochi/dropbear}"
+        log "chaves do dropbear espelhadas em $_cache"
     else
-        log "aviso: nada a espelhar em $KeysDir nem $AuthDir"
+        log "aviso: nada a espelhar (KeysDir=$KeysDir, Origem=${Origem:-vazio})"
     fi
 fi
 

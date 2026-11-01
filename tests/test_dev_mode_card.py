@@ -359,14 +359,15 @@ class SshdSobeTest(unittest.TestCase):
         # passa com o laco errado (testado duas vezes).
         import re
 
-        lacos = re.findall(r"for\s+_d\s+in\s+([^;]+);\s*do", bloco)
-        self.assertTrue(lacos, "o S62sshd nao tem laco de espelho")
-        alvos = set(re.findall(r"\$(?:KeysDir|AuthDir)\b", " ".join(lacos)))
-        for d in ("$KeysDir", "$AuthDir"):
-            self.assertIn(d, alvos,
-                          "o laco do espelho tem de incluir %s (achados: %r): "
-                          "as chaves de host e a authorized_keys moram em "
-                          "diretorios diferentes" % (d, sorted(alvos)))
+        # As duas fontes: as chaves de host (KeysDir) e a authorized_keys,
+        # que vem de $Origem — NAO de $AuthDir, que quase sempre esta vazio
+        # (a origem real e' /user/ssh/authorized_keys).
+        self.assertIn("giochi_ssh_snapshot \"$KeysDir\"", bloco,
+                      "as chaves de host estao em $KeysDir, nao em $AuthDir")
+        self.assertIn("$Origem", bloco,
+                      "a authorized_keys vem de $Origem; copiar $AuthDir "
+                      "copia o vazio (medido na X55: /run/giochi/dropbear "
+                      "existindo e sem arquivo nenhum)")
         # A chamada tem de estar depois do laco que gera as chaves.
         self.assertGreater(fonte.index("giochi_ssh_snapshot"),
                            fonte.index("dropbearkey -t"),
