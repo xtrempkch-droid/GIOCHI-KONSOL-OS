@@ -238,14 +238,28 @@ fi
 # cerimonia: resize2fs recusa (ou faz besteira) num fs marcado como unclean,
 # e este cartao acabou de vir de uma imagem gravada em bloco.
 if command -v e2fsck >/dev/null 2>&1; then
-    # A saida do e2fsck vai para o log COM prefixo: num cartao recem-gravado
-    # ele costuma dizer "clean", e se disser outra coisa e' a pista de por que
-    # o resize2fs abaixo falha.
-    _out=$(e2fsck -f -y "$user_part" 2>&1)
-    case "$_out" in
-        *"is clean"*) : ;;
-        *) log "e2fsck: $(printf '%s' "$_out" | tail -n 2 | tr '\n' ' ')" ;;
-    esac
+    # DUAS passadas, e o motivo foi medido:
+    #
+    #   grow-user: e2fsck: Pass 5: Checking group summary information
+    #             GIOCHI: 16/32768 files, 6389/131072 blocks
+    #   grow-user: resize2fs: Please run 'e2fsck -f /dev/mmcblk1p4' first.
+    #
+    # O `-y` conserta o que acha e sai com 1 ("erros corrigidos"), mas deixa
+    # o fs marcado como NAO-limpo: o `resize2fs` recusa exatamente por isso.
+    # A segunda passada, ja' sem nada a corrigir, sai com 0 e marca o fs
+    # limpo. A saida vai para o log quando nao for "clean" — era o que
+    # faltava para este defeito ter levado dois boots.
+    _i=0
+    while [ "$_i" -lt 3 ]; do
+        _out=$(e2fsck -f -y "$user_part" 2>&1)
+        _rc=$?
+        case "$_out" in
+            *"is clean"*) break ;;
+        esac
+        log "e2fsck (passada $((_i + 1)), rc=$_rc): $(printf '%s' "$_out" | tail -n 2 | tr '\n' ' ')"
+        [ "$_rc" = "0" ] && break
+        _i=$((_i + 1))
+    done
 fi
 
 # O resize2fs e' tentado DUAS vezes: `partx -u` atualiza o tamanho no kernel

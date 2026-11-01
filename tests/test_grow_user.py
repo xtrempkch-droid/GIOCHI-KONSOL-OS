@@ -271,6 +271,42 @@ class ErroDoResizeVaParaOLog(unittest.TestCase):
         self.assertIn("sleep 1", fonte)
 
 
+
+class E2fsckAteFicarLimpo(unittest.TestCase):
+    """`e2fsck -f -y` sai com 1 quando conserta; o resize2fs exige rc=0.
+
+    Medido na X55 (primeiro boot com cartao virgem):
+
+        grow-user: e2fsck: Pass 5: Checking group summary information
+                  GIOCHI: 16/32768 files, 6389/131072 blocks
+        grow-user: resize2fs: Please run 'e2fsck -f /dev/mmcblk1p4' first.
+
+    O `-y` corrige e devolve 1, deixando o fs marcado como nao-limpo. A
+    segunda passada, sem nada a corrigir, devolve 0 e marca limpo — que e'
+    a pre-condicao do resize2fs.
+    """
+
+    def test_repetem_ate_sair_limpo(self):
+        with open(GROW, encoding="utf-8") as fh:
+            fonte = fh.read()
+        # `index` acharia primeiro a MENCAO no comentario acima; o laco comeca
+        # em `_i=0`.
+        trecho = fonte[fonte.index("_i=0"):]
+        trecho = trecho[:trecho.index("# O resize2fs e' tentado")]
+        self.assertIn("while", trecho,
+                      "uma passada so' deixa o fs como nao-limpo (-y devolve 1)")
+        self.assertIn("_rc", trecho,
+                      "o codigo de saida do e2fsck e' o criterio, nao o texto")
+
+    def test_nao_descarta_o_rc_do_e2fsck(self):
+        with open(GROW, encoding="utf-8") as fh:
+            fonte = fh.read()
+        self.assertNotIn("e2fsck -f -y \"$user_part\" >/dev/null 2>&1 || true",
+                         fonte,
+                         "`|| true` engoliu o codigo de saida: era o que "
+                         "escondia que o fs ficava sujo")
+
+
 class OrdemDosDigitosDaParticao(unittest.TestCase):
     """`giochi_disk_of` precisa aceitar 10, 11... sem comer um caractere."""
 
