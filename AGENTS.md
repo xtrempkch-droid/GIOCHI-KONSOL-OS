@@ -2252,13 +2252,20 @@ dois empatados.
   versão desse teste olhava só `rk356x.dtsi` e o DTS do aparelho, e foi ela
   que deu folga para eu escrever a hipótese errada aqui.
 - **Evidência de hardware de um firmware que roda** (cartão Walkmam/ROCKNIX,
-  capturado no aparelho em 01/11 04:52, preservado em
-  `~/.copilot/session-state/.../files/walkmam-ref/`): na mesma família, com
-  `dr_mode = "otg"`, o UDC **existe** —
-  `/sys/class/udc/fcc00000.usb/state = not attached` — e o kernel é 6.12 com
-  os patches deles. Ou seja: `otg` não impede o UDC de existir (confirma a
-  correção acima) e a diferença entre eles e nós é **o bind**, que eles nunca
-  fazem.
+  capturado em 01/11 04:52, preservado em
+  `~/.copilot/session-state/.../files/walkmam-ref/`). **Precisão que importa:**
+  o aparelho daquela captura é um **X35S** (`Machine model: Powkiddy x35s`),
+  não a X55 — é o *mesmo SoC e a mesma família de DT*, não a mesma placa.
+  Com `dr_mode = "otg"` e kernel 6.12, ali o UDC **existe**:
+  `/sys/class/udc/fcc00000.usb/state = not attached`. Ou seja, `otg` não
+  impede o UDC de existir (confirma a correção acima), e a diferença entre
+  eles e nós é **o bind**, que eles nunca fazem.
+  O mesmo cartão traz `rk3566-powkiddy-x55-peripheral.dtb` e
+  `rk3566-powkiddy-x55.dtb` lado a lado: `otg\0` = 1 e `otg\0` = 0
+  respectivamente — a mesma mudança que o nosso patch `0003` faz, feita por
+  outra pessoa, para o mesmo aparelho. É a melhor confirmação independente
+  que temos de que o `dr_mode` é a variável, **e não prova** que ele resolve
+  o `ep0out` (não há log de bind deles).
   Isso fecha a teoria: no nosso caso o gadget é anexado **sem sessão USB**
   (`not attached`, sem VBUS). Em `PRTCAPDIR = OTG` o controlador só aceita
   `DEPCFG` depois da sessão; sem ela o comando não completa e o driver traduz
