@@ -508,6 +508,10 @@ public:
 
     ~SdlRenderer() override
     {
+        if (target_ != nullptr) {
+            SDL_DestroyTexture(target_);
+            target_ = nullptr;
+        }
         splash_.release();
         if (sdl_ != nullptr) {
             SDL_DestroyRenderer(sdl_);
@@ -538,6 +542,20 @@ public:
             }
         }
 
+        if (ui.layout == nullptr) {
+            return 0;
+        }
+
+        /* Uma vez por tamanho de saida: decide girar ou nao (ui_present) e
+         * recalcula a geometria sobre o tamanho LOGICO do layout. */
+        calcular_geometria(sdl_, ui);
+
+        /* Com rotacao, tudo e' desenhado numa textura do tamanho logico e
+         * girado no fim — senao o painel em retrato mostra a UI deitada. */
+        if (target_ != nullptr) {
+            (void)SDL_SetRenderTarget(sdl_, target_);
+        }
+
         unsigned rgb = 0x0F0F0F;
         if (ui.theme != nullptr) {
             rgb = giochi_theme_rgb(ui.theme->background, rgb);
@@ -551,11 +569,14 @@ public:
 
         if (splash_frames_ != 0) {
             splash_.draw(sdl_);
-        } else if (ui.layout != nullptr) {
-            paint(sdl_, ui);
+        } else {
+            paint_ui(sdl_, font_, geo_, ui);
         }
 
-        SDL_RenderPresent(sdl_);
+        if (target_ != nullptr) {
+            (void)SDL_SetRenderTarget(sdl_, nullptr);
+        }
+        apresentar(sdl_);
 
         if (splash_frames_ > 0) {
             splash_frames_--;
@@ -612,29 +633,20 @@ public:
     }
 
 private:
-    /* Recalcula a geometria so quando o tamanho muda (a UI e estatica dentro
-     * de uma aba; o que varia por quadro e o foco, que e so um indice). */
-    void paint(SDL_Renderer *sdl, const UiState &ui)
+    /* A geometria usa o tamanho LOGICO (o do layout, 1280x720 na X55), nunca a
+     * saida fisica do framebuffer. Medido no aparelho: o painel da X55 entrega
+     * 720x1280 em retrato, e calcular a geometria sobre isso dava escala 2,66x,
+     * uma coluna e a UI em pe' — o "layout bugado" de 2026-10-31.
+     * A correcao da orientacao fica em `apresentar()`. */
+    void calcular_geometria(SDL_Renderer *sdl, const UiState &ui)
     {
-        int out_w = 0;
-        int out_h = 0;
+        const int log_w = ui.layout->width;
+        const int log_h = ui.layout->height;
 
-        if (SDL_GetRendererOutputSize(sdl, &out_w, &out_h) != 0 || out_h <= 0) {
-            out_w = ui.layout->width;
-            out_h = ui.layout->height;
-        }
-        /* `geo_valida` e nao "tamanho mudou": a geometria tem default
-         * 640x480, entao num painel 640x480 (= X35S/X35H) a comparacao daria
-         * "igual" no primeiro quadro e tab_count/capacity ficariam ZERO —
-         * a tela sairia sem abas e sem grade justamente no painel pequeno. */
-        if (!geo_valida || out_w != geo_.screen_w || out_h != geo_.screen_h) {
-            ui_geometry_base(&geo_, out_w, out_h);
+        if (!geo_valida || log_w != geo_.screen_w || log_h != geo_.screen_h) {
+            ui_geometry_base(&geo_, log_w, log_h);
             measure_tabs(ui);
             geo_valida = true;
-        }
-
-        if (ui.theme == nullptr) {
-            return;
         }
 
         ui_geometry_grid(&geo_, ui.item_count, ui.focus_index);
@@ -643,7 +655,108 @@ private:
             geo_.tab_active = ui.current_tab;
         }
 
-        paint_ui(sdl, font_, geo_, ui);
+        /* A apresentacao depende da saida REAL; recalcula quando muda. */
+        int out_w = 0;
+        int out_h = 0;
+
+        if (SDL_GetRendererOutputSize(sdl, &out_w, &out_h) != 0 || out_w <= 0 ||
+            out_h <= 0) {
+            out_w = log_w;
+            out_h = log_h;
+        }
+        if (!apresentacao_pronta || out_w != out_visto_w ||
+            out_h != out_visto_h) {
+            preparar_apresentacao(sdl, ui, out_w, out_h);
+        }
+    }
+
+    /* Decides once per output size: draw offscreen and rotate, or draw direct.
+     * The angle comes from GIOCHI_ROTATE (override) or GIOCHI_ROTATION (read
+     * from device.conf by S20graphics). */
+    int rotacao_pedida(const UiState &ui) const
+    {
+        const char *manual = std::getenv("GIOCHI_ROTATE");
+
+        if (manual != nullptr && *manual != '\0') {
+            return std::atoi(manual);
+        }
+        const char *dev = std::getenv("GIOCHI_ROTATION");
+
+        if (dev != nullptr && *dev != '\0') {
+            return std::atoi(dev);
+        }
+        /* Sem informacao: deduz pelo layout. "landscape" num painel em retrato
+         * precisa de 90/270, mas nao da' para saber o sentido — 270 e' o valor
+         * do DTB da X55 e o unico aparelho em retrato hoje. */
+        (void)ui;
+        return 0;
+    }
+
+    void preparar_apresentacao(SDL_Renderer *sdl, const UiState &ui, int out_w,
+                               int out_h)
+    {
+        const int log_w = geo_.screen_w;
+        const int log_h = geo_.screen_h;
+        const int rot = rotacao_pedida(ui);
+        const giochi::UiPresentation p =
+            giochi::ui_present(rot, log_w, log_h, out_w, out_h);
+
+        out_visto_w = out_w;
+        out_visto_h = out_h;
+        apresentacao_pronta = true;
+
+        if (target_ != nullptr) {
+            SDL_DestroyTexture(target_);
+            target_ = nullptr;
+        }
+
+        if (!p.ok) {
+            /* Melhor reto do que cortado — e o log diz por que. */
+            GLOG_WARN("render: sem rotacao (%s): pedido %d, layout %dx%d, "
+                      "saida %dx%d",
+                      p.motivo, rot, log_w, log_h, out_w, out_h);
+            angulo_ = 0;
+            dst_ = SDL_Rect{0, 0, out_w, out_h};
+            return;
+        }
+
+        angulo_ = p.angle;
+        dst_ = SDL_Rect{p.dst_x, p.dst_y, p.dst_w, p.dst_h};
+
+        if (p.need_target == 0) {
+            return;
+        }
+
+        target_ = SDL_CreateTexture(sdl, SDL_PIXELFORMAT_ARGB8888,
+                                    SDL_TEXTUREACCESS_TARGET, log_w, log_h);
+        if (target_ == nullptr) {
+            GLOG_WARN("render: sem textura intermediaria (%s); desenhando "
+                      "reto na saida %dx%d",
+                      SDL_GetError(), out_w, out_h);
+            angulo_ = 0;
+            dst_ = SDL_Rect{0, 0, out_w, out_h};
+            return;
+        }
+        GLOG_INFO("render: desenhando %dx%d e girando %d graus para a saida "
+                  "%dx%d (dst %d,%d %dx%d)",
+                  log_w, log_h, angulo_, out_w, out_h, dst_.x, dst_.y, dst_.w,
+                  dst_.h);
+    }
+
+    void apresentar(SDL_Renderer *sdl)
+    {
+        if (target_ == nullptr) {
+            (void)SDL_RenderPresent(sdl);
+            return;
+        }
+
+        (void)SDL_SetRenderTarget(sdl, nullptr);
+        (void)SDL_SetRenderDrawColor(sdl, 0, 0, 0, 0xFF);
+        (void)SDL_RenderClear(sdl);
+        (void)SDL_RenderCopyEx(sdl, target_, nullptr, &dst_,
+                               static_cast<double>(angulo_), nullptr,
+                               SDL_FLIP_NONE);
+        (void)SDL_RenderPresent(sdl);
     }
 
     void measure_tabs(const UiState &ui)
@@ -663,6 +776,12 @@ private:
     Font font_;
     UiGeometry geo_;
     bool geo_valida = false;
+    SDL_Texture *target_ = nullptr;
+    SDL_Rect dst_{0, 0, 0, 0};
+    int angulo_ = 0;
+    int out_visto_w = 0;
+    int out_visto_h = 0;
+    bool apresentacao_pronta = false;
     int splash_frames_ = 0;
     bool quit_ = false;
 };

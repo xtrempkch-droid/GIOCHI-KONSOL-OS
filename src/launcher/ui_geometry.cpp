@@ -49,6 +49,56 @@ int clamp_int(int value, int lo, int hi)
 
 }  // namespace
 
+UiPresentation ui_present(int rotation_deg, int logical_w, int logical_h,
+                          int out_w, int out_h)
+{
+    UiPresentation p;
+
+    if (logical_w <= 0 || logical_h <= 0 || out_w <= 0 || out_h <= 0) {
+        p.motivo = "dimensoes invalidas";
+        return p;
+    }
+
+    /* Normaliza para 0/90/180/270 (o device.conf pode trazer -90, 450...). */
+    int rot = ((rotation_deg % 360) + 360) % 360;
+
+    if (rot == 90 || rot == 270) {
+        /* Fisico tem de ser o logico transposto. Se nao for, o painel nao
+         * corresponde ao layout: girar produziria imagem cortada, e e' melhor
+         * desenhar reto e dizer o motivo no log. */
+        if (out_w != logical_h || out_h != logical_w) {
+            p.motivo = "rotacao 90/270 mas o framebuffer nao e' o layout "
+                       "transposto";
+            return p;
+        }
+        p.angle = rot;
+        p.need_target = 1;
+        /* Quad do tamanho logico, centrado na saida: depois de girado em
+         * torno do mesmo centro, ele cobre exatamente out_w x out_h. */
+        p.dst_w = logical_w;
+        p.dst_h = logical_h;
+        p.dst_x = (out_w - logical_w) / 2;
+        p.dst_y = (out_h - logical_h) / 2;
+        p.ok = 1;
+        return p;
+    }
+
+    /* 0 e 180: as dimensoes tem de bater direto. */
+    if (out_w != logical_w || out_h != logical_h) {
+        p.motivo = "framebuffer com dimensoes diferentes do layout";
+        return p;
+    }
+
+    p.angle = rot;
+    p.need_target = rot == 180 ? 1 : 0;
+    p.dst_x = 0;
+    p.dst_y = 0;
+    p.dst_w = out_w;
+    p.dst_h = out_h;
+    p.ok = 1;
+    return p;
+}
+
 int ui_rect_contains(const UiRect &r, int x, int y)
 {
     return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;

@@ -149,6 +149,33 @@ class PrimeiroBootTest(unittest.TestCase):
         self.assertIn("nosplash", script)
         self.assertIn("/boot/nosplash", script)
 
+    def test_geometria_usa_o_layout_e_nao_a_saida_fisica(self):
+        """Medido na X55: painel 720x1280 em retrato, layout 1280x720.
+
+        A primeira versao calculava a geometria sobre `SDL_GetRendererOutputSize`
+        (a saida fisica). Resultado no aparelho: escala 2,66x, uma coluna e a UI
+        em pe' — o "layout bugado" que o mantenedor viu. A geometria tem de sair
+        do tamanho LOGICO (layout.json) e a orientacao e' resolvida girando na
+        apresentacao.
+        """
+        render = read(os.path.join(ROOT, "src/launcher/render.cpp"))
+
+        self.assertIn("ui.layout->width", render)
+        self.assertIn("calcular_geometria", render)
+        self.assertIn("ui_present(", render,
+                      "sem ui_present a orientacao fica do lado do kernel, "
+                      "que nao gira nada")
+        self.assertIn("SDL_RenderCopyEx", render,
+                      "so' RenderCopyEx sabe girar; RenderCopy nao")
+        # A rotacao tem de vir do aparelho, nao fixa no codigo.
+        self.assertIn("GIOCHI_ROTATION", render)
+
+        script = read(S20GRAPHICS)
+        self.assertIn('export GIOCHI_ROTATION="$ROTATION"', script,
+                      "sem exportar a rotacao o Launcher gira no sentido errado")
+        # Escape hatch de campo: acertar 90 x 270 sem recompilar 40 min.
+        self.assertIn("/boot/rotate", script)
+
     def test_sonda_reporta_render_node_e_drivers_dri(self):
         """A sonda tem de dizer o que o Mesa PODE carregar.
 

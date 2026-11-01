@@ -1725,6 +1725,45 @@ a ponta de um erro de configuração, não de driver ausente.
 instrumentar, confira o que o processo **podia** carregar: arquivos em
 `/usr/lib/dri`, nós em `/dev/dri` e variáveis de override no ambiente.
 
+### 3.69 Painel da X55 é 720×1280 em retrato: o kernel não gira, o compositor gira
+
+**Medido no aparelho** (primeiro boot com o Launcher desenhando): a UI apareceu
+**em pé** e com o layout quebrado. Duas causas somadas, as duas na camada de
+quem desenha:
+
+1. O DTB tem `rotation = <0x10e>` (270) no nó do painel, e o `S20graphics`
+   calcula `GIOCHI_WIDTH/HEIGHT` = 1280×720 — mas **nunca exportava a
+   rotação**. E o kernel **não gira imagem**: `rotation` só vira a propriedade
+   `panel-orientation` do conector, que é um aviso para o espaço de usuário. O
+   SDL 2.28 não lê essa propriedade. Sem ninguém girar, o framebuffer sai
+   1280×720... não: sai **720×1280**, e o que está desenhado para 1280 de
+   largura aparece deitado na tela em pé.
+2. A geometria era calculada sobre `SDL_GetRendererOutputSize` — a saída
+   **física** (720×1280). `ui_geometry_base(720, 1280)` dá
+   `scale_pct = 1280*100/480 = 266`, `tile_w = 405` e **uma coluna**. Daí o
+   "layout bugado": tiles gigantes, tudo empilhado.
+
+- **Regra**: a UI é desenhada no tamanho **lógico** (`layout.json`, 1280×720) e
+  **apresentada** girada. `ui_present()` (módulo puro, testado em
+  `test_ui_geometry.cpp`) devolve ângulo, retângulo de destino e se precisa de
+  textura intermediária; o `render.cpp` só obedece.
+- Detalhe que não é óbvio: para girar 90/270 o quad de destino tem de ter as
+  dimensões **lógicas** e ficar **centrado** na saída — o `SDL_RenderCopyEx`
+  gira em torno do centro do `dstrect`. Na X55 isso dá
+  `dst = (-280, 280, 1280, 720)`; girado em torno de (360,640), cobre
+  exatamente 720×1280. Passar `dst = (0,0,720,1280)` esticaria antes de girar.
+- `ui_present` **recusa** girar quando o framebuffer não é o layout transposto
+  (ex.: pediram 270 num painel 1280×720): girar sem transposição corta metade
+  da tela. Aparecer reto com o motivo no log é melhor que aparecer cortado.
+- Orientação é campo, não build: `GIOCHI_ROTATION` vem do `device.conf` (o que
+  o DTB declara), `GIOCHI_ROTATE` sobrepõe, e **`echo 90 > /boot/rotate`** na
+  partição 1 acerta o sentido sem recompilar (90 × 270 são ambos paisagem; o
+  que difere é a imagem sair de cabeça para baixo). Mesmo padrão do
+  `nolog`/`nosplash`.
+- Guardas: `test_apresentacao_x55` (angle 270, `dst = -280,280,1280,720`),
+  `test_apresentacao_sem_rotacao`, `test_apresentacao_recusa_rotacao_incoerente`
+  e `test_geometria_usa_o_layout_e_nao_a_saida_fisica`.
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):

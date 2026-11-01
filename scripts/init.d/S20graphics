@@ -38,6 +38,26 @@ if [ -f "$DEVICE_CONF" ]; then
     [ -n "${rotation:-}" ] && ROTATION=$rotation
 fi
 
+# Sentido da rotacao: o device.conf diz o que o DTB declara (270 na X55), mas
+# 90 x 270 produzem os dois paisagem — o que difere e' a imagem sair de cabeca
+# para baixo. Isso SO' o aparelho decide, e exigir recompilar por causa disso
+# custa 40 min por tentativa. Entao: `echo 90 > /boot/rotate` na particao 1
+# (mesmo padrao do nolog/nosplash) sobrepoe o valor do device.conf.
+if [ -r /boot/rotate ]; then
+    _r=$(tr -cd '0-9' < /boot/rotate 2>/dev/null)
+    case "$_r" in
+        0|90|180|270)
+            ROTATION=$_r
+            log "rotacao: $_r (do cartao, /boot/rotate)"
+            ;;
+        "")
+            ;;
+        *)
+            log "aviso: /boot/rotate com valor invalido '$_r'; ignorado"
+            ;;
+    esac
+fi
+
 # A resolucao logica inverte quando o painel esta em 90/270.
 PANEL_W=${PANEL%x*}
 PANEL_H=${PANEL#*x}
@@ -52,6 +72,10 @@ case "$ROTATION" in
         ;;
 esac
 export GIOCHI_WIDTH GIOCHI_HEIGHT
+# A rotacao e' do PAINEL, nao do layout: o Launcher desenha no tamanho logico
+# (layout.json) e gira na apresentacao. Sem exportar isso o framebuffer da X55
+# sai 720x1280 em retrato e a UI aparece em pe' (medido no aparelho).
+export GIOCHI_ROTATION="$ROTATION"
 log "painel=$PANEL rotacao=$ROTATION => ${GIOCHI_WIDTH}x${GIOCHI_HEIGHT}"
 
 # --- escolha do driver do Mesa (AGENTS.md §3.68) ------------------------

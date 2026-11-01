@@ -87,6 +87,37 @@ void ui_geometry_grid(UiGeometry *g, int item_count, int focus_index);
 /* Retangulo do anel de foco do slot — por FORA do tile (§5.2). */
 UiRect ui_geometry_focus_ring(const UiGeometry &g, int slot);
 
+/* --- Apresentacao: painel fisico x painel logico ----------------------
+ *
+ * Medido na X55: o painel e' 720x1280 em retrato com `rotation = <270>` no DTB,
+ * e o layout e' 1280x720 (paisagem). O kernel NAO gira a imagem — quem gira e'
+ * o compositor, e o SDL 2.28 nao le a orientacao do conector. Resultado
+ * observado no aparelho: UI em pe' e com a escala errada.
+ *
+ * A saida e' desenhar no tamanho LOGICO (o do layout) e apresentar girado.
+ * Este struct diz o que fazer; o render.cpp so' obedece.
+ */
+struct UiPresentation {
+    int angle = 0;   /* graus no sentido horario, para SDL_RenderCopyEx */
+    int dst_x = 0;   /* retangulo de destino JÁ DEPOIS da rotacao */
+    int dst_y = 0;
+    int dst_w = 0;
+    int dst_h = 0;
+    int need_target = 0; /* 1 = precisa de textura intermediaria */
+    int ok = 0;          /* 0 = dimensoes nao batem; ver `motivo` */
+    const char *motivo = "";
+};
+
+/* rotation_deg: 0/90/180/270 (valores do device.conf).
+ * logical: tamanho em que a UI e' DESENHADA.  out: tamanho real do framebuffer.
+ *
+ * Regra: com 90/270 as dimensoes fisicas sao as logicas trocadas. O retangulo
+ * de destino e' do tamanho LOGICO e centrado na saida — assim o quad girado
+ * cobre exatamente o framebuffer (o SDL gira em torno do centro do dstrect).
+ */
+UiPresentation ui_present(int rotation_deg, int logical_w, int logical_h,
+                          int out_w, int out_h);
+
 int ui_rect_contains(const UiRect &r, int x, int y);
 
 }  // namespace giochi

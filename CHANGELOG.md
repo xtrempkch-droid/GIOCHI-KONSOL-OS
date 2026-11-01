@@ -6,6 +6,25 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 ## [Não publicado]
 
 ### Corrigido
+- **UI em pé na X55 e layout quebrado** (AGENTS.md §3.69). O painel é
+  **720×1280 em retrato** com `rotation = <270>` no DTB, e o layout é 1280×720.
+  O kernel não gira imagem (`rotation` só alimenta `panel-orientation` do
+  conector, que o SDL 2.28 não lê) e o `S20graphics` nunca exportava a rotação.
+  Pior: a geometria era calculada sobre a saída **física** (720×1280), o que dá
+  escala 2,66× e **uma** coluna — daí os tiles gigantes empilhados.
+  - `ui_present()` (módulo puro, em `ui_geometry`) decide ângulo, retângulo de
+    destino e se precisa de textura intermediária; o `render.cpp` desenha no
+    tamanho **lógico** do `layout.json` e apresenta girado com
+    `SDL_RenderCopyEx`.
+  - O quad de destino usa as dimensões lógicas e fica centrado na saída (o
+    `RenderCopyEx` gira em torno do centro do `dstrect`): na X55,
+    `dst = (-280, 280, 1280, 720)`, que girado cobre exatamente 720×1280.
+  - `ui_present` **recusa** girar quando o framebuffer não é o layout
+    transposto — girar sem transposição corta metade da tela.
+  - Sentido da rotação é ajustável **no cartão**: `echo 90 > /boot/rotate`
+    (partição 1) sobrepõe o `device.conf`. 90 e 270 são ambos paisagem; o que
+    difere é a imagem sair de cabeça para baixo, e isso só o aparelho decide.
+
 - **`EGL not initialized` era configuração, não driver ausente** (AGENTS.md
   §3.68). O `S20graphics` forçava `MESA_LOADER_DRIVER_OVERRIDE=panfrost`, mas
   nesta placa o dispositivo DRM é o *display* (`rockchip-drm`) e quem fala com

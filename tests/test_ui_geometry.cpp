@@ -201,6 +201,81 @@ void test_abas(void)
     CHECK(big.tab[1].w == 0);
 }
 
+/* A X55 de verdade: painel 720x1280 em retrato, rotation=270 no DTB, layout
+ * 1280x720. Medido no aparelho: sem isto a UI saia em pe' e com escala 2,66x
+ * (a geometria era calculada sobre a SAIDA fisica, nao sobre o layout). */
+void test_apresentacao_x55(void)
+{
+    const giochi::UiPresentation p =
+        giochi::ui_present(270, 1280, 720, 720, 1280);
+
+    CHECK(p.ok == 1);
+    CHECK(p.angle == 270);
+    CHECK(p.need_target == 1); /* precisa desenhar fora da tela e girar */
+    /* Quad do tamanho LOGICO, centrado na saida: -280 = (720-1280)/2,
+     * 280 = (1280-720)/2. Girado em torno do centro (360,640), a caixa
+     * resultante e' exatamente 720x1280 — o painel inteiro. */
+    CHECK(p.dst_w == 1280);
+    CHECK(p.dst_h == 720);
+    CHECK(p.dst_x == -280);
+    CHECK(p.dst_y == 280);
+}
+
+/* Painel que ja' esta' paisagem (X35S/X35H): nada a fazer. */
+void test_apresentacao_sem_rotacao(void)
+{
+    const giochi::UiPresentation p = giochi::ui_present(0, 640, 480, 640, 480);
+
+    CHECK(p.ok == 1);
+    CHECK(p.angle == 0);
+    CHECK(p.need_target == 0);
+    CHECK(p.dst_x == 0);
+    CHECK(p.dst_y == 0);
+    CHECK(p.dst_w == 640);
+    CHECK(p.dst_h == 480);
+
+    /* 180 tambem precisa de intermediaria: nao da' para girar "no lugar"
+     * desenhando direto no framebuffer. */
+    const giochi::UiPresentation h = giochi::ui_present(180, 640, 480, 640, 480);
+
+    CHECK(h.ok == 1);
+    CHECK(h.angle == 180);
+    CHECK(h.need_target == 1);
+}
+
+/* Rotacao pedida que nao corresponde ao painel: NAO girar.
+ *
+ * Girar uma imagem sem a transposicao das dimensoes corta metade da tela. E'
+ * melhor aparecer reto (e o log dizer por que) do que aparecer cortado. */
+void test_apresentacao_recusa_rotacao_incoerente(void)
+{
+    const giochi::UiPresentation a = giochi::ui_present(270, 1280, 720, 1280, 720);
+
+    CHECK(a.ok == 0);
+    CHECK(a.need_target == 0);
+    CHECK(a.motivo[0] != '\0');
+
+    const giochi::UiPresentation b = giochi::ui_present(0, 1280, 720, 720, 1280);
+
+    CHECK(b.ok == 0);
+
+    /* Normalizacao: -270 equivale a 90; 450 a 90. */
+    const giochi::UiPresentation c = giochi::ui_present(-270, 1280, 720, 720, 1280);
+
+    CHECK(c.ok == 1);
+    CHECK(c.angle == 90);
+
+    const giochi::UiPresentation d = giochi::ui_present(450, 1280, 720, 720, 1280);
+
+    CHECK(d.ok == 1);
+    CHECK(d.angle == 90);
+
+    /* Dimensoes absurdas nao podem gerar retangulo negativo silencioso. */
+    const giochi::UiPresentation e = giochi::ui_present(90, 0, 0, 720, 1280);
+
+    CHECK(e.ok == 0);
+}
+
 /* Entradas absurdas nao podem gerar retangulo negativo. */
 void test_entradas_invalidas(void)
 {
@@ -229,6 +304,9 @@ int main(void)
     test_paginacao();
     test_anel_de_foco();
     test_abas();
+    test_apresentacao_x55();
+    test_apresentacao_sem_rotacao();
+    test_apresentacao_recusa_rotacao_incoerente();
     test_entradas_invalidas();
     TEST_SUMMARY("test_ui_geometry");
 }
