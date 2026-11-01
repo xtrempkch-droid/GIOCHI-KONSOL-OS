@@ -41,8 +41,60 @@ esac
 
 [ -x "$HELPER" ] || { log "aviso: $HELPER ausente; gadget nao configurado"; exit 0; }
 
+# --- sonda: o que o controlador oferece ANTES de tentar o gadget --------
+# "O USB nao apareceu no PC" tem quatro causas com acoes diferentes, e o log
+# do boot nao dizia em qual delas estavamos (AGENTS.md §3.88). Esta sonda
+# grava os tres fatos que separam os casos, no mesmo log do cartao:
+#
+#   UDC VAZIO  -> o controlador nunca entrou em modo dispositivo: e' DT
+#                 (dr_mode/extcon) ou PHY, nao script.
+#   UDC cheio  -> o controlador esta pronto; se o gadget falhar o log do
+#   e bind ok     kernel diz qual comando recusou.
+#   erro -110  -> SETEPCONFIG estourou o timeout (core nao respondeu).
+#
+# Custa tres leituras de /sys e responde a pergunta que ja' custou uma
+# sessao inteira.
+sonda_udc() {
+    udcs=$(ls /sys/class/udc 2>/dev/null | tr '\n' ' ')
+    if [ -z "${udcs% }" ]; then
+        log "sonda: /sys/class/udc VAZIO (controlador sem modo dispositivo)"
+    else
+        log "sonda: UDC(s):${udcs% }"
+    fi
+
+    # dr_mode do no' do USB-C, direto do DT que o kernel esta' usando. Sem
+    # isso, "otg" e "peripheral" dao o mesmo log quando funciona.
+    no_dt=/sys/firmware/devicetree/base/usb@fcc00000
+    if [ -r "$no_dt/dr_mode" ]; then
+        log "sonda: dr_mode USB-C = $(tr -d '\000' < "$no_dt/dr_mode")"
+    fi
+    if [ -e "$no_dt/extcon" ]; then
+        log "sonda: USB-C tem extcon (deteccao de papel pelo DT)"
+    fi
+}
+
+sonda_udc
+
 if "$HELPER" "$mode"; then
     log "gadget USB configurado em modo $mode"
+    # O helper sai 0 tambem quando nao havia UDC ('configurado mas inativo').
+    # Conferir o arquivo UDC do configfs separa "anexou" de "ficou parado".
+    #
+    # `[ -r ]` ANTES do redirecionamento: sem ele, `< arquivo` inexistente
+    # imprime "cannot open ...: No such file" no stderr do shell, e o
+    # `2>/dev/null` do comando NAO cobre isso (as redirecoes sao aplicadas da
+    # esquerda para a direita: a mensagem sai antes). Medido ao rodar o script
+    # sem configfs — o log do boot ganhava um erro de shell que nao era erro.
+    gadget_udc=/sys/kernel/config/usb_gadget/giochi/UDC
+    udc_ativo=
+    if [ -r "$gadget_udc" ]; then
+        udc_ativo=$(tr -d '[:space:]' < "$gadget_udc")
+    fi
+    if [ -n "$udc_ativo" ]; then
+        log "gadget anexado ao UDC '$udc_ativo'"
+    else
+        log "gadget NAO anexado: nenhum UDC aceitou o bind"
+    fi
 else
     # X35S/X35H nao ancoram (hardware-e-drivers.md F12): nao e fatal.
     log "aviso: gadget USB indisponivel neste aparelho; seguindo sem USB"

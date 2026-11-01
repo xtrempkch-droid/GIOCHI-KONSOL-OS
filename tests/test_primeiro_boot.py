@@ -22,6 +22,7 @@ LAUNCHER_MAIN = os.path.join(ROOT, "src/launcher/main.cpp")
 DEVICECONF_C = os.path.join(ROOT, "src/common/giochi_deviceconf.c")
 BUILD_IMAGE = os.path.join(ROOT, "tools/build-image.sh")
 S05MODULES = os.path.join(ROOT, "scripts/init.d/S05modules")
+S50USB = os.path.join(ROOT, "scripts/init.d/S50usb")
 MDEV_CONF = os.path.join(ROOT, "buildroot/board/giochi/mdev.conf")
 BUSYBOX_FRAGMENT = os.path.join(ROOT, "buildroot/board/giochi/busybox.fragment")
 LINUX_POWKIDDY = os.path.join(ROOT, "buildroot/board/giochi/linux-powkiddy.fragment")
@@ -668,6 +669,88 @@ class PrimeiroBootTest(unittest.TestCase):
             with self.subTest(make=trecho.splitlines()[0][:60]):
                 self.assertIn("||", trecho,
                               "make sem tratamento de erro: falha vira sucesso")
+
+    def test_s50usb_sonda_o_controlador_antes_do_gadget(self):
+        """"O USB nao apareceu" tem quatro causas; o log nao dizia qual.
+
+        Medido no serial da X55: `HOST MAC` (funcao ECM criada) seguido de
+        `failed to enable ep0out` (SETEPCONFIG recusado no bind). Eu li a
+        primeira linha como "o UDC existe e vai funcionar" e a segunda como
+        "nao existe UDC" — as duas leituras erradas, e custou uma sessao.
+        A sonda grava os tres fatos que separam os casos.
+        """
+        corpo = sh_code(read(S50USB))
+
+        self.assertIn("/sys/class/udc", corpo,
+                      "o S50usb nao registra se o controlador tem modo "
+                      "dispositivo (UDC vazio = problema de DT/PHY)")
+        self.assertIn("dr_mode", corpo,
+                      "o S50usb nao registra o dr_mode efetivo: 'otg' e "
+                      "'peripheral' dao o mesmo log quando funciona")
+        self.assertIn("usb_gadget/giochi/UDC", corpo,
+                      "o S50usb nao confere o arquivo UDC do configfs: o "
+                      "helper sai 0 mesmo quando nao anexa")
+
+        # A sonda tem de rodar ANTES do helper: se ele reconfigura o configfs,
+        # ler depois mede outro estado (e o UDC pode ter sido limpo no
+        # comeco do helper, que faz `echo "" > UDC`).
+        indice_sonda = corpo.index("sonda_udc")
+        indice_helper = corpo.index('"$HELPER" "$mode"')
+        self.assertLess(indice_sonda, indice_helper,
+                        "a sonda tem de medir o estado ANTES de o helper mexer "
+                        "no configfs")
+
+    def test_s50usb_funciona_sem_udc_e_nao_aborta_o_boot(self):
+        """Sonda com /sys vazio nao pode derrubar o rcS.
+
+        Roda o script REAL apontando SETTINGS e HELPER para arquivos de teste.
+        O `logger` do host engoliria a saida, entao um `logger` falso no PATH
+        a manda para stderr — e assim o teste ve o que o aparelho veria no log.
+        """
+        import subprocess
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            binfalso = os.path.join(tmp, "bin")
+            os.makedirs(binfalso)
+            with open(os.path.join(binfalso, "logger"), "w",
+                      encoding="utf-8") as fp:
+                # Escreve em STDOUT, nao em stderr: o `log()` do script manda
+                # o stderr do logger para /dev/null, entao um logger falso que
+                # escreve em stderr fica invisivel (medido: a primeira versao
+                # deste teste "nao via" a sonda que o script estava printando).
+                fp.write("#!/bin/sh\nshift 2\necho \"$*\"\n")
+            os.chmod(os.path.join(binfalso, "logger"), 0o755)
+
+            settings = os.path.join(tmp, "settings.json")
+            with open(settings, "w", encoding="utf-8") as fp:
+                fp.write('{"system":{"usb_mode":"mtp"}}')
+
+            helper = os.path.join(tmp, "helper")
+            with open(helper, "w", encoding="utf-8") as fp:
+                fp.write("#!/bin/sh\nexit 0\n")
+            os.chmod(helper, 0o755)
+
+            env = dict(os.environ,
+                       PATH=binfalso + os.pathsep + os.environ.get("PATH", ""),
+                       SETTINGS=settings, HELPER=helper)
+            proc = subprocess.run(["sh", S50USB], env=env,
+                                  stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE, timeout=60)
+            self.assertEqual(0, proc.returncode,
+                             "S50usb falhou: %s"
+                             % proc.stderr.decode("utf-8", "replace"))
+            saida = (proc.stdout + proc.stderr).decode("utf-8", "replace")
+            self.assertIn("sonda", saida,
+                          "a sonda nao escreveu nada no log: %r" % saida)
+            # Sem UDC no host, ou com o do host, a sonda tem de dizer qual dos
+            # dois casos e' — nunca ficar calada.
+            self.assertTrue(
+                "VAZIO" in saida or "UDC(s)" in saida,
+                "a sonda nao classificou o estado do UDC: %r" % saida)
+            self.assertIn("NAO anexado", saida,
+                          "sem configfs o gadget nao anexa e o log tem de "
+                          "dizer isso, nao apenas 'configurado': %r" % saida)
 
 
 if __name__ == "__main__":
