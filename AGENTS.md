@@ -2112,6 +2112,35 @@ para o lugar errado **sem erro nenhum**.
   e `ssh/authorized_keys` precisam de `0600`/`0700`, e o MTP não os aplica — o
   Modo Desenvolvedor continua sendo preparado pelo cartão.
 
+### 3.85 "Ligado" e "enumerado no USB" são coisas diferentes
+
+O mantenedor ligou o console e pediu para testar SSH/MTP. Medição: **zero**
+dispositivos novos no barramento (`lsusb` sem nada além de hub/mouse/BT/webcam/
+leitor), nenhuma interface `10.55.x`, e o adaptador CH341 fora desde 02:38. Não
+havia o que testar.
+
+Antes de pedir o cartão de volta, conferi o lado que dá para conferir **offline**
+— se a imagem sequer permite o gadget subir:
+
+| Verificação | Resultado |
+|---|---|
+| `.config` do kernel 6.12 | `USB_GADGET=y`, `USB_CONFIGFS=y`, `F_FS=y`, `ECM=y`, `RNDIS=y`, `MASS_STORAGE=y`, `USB_DWC3=y` + `DUAL_ROLE=y` |
+| DTS da X55 | `usb_host0_xhci` (`usb@fcc00000`) `okay`, `phys = <&usb2phy0_otg>`; `dr_mode = "otg"` no `rk356x.dtsi` |
+| imagem | `giochi-usb-mode` presente; **sem** `/etc/giochi/usb_gadget_disabled` (esse marcador é de X35S/X35H) |
+
+Ou seja: **a imagem não é a causa**. O que falta é medição no lado físico.
+
+- Ferramenta nova: `tools/giochi-usb-diag.sh` responde qual das quatro causas é,
+  e a informação que separa "cabo" de "não bootou" é a enumeração: se aparece
+  qualquer dispositivo, o cabo tem dados; se não aparece nada, é cabo **ou**
+  boot incompleto — e aí o `giochi-boot.log` do cartão decide.
+- `--cartao` lê o `giochi-boot.log` da partição FAT montada. **Sem log, o `rcS`
+  não rodou**: o boot parou antes do userspace. É o instrumento mais barato
+  quando não há serial.
+- Registro honesto: **o teste de SSH/MTP pedido não foi executado** porque não há
+  dispositivo. Dizer "testei e não deu" seria falso; o que houve foi "não há o
+  que testar", com a imagem do lado do sistema descartada como causa.
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):

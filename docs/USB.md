@@ -41,6 +41,27 @@ ssh root@10.55.0.2
 No Windows o adaptador RNDIS aparece em "Adaptadores de Rede"; atribua
 `10.55.0.1/255.255.255.0` manualmente.
 
+### Diagnóstico: "liguei e não aparece nada"
+
+```sh
+tools/giochi-usb-diag.sh             # mede agora e diz qual das causas é
+tools/giochi-usb-diag.sh --esperar 30  # espera o dispositivo aparecer
+tools/giochi-usb-diag.sh --cartao    # lê o giochi-boot.log do cartão montado
+```
+
+Quatro causas com ações **opostas**, indistinguíveis do lado do PC sem medir:
+
+| Medição | Causa | Ação |
+|---|---|---|
+| **0 dispositivos novos** no barramento | cabo de carga (sem fio de dados), **ou** o console não chegou ao userspace, **ou** o gadget falhou | trocar o cabo; depois ler o log do cartão |
+| dispositivo novo, `manufacturer` = `Giochi Konsol OS` | é o nosso sistema; falta só IP no PC | o próprio script configura |
+| dispositivo novo, `manufacturer` = `ROCKNIX`/`Handheld` | **é o firmware de fábrica**: o boot caiu para o eMMC | §3.35/§3.36 — o cartão não foi usado |
+| volume MTP no gvfs, sem interface de rede | o gadget subiu sem ECM/RNDIS | MTP funciona; SSH não |
+
+O log do cartão é o instrumento mais barato e o único que distingue "cabo" de
+"não bootou": se o cartão esteve no aparelho e **não** há `giochi-boot.log`, o
+`rcS` não rodou.
+
 | Situação | Comportamento |
 |---|---|
 | Nenhum adaptador detectado (PC) | verifique o cabo e `dmesg` no console |
