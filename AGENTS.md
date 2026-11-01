@@ -4153,6 +4153,12 @@ novidade (`carregar_novidade` em `main.cpp`).
   os quatro casos (CLI, settings, aparelho, padrão).
 - `theme.json` morto continuava no SquashFS porque o `TARGET_DIR` sobrevive
   entre builds. `post-build.sh` remove (mesma classe do §3.39).
+- A suite `temas` passava sozinha e **falhava no `make test`**: ela lê a linha
+  `tema: ...` do log e o `tests/run_tests.sh` exporta
+  `GIOCHI_LOG_LEVEL=error`, o que engole todo `GLOG_INFO`. O teste agora fixa
+  `GIOCHI_LOG_LEVEL=info` no `env` do subprocesso. **Suite que lê log não pode
+  herdar o nível do runner** — o sintoma ("passa isolado, falha na suíte") é o
+  mesmo padrão do §3.41.
 
 **Verificação (tudo rodado):** `make test` **31/31** (suítes novas `temas`, 23
 testes, e `loja-do-pc`, 16); `make lint` rc=0 (inclui contraste WCAG dos seis

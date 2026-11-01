@@ -20,6 +20,7 @@ Os testes abaixo cobram os tres, e cobram contra o binario real
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import tempfile
@@ -286,6 +287,12 @@ class PrecedenciaTest(unittest.TestCase):
 
     LAUNCHER = ROOT / "build" / "host" / "bin" / "giochi-launcher"
 
+    # A suite le a linha "tema: ..." do log, e o runner exporta
+    # GIOCHI_LOG_LEVEL=error (tests/run_tests.sh) — sem isto o teste passa
+    # sozinho e falha dentro do `make test`, que foi exatamente o que
+    # aconteceu. Nivel fixado AQUI, nao herdado do ambiente.
+    ENV = dict(os.environ, GIOCHI_LOG_LEVEL="info")
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.dir = Path(self.tmp.name)
@@ -302,7 +309,7 @@ class PrecedenciaTest(unittest.TestCase):
             [str(self.LAUNCHER), "--headless", "--frames", "1",
              "--asset-dir", str(ROOT / "assets"),
              "--user-dir", str(self.user), *extra],
-            capture_output=True, text=True)
+            capture_output=True, text=True, env=self.ENV)
         self.assertEqual(r.returncode, 0, r.stderr)
         m = re.search(r"tema: '([a-z_]+)'", r.stderr)
         self.assertIsNotNone(m, r.stderr)
@@ -326,7 +333,7 @@ class PrecedenciaTest(unittest.TestCase):
             [str(self.LAUNCHER), "--headless", "--frames", "1",
              "--asset-dir", str(ROOT / "assets"), "--user-dir", str(self.user),
              "--theme", "nao_existe"],
-            capture_output=True, text=True)
+            capture_output=True, text=True, env=self.ENV)
         self.assertEqual(r.returncode, 0)
         self.assertIn("nao existe no catalogo", r.stderr)
         self.assertIn(catalogo()["default"], r.stderr)
