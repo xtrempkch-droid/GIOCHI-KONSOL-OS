@@ -26,6 +26,8 @@ MDEV_CONF = os.path.join(ROOT, "buildroot/board/giochi/mdev.conf")
 BUSYBOX_FRAGMENT = os.path.join(ROOT, "buildroot/board/giochi/busybox.fragment")
 LINUX_POWKIDDY = os.path.join(ROOT, "buildroot/board/giochi/linux-powkiddy.fragment")
 S20GRAPHICS = os.path.join(ROOT, "scripts/init.d/S20graphics")
+INITTAB = os.path.join(ROOT, "buildroot/board/giochi/rootfs_overlay/etc/inittab")
+TOOLS_MK = os.path.join(ROOT, "buildroot/package/giochi-tools/giochi-tools.mk")
 
 
 def read(path):
@@ -174,6 +176,68 @@ class PrimeiroBootTest(unittest.TestCase):
             r"SOC=\$\(tr -d '\\0' </proc/device-tree/compatible[^)]*\| head -n1\)",
             "voltou a pegar o primeiro campo do compatible como SoC",
         )
+
+    def test_framebuffer_entregue_a_ui(self):
+        """fbcon pinta por cima do SDL: cursor piscando + printk novo.
+
+        Medido no aparelho: a tela acendeu mostrando o console (o kernel tem
+        fbcon porque DRM_FBDEV_EMULATION=y faz "select FB", apesar do
+        CONFIG_FB=n do fragmento) e o Launcher desenhava em headless. Com o
+        SDL2/KMSDRM funcionando, qualquer printk — e o aparelho imprime
+        "rk817-charger: Battery voltage ... below minimum" a cada 8 s — apaga o
+        que a UI desenhou.
+        """
+        body = read(S20GRAPHICS)
+
+        self.assertIn("devolver_framebuffer", body,
+                      "S20graphics nao entrega o framebuffer para a UI")
+        # A chamada tem de existir, nao so a definicao.
+        self.assertGreaterEqual(body.count("devolver_framebuffer"), 2,
+                                "devolver_framebuffer definida e nao chamada")
+        self.assertIn("/sys/class/vtconsole", body,
+                      "nao desvincula o fbcon do framebuffer")
+        self.assertIn("/proc/sys/kernel/printk", body,
+                      "nao baixa o console_loglevel")
+        # Escape hatch para depurar com a tela.
+        self.assertIn("GIOCHI_KEEP_FBCON", body,
+                      "sem GIOCHI_KEEP_FBCON fica impossivel depurar na tela")
+
+    def test_var_e_gravavel(self):
+        """/var na raiz SquashFS e' somente leitura; nada la pode ser criado.
+
+        Medido no serial da X55:
+        `seedrng: can't create directory '/var/lib/seedrng': Read-only file
+        system` -> o pool de entropia nao persiste e o "crng init done" so
+        aparecia aos 11 s de uptime. O `mkdir -p /var/log` do inittab tambem
+        falhava em silencio.
+        """
+        inittab = read(INITTAB)
+
+        self.assertRegex(inittab, r"mount -t tmpfs[^\n]* /var\b",
+                         "/var nao tem tmpfs: continua somente leitura")
+        self.assertIn("/var/lib/seedrng", inittab,
+                      "sem /var/lib/seedrng o seedrng falha e a entropia nao persiste")
+
+    def test_sonda_de_video_roda_no_boot(self):
+        """O Launcher so diz "EGL not initialized" — nao diz QUAL passo falhou.
+
+        A sonda (giochi-gpu-probe) faz os cinco passos (abrir /dev/dri, ver
+        conector, criar GBM, eglInitialize, eglCreateContext) e o log do cartao
+        passa a dizer onde parou.
+        """
+        body = read(S20GRAPHICS)
+        mk = read(TOOLS_MK)
+
+        self.assertIn("giochi-gpu-probe", mk,
+                      "o pacote giochi-tools nao instala a sonda")
+        self.assertIn("giochi-gpu-probe", body,
+                      "S20graphics nao chama a sonda")
+        # Roda DEPOIS do handover do framebuffer, senao mede outro estado.
+        self.assertLess(body.index("devolver_framebuffer\n"),
+                        body.index("giochi-gpu-probe >"),
+                        "a sonda tem de rodar depois de devolver_framebuffer")
+        self.assertIn("GIOCHI_NO_GPU_PROBE", body,
+                      "sem escape hatch a sonda nao pode ser desligada")
 
     def test_build_nao_anuncia_imagem_quando_make_falha(self):
         """'if ! build_device ...' desliga o 'set -e' dentro da função.

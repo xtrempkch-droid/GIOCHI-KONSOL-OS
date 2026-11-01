@@ -1372,6 +1372,65 @@ imprime `rk817-charger: Battery voltage 19590 below minimum` **a cada 8 s**.
 prova; `grep` no `.config` do build é.
 
 
+### 3.60 `/var` é somente leitura: `seedrng` falha e a entropia não persiste
+
+A raiz é SquashFS e o `inittab` só criava `/var/log` com `mkdir -p` — que
+falhava calado, porque nem o diretório existia na imagem. Resultado medido no
+serial da X55:
+
+```
+seedrng: can't create directory '/var/lib/seedrng': Read-only file system
+...
+[   11.005956] random: crng init done
+```
+
+O `crng` só ficou pronto aos **11 s** de uptime. Nada neste sistema precisa de
+entropia para desenhar, mas ferramentas que usam `getrandom()` bloqueante
+(o EGL do Mesa abre um `drm` e pode pedir bytes) ficam paradas — e o Launcher
+levou exatamente ~9 s entre iniciar e desistir do vídeo.
+
+- `inittab` monta **tmpfs em `/var`** antes do `rcS` e cria `log`, `lib/seedrng`,
+  `run`, `tmp`. `/var` da imagem tem 20 KB de diretórios vazios, então montar
+  por cima não esconde nada.
+- Guarda: `test_var_e_gravavel` (suíte `primeiro-boot`).
+
+**Regra que fica:** a raiz é somente leitura, então **todo** caminho que algum
+programa escreve precisa estar em `/user`, `/run` ou num tmpfs. `/var`, `/tmp`,
+`/etc` e `/usr` não são graváveis — e o erro aparece como "Read-only file
+system" em um programa que não é o culpado.
+
+### 3.61 "EGL not initialized" não diz nada: sonda antes de adivinhar
+
+Depois de o DRM bindar e o SDL2 passar a ter KMSDRM, o Launcher registrou:
+
+```
+MESA-LOADER: failed to open kms_swrast: ... No such file or directory
+MESA-LOADER: failed to open swrast: ... No such file or directory
+W: render: SDL2 indisponivel (SDL_CreateWindow: EGL not initialized)
+```
+
+`EGL not initialized` é string do SDL para "o carregamento do EGL falhou" — não
+diz **qual** dos cinco passos falhou, e cada um tem correção diferente: abrir
+`/dev/dri/card0`, achar um conector com modo, `gbm_create_device`,
+`eglGetPlatformDisplay(EGL_PLATFORM_GBM_KHR)`, `eglInitialize`,
+`eglChooseConfig`, `eglCreateContext`.
+
+- `src/tools/gpu_probe.c` (`/usr/bin/giochi-gpu-probe`) faz os cinco passos e
+  imprime `OK`/`FALHOU` em cada um, com o nome do erro EGL (`EGL_BAD_MATCH`,
+  não `0x3009`).
+- `S20graphics` roda a sonda **depois** de entregar o framebuffer (com o fbcon
+  vinculado o DRM tem outro dono e a sonda mediria outra situação) e cada linha
+  vai para o log do cartão como `sonda: ...`. Escape: `GIOCHI_NO_GPU_PROBE=1`.
+- Compila em `giochi-tools.mk` e **não** no `Makefile` da raiz: depende de
+  libdrm/libgbm/EGL, que só existem no sysroot do Buildroot (mesmo critério do
+  Launcher com SDL2).
+- Guardas: `test_sonda_de_video_roda_no_boot` (ordem + instalação + escape).
+
+**Armadilha de dependência:** `GIOCHI_TOOLS_DEPENDENCIES` precisa de `libdrm`,
+**não** `drm` — o nome do pacote no Buildroot é `libdrm` e o erro é
+`No rule to make target 'drm'`, que não sugere o nome certo.
+
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):
@@ -2699,3 +2758,50 @@ licenças e linguagens conferidas via API do GitHub (`Anuken/Mindustry`,
 `wesnoth/wesnoth`, `supertuxkart/stk-code`, `ShadowMario/FNF-PsychEngine`);
 `check-links` ok (29 arquivos) e `make lint` rc=0. **Não rodou:** nenhum export
 do Godot, e o build musl do template continua pendente.
+
+### 2026-10-31 (23) — Copilot (sonda de vídeo: parar de adivinhar o EGL)
+
+O mantenedor reportou "ainda não sobe o launcher". O log do cartão mostrou que
+o SDL2 **tem** KMSDRM agora (chegou a tentar criar a janela):
+
+```
+MESA-LOADER: failed to open kms_swrast: ... No such file or directory
+MESA-LOADER: failed to open swrast: ... No such file or directory
+W: render: SDL2 indisponivel (SDL_CreateWindow: EGL not initialized)
+```
+
+Investigação descartou, com evidência, as hipóteses baratas:
+
+| Hipótese | Medição |
+|---|---|
+| falta o driver Mesa do RK3566 | `rockchip_dri.so` e `panfrost_dri.so` existem |
+| kmsro não foi compilado | `GALLIUM_KMSRO` e `__driDriverGetExtensions_rockchip` estão no binário |
+| backend GBM ausente | `gbm_dri.c` é compilado dentro do `libgbm` (`build.ninja`) |
+| plataforma EGL errada | Mesa reporta `Platforms: surfaceless drm`, `gbm: enabled` |
+
+Ou seja: **o build está correto** e o que falta é do runtime. Como cada passo
+tem uma correção diferente, parei de adivinhar e escrevi o instrumento.
+
+**Entregue:**
+
+- `src/tools/gpu_probe.c` → `/usr/bin/giochi-gpu-probe`, 5 passos com
+  `OK`/`FALHOU` e o **nome** do erro EGL. Chamado pelo `S20graphics` **depois**
+  do handover do framebuffer; cada linha vai ao log do cartão como `sonda: ...`.
+- `S20graphics` entrega o framebuffer à UI: baixa `console_loglevel` para 1 e
+  desvincula o `vtcon` do fbcon (cursor piscando + `printk` de bateria a cada
+  8 s pintavam por cima). `GIOCHI_KEEP_FBCON=1` mantém.
+- `inittab` monta **tmpfs em `/var`** (§3.60): o `seedrng` falhava com
+  "Read-only file system" e o `crng init` só vinha aos 11 s.
+- `linux.fragment`: corrigido o comentário que dizia que `CONFIG_FB=n` remove o
+  console (não remove — `DRM_FBDEV_EMULATION` faz `select FB`, §3.59).
+
+**Verificação:** `make test` **26/26** (suítes com 13 guardas em
+`primeiro-boot`), `make lint` rc=0. Guardas novas testadas ao contrário (tirar
+o probe do `.mk` e tirar o tmpfs de `/var`: as duas reprovam). Probe
+cross-compilado contra o sysroot real (`-Wall -Wextra`, link com
+`-ldrm -lgbm -lEGL -lGLESv2`) e presente na imagem. Cartão gravado com
+`dd conv=fsync` e conferido byte a byte (`sha256` `edbeda36…`).
+
+**Aberto:** o boot com a sonda ainda não aconteceu. **Próximo dado é o log**:
+as linhas `sonda: OK/FALHOU` dizem qual passo do EGL falha, e aí a correção é
+pontual em vez de tentativa.

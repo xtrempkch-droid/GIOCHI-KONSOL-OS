@@ -89,6 +89,78 @@ fi
 # o proximo boot nao reportar uma falha falsa (S00bootlog / docs/BOOT-DEBUG.md).
 giochi_boot_marker_clear 2>/dev/null || true
 
+# --- entrega o framebuffer para a UI (AGENTS.md §3.59) ------------------
+# O kernel DESTA imagem tem fbcon, ao contrario do que o linux.fragment
+# pretendia: CONFIG_FB=n e' sobrescrito por CONFIG_DRM_FBDEV_EMULATION=y, que
+# faz "select FB" e liga FRAMEBUFFER_CONSOLE. Medido no .config do build:
+#   # CONFIG_FB is not set          <- o fragmento
+#   CONFIG_DRM_FBDEV_EMULATION=y
+#   CONFIG_FRAMEBUFFER_CONSOLE=y   <- o que vale
+# E' o console que aparece na tela do aparelho antes do Launcher.
+#
+# Dois efeitos atrapalham o SDL/KMSDRM e precisam ser desligados aqui:
+#   1. o cursor do vt PISCA e repinta a tela por cima do que o SDL desenhou;
+#   2. qualquer printk novo (ex.: "rk817-charger: Battery voltage ... below
+#      minimum" a cada 8 s) tambem pinta por cima.
+# Desligar o console de video NAO perde informacao: o log continua no serial
+# (ttyS2) e na particao FAT do cartao (S00bootlog).
+# GIOCHI_KEEP_FBCON=1 mantem o console (para depurar com a tela).
+devolver_framebuffer() {
+    [ "${GIOCHI_KEEP_FBCON:-0}" = "1" ] && {
+        log "GIOCHI_KEEP_FBCON=1: console de video mantido"
+        return 0
+    }
+
+    # 1.1: so panico/emergencia vao para o console de video. O log do cartao
+    # e' alimentado pelo syslogd/klogd, nao por este nivel.
+    echo "1 4 1 7" > /proc/sys/kernel/printk 2>/dev/null || \
+        log "aviso: nao foi possivel baixar o console_loglevel"
+
+    # Desvincula o fbcon do framebuffer (para o cursor e os printk de
+    # pintarem). vtcon0 e' o dummy; o fbcon costuma ser vtcon1, mas o numero
+    # varia com a config, entao procuramos pelo nome.
+    desvinculados=0
+    for v in /sys/class/vtconsole/vtcon*; do
+        [ -r "$v/name" ] || continue
+        case "$(cat "$v/name" 2>/dev/null)" in
+            *frame?buffer*) ;;
+            *) continue ;;
+        esac
+        if echo 0 > "$v/bind" 2>/dev/null; then
+            desvinculados=$((desvinculados + 1))
+        fi
+    done
+
+    if [ "$desvinculados" -gt 0 ]; then
+        log "framebuffer entregue a UI ($desvinculados console(s) de video desvinculado(s))"
+    else
+        log "aviso: nenhum console de video para desvincular; a UI pode ser sobrescrita"
+    fi
+}
+devolver_framebuffer
+
+# --- sonda de video (roda no MESMO estado em que o SDL vai rodar) ---------
+# Por que: o Launcher so consegue dizer "EGL not initialized", que e' o sintoma
+# final — nao diz se falhou abrir /dev/dri, o GBM, a plataforma EGL, a escolha
+# de config ou o contexto. Medido na X55: /dev/dri/card0 existe, o DRM bindou
+# e o SDL2 TEM KMSDRM (chegou a tentar criar a janela), e mesmo assim o render
+# caiu para headless. A sonda faz os cinco passos e imprime onde parou.
+#
+# Roda DEPOIS do handover de proposito: com o fbcon vinculado o DRM tem outro
+# dono, e a sonda mediria uma situacao que o SDL nao vai encontrar.
+# GIOCHI_NO_GPU_PROBE=1 desliga.
+if [ "${GIOCHI_NO_GPU_PROBE:-0}" != "1" ] && \
+   [ -x /usr/bin/giochi-gpu-probe ]; then
+    giochi-gpu-probe > /run/giochi/gpu-probe.txt 2>&1
+    _probe_rc=$?
+    while IFS= read -r _linha; do
+        [ -n "$_linha" ] || continue
+        log "sonda: $_linha"
+    done < /run/giochi/gpu-probe.txt
+    [ "$_probe_rc" -eq 0 ] || \
+        log "sonda de video: parou no primeiro FALHOU (arquivo /run/giochi/gpu-probe.txt)"
+fi
+
 if command -v gamescope >/dev/null 2>&1; then
     exec gamescope --backend drm --fullscreen --embedded \
          -W "${GIOCHI_WIDTH:-640}" -H "${GIOCHI_HEIGHT:-480}" \

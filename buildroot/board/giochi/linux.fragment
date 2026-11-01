@@ -77,6 +77,19 @@ CONFIG_DRM_ROCKCHIP=y
 CONFIG_DRM_PANFROST=y
 # RK3326 usa Mali-G31 (Panfrost). Lima so e util para GPUs Utgard.
 CONFIG_DRM_LIMA=y
+# CONFIG_FB=n NAO remove o fbcon: CONFIG_DRM_FBDEV_EMULATION=y (default do
+# DRM) faz "select FB" e liga CONFIG_FRAMEBUFFER_CONSOLE assim mesmo. Medido
+# no .config do build da X55:
+#   # CONFIG_FB is not set
+#   CONFIG_DRM_FBDEV_EMULATION=y
+#   CONFIG_FRAMEBUFFER_CONSOLE=y     <-- o que realmente vale
+# Ou seja: a "decisao por boot rapido" abaixo nunca esteve em efeito, e o
+# console de video sempre existiu nesta imagem (foi ele que apareceu na tela
+# do aparelho antes do Launcher). Para remover de verdade seria preciso
+# CONFIG_DRM_FBDEV_EMULATION=n — o que a v1.2 NAO faz de proposito: ver o
+# console no aparelho e' o diagnostico mais barato que existe.
+# O que atrapalha a UI (cursor piscando e printk pintando por cima) e'
+# resolvido em runtime por S20graphics (AGENTS.md §3.59).
 CONFIG_FB=n
 CONFIG_FB_EFI=n
 CONFIG_LOGO=n

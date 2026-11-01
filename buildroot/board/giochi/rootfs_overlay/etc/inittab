@@ -5,7 +5,14 @@
 ::sysinit:/bin/mount -t sysfs sysfs /sys
 ::sysinit:/bin/mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs /run
 ::sysinit:/bin/mount -t devtmpfs devtmpfs /dev
-::sysinit:/bin/mkdir -p /dev/pts /dev/shm /run/giochi /var/log
+# /var precisa ser GRAVAVEL: a raiz e' SquashFS somente leitura. Sem este
+# tmpfs, "mkdir -p /var/log" falhava calado (o diretorio nao existe na imagem)
+# e o seedrng registrava
+#   seedrng: can't create directory '/var/lib/seedrng': Read-only file system
+# — o pool de entropia nao era salvo entre boots e o "crng init done" so
+# aparecia aos 11 s de uptime (medido no serial da X55). AGENTS.md §3.60.
+::sysinit:/bin/mount -t tmpfs -o mode=0755,nosuid,nodev tmpfs /var
+::sysinit:/bin/mkdir -p /var/log /var/lib/seedrng /var/run /var/tmp /dev/pts /dev/shm /run/giochi
 ::sysinit:/bin/mount -t devpts devpts /dev/pts
 ::sysinit:/bin/mount -t tmpfs -o nosuid,nodev tmpfs /dev/shm
 ::sysinit:/bin/mount -a

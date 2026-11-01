@@ -23,12 +23,21 @@ GIOCHI_TOOLS_VERSION = 1.2
 GIOCHI_TOOLS_SITE = $(if $(GIOCHI_PKGSRC),$(GIOCHI_PKGSRC),$(BR2_EXTERNAL_GIOCHI_PATH)/..)
 GIOCHI_TOOLS_SITE_METHOD = local
 GIOCHI_TOOLS_LICENSE = Proprietary
-GIOCHI_TOOLS_DEPENDENCIES = openssl libarchive libpng host-pkgconf
+GIOCHI_TOOLS_DEPENDENCIES = openssl libarchive libpng host-pkgconf \
+	libdrm mesa3d
 
 GIOCHI_TOOLS_EXTRA_CFLAGS = $(TARGET_CFLAGS) \
 	-march=$(GIOCHI_ARCH) -D_GNU_SOURCE \
 	-DGIOCHI_HAVE_OPENSSL -DGIOCHI_HAVE_LIBARCHIVE -DGIOCHI_HAVE_LIBPNG
 GIOCHI_TOOLS_EXTRA_LDFLAGS = $(TARGET_LDFLAGS) -lpng -larchive -lcrypto
+
+# giochi-gpu-probe depende de libdrm/libgbm/EGL, que SO existem no sysroot do
+# Buildroot — por isso ele e' compilado aqui e nao no Makefile da raiz (que
+# roda no host, sem essas bibliotecas).
+GIOCHI_TOOLS_GPU_SRC = $(@D)/src/tools/gpu_probe.c
+GIOCHI_TOOLS_GPU_LIBS = -ldrm -lgbm -lEGL -lGLESv2
+GIOCHI_TOOLS_GPU_INCS = -I$(STAGING_DIR)/usr/include \
+	-I$(STAGING_DIR)/usr/include/libdrm
 
 define GIOCHI_TOOLS_BUILD_CMDS
 	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D) HOST_BUILD=0 \
@@ -41,6 +50,9 @@ define GIOCHI_TOOLS_BUILD_CMDS
 		EXTRA_LDFLAGS="$(GIOCHI_TOOLS_EXTRA_LDFLAGS)" \
 		build/target/bin/giochi-verify build/target/bin/giochi-extract \
 		build/target/bin/giochi-thumbgen
+	$(TARGET_CC) $(GIOCHI_TOOLS_EXTRA_CFLAGS) $(GIOCHI_TOOLS_GPU_INCS) \
+		-o $(@D)/build/target/bin/giochi-gpu-probe \
+		$(GIOCHI_TOOLS_GPU_SRC) $(TARGET_LDFLAGS) $(GIOCHI_TOOLS_GPU_LIBS)
 endef
 
 define GIOCHI_TOOLS_INSTALL_TARGET_CMDS
@@ -50,6 +62,8 @@ define GIOCHI_TOOLS_INSTALL_TARGET_CMDS
 		$(TARGET_DIR)/usr/bin/giochi-extract
 	$(INSTALL) -D -m 0755 $(@D)/build/target/bin/giochi-thumbgen \
 		$(TARGET_DIR)/usr/bin/giochi-thumbgen
+	$(INSTALL) -D -m 0755 $(@D)/build/target/bin/giochi-gpu-probe \
+		$(TARGET_DIR)/usr/bin/giochi-gpu-probe
 endef
 
 $(eval $(generic-package))
