@@ -1,0 +1,134 @@
+"""`tools/giochi-ctl.py` — o cliente que fala com o console por SSH.
+
+O que este teste prova, sem aparelho e sem servidor SSH:
+
+  * o cliente monta o comando remoto certo e **lê a resposta** do control.sock;
+  * `PONG` e `OK ...` viram sucesso (código 0), `ERR ...` vira falha (1);
+  * `preparar` não mente quando não há interface USB;
+  * `comandos` lista o mesmo conjunto que o teste de protocolo exercita.
+
+O truque: um `ssh` falso no PATH que só executa o último argumento com `sh -c`.
+O control.sock é o do **giochi-init real**, num `GIOCHI_ROOT` temporário. Ou
+seja, o caminho é o de produção — menos o SSH, que é substituído.
+"""
+
+from __future__ import annotations
+
+import os
+import socket
+import subprocess
+import tempfile
+import time
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+CTL = ROOT / "tools" / "giochi-ctl.py"
+INIT = ROOT / "build" / "host" / "bin" / "giochi-init"
+
+SSH_FALSO = """#!/bin/sh
+# Descarta as opcoes (-o k=v, usuario@host) e roda o comando remoto local.
+for ultimo; do :; done
+exec sh -c "$ultimo"
+"""
+
+
+class CtlTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        if not INIT.is_file():
+            raise unittest.SkipTest("giochi-init nao compilado (make all)")
+        if subprocess.run(["sh", "-c", "command -v nc"], capture_output=True
+                          ).returncode != 0:
+            raise unittest.SkipTest("nc ausente no host")
+
+        cls.tmp = tempfile.TemporaryDirectory()
+        base = Path(cls.tmp.name)
+        for sub in ("run/giochi", "user", "usr", "etc/giochi", "bin"):
+            (base / sub).mkdir(parents=True, exist_ok=True)
+
+        cls.ssh = base / "bin" / "ssh"
+        cls.ssh.write_text(SSH_FALSO)
+        cls.ssh.chmod(0o755)
+
+        profile = base / "profile.json"
+        profile.write_text(
+            '{"device":"host","soc":"host","os_version":"1.2",'
+            '"kernel_version":"0.0","ram_mb":1024,"vram_mb":64}')
+
+        env = dict(os.environ, GIOCHI_ROOT=str(base), GIOCHI_LOG_LEVEL="error",
+                   GIOCHI_DRY_RUN="1")
+        cls.proc = subprocess.Popen(
+            [str(INIT), "--profile", str(profile), "--no-spawn"],
+            env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        cls.sock = base / "run" / "giochi" / "control.sock"
+        limite = time.time() + 10.0
+        while time.time() < limite and not cls.sock.exists():
+            if cls.proc.poll() is not None:
+                raise unittest.SkipTest("giochi-init saiu antes do socket")
+            time.sleep(0.05)
+        cls.base = base
+
+    @classmethod
+    def tearDownClass(cls):
+        if getattr(cls, "proc", None) is not None and cls.proc.poll() is None:
+            cls.proc.terminate()
+            try:
+                cls.proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                cls.proc.kill()
+        if getattr(cls, "tmp", None) is not None:
+            cls.tmp.cleanup()
+
+    def rodar(self, *args: str) -> subprocess.CompletedProcess:
+        env = dict(os.environ,
+                   PATH=f"{self.base / 'bin'}:{os.environ['PATH']}",
+                   GIOCHI_SSH="ssh",
+                   GIOCHI_CTL_SOCK=str(self.sock),
+                   GIOCHI_HOST="127.0.0.1")
+        return subprocess.run(["python3", str(CTL), *args],
+                              capture_output=True, text=True, env=env,
+                              timeout=60)
+
+    # -- caminho feliz ---------------------------------------------------
+
+    def test_ping_por_ctl(self):
+        r = self.rodar("ctl", "PING")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("PONG", r.stdout)
+
+    def test_comando_com_argumento(self):
+        r = self.rodar("ctl", "USB_MODE", "MASS")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("OK usb_mode MASS", r.stdout)
+
+    def test_erro_do_console_vira_codigo_de_saida_1(self):
+        """`ERR` não pode sair com 0: num script, isso esconde a falha."""
+        r = self.rodar("ctl", "USB_MODE", "ZIP")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn("ERR invalid_mode", r.stdout)
+
+    def test_set_theme_reporta_nao_implementado(self):
+        r = self.rodar("ctl", "SET_THEME", "neon_rose")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("not_implemented", r.stdout)
+
+    # -- casos de borda --------------------------------------------------
+
+    def test_sem_interface_usb_preparar_falha_com_dica(self):
+        r = self.rodar("preparar", "--wait", "1")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("interface USB", r.stderr)
+
+    def test_comandos_lista_o_protocolo(self):
+        r = self.rodar("comandos")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        for verbo in ("PING", "USB_MODE", "DEV_MODE", "LAUNCH_APP"):
+            self.assertIn(verbo, r.stdout)
+        # A lista tem de ser honesta sobre o SET_THEME.
+        self.assertIn("NAO implementado", r.stdout)
+
+
+if __name__ == "__main__":
+    unittest.main()

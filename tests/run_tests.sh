@@ -300,6 +300,18 @@ if [ -x "$ROOT/build/host/bin/giochi-init" ] && command -v python3 >/dev/null 2>
     fi
 fi
 
+# Cliente do control.sock por SSH: o binario que a gente usa para falar com o
+# console. Roda contra o giochi-init real, com um `ssh` falso no PATH.
+if [ -x "$ROOT/tools/giochi-ctl.py" ] && command -v python3 >/dev/null 2>&1; then
+    total=$((total + 1))
+    if (cd "$ROOT" && python3 -m unittest tests.test_giochi_ctl) >/dev/null 2>&1; then
+        echo "OK     cliente-ssh (python)"
+    else
+        echo "FALHA  cliente-ssh (python)"
+        fail=$((fail + 1))
+    fi
+fi
+
 # Modo Desenvolvedor pelo lado do PC: o script que abre o SSH no cartao, e a
 # prova de que o S62sshd real sobe com o que ele escreveu.
 if [ -x "$ROOT/tools/giochi-dev-mode.sh" ] && command -v python3 >/dev/null 2>&1; then

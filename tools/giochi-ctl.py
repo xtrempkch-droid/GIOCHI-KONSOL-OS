@@ -17,10 +17,10 @@ Este script tem tres papeis:
   `echo`      roda um comando de shell no console (para ler logs, `dmesg`,
               conferir o tema ativo, ver se o dropbear subiu).
 
-O console nao tem `nc`? Tem BusyBox, e o BusyBox traz `nc -U` (UNIX socket) em
-`CONFIG_NC_EXTRA`+`CONFIG_NC_UNIX` — se o build nao tiver, o script cai para um
-cliente em `sh` com `exec 3<>/dev/unix`... que nao existe. Por isso a sonda:
-`preparar` testa as duas formas e diz qual vale, em vez de falhar no meio.
+O console nao tem Python. O cliente do protocolo e' o `nc -U` do BusyBox
+(`CONFIG_NC_UNIX`): `printf ... | nc -U /run/giochi/control.sock`. Se o build
+saiu sem essa opcao, o erro e' classificado e dito com essas palavras — em vez
+de um "falhou" generico.
 
 USO
     tools/giochi-ctl.py preparar                  # configura usb0 e testa SSH
@@ -51,6 +51,10 @@ import sys
 import time
 
 HOST = os.environ.get("GIOCHI_HOST", "10.55.0.2")
+# Caminho do socket DENTRO do console. Existe como variavel para o teste
+# automatizado poder apontar para um socket de verdade criado num diretorio
+# temporario — sem isso a unica forma de testar o cliente seria no aparelho.
+SOCK = os.environ.get("GIOCHI_CTL_SOCK", "/run/giochi/control.sock")
 USUARIO = os.environ.get("GIOCHI_USER", "root")
 PC_IP = "10.55.0.1"
 PORTA = 22
@@ -209,35 +213,40 @@ def ssh_exec(remoto: str, timeout: float = 30.0) -> subprocess.CompletedProcess:
         return subprocess.CompletedProcess(cmd, 124, "", "timeout")
 
 
-# Cliente do control.sock: `nc -U` do BusyBox quando existe; senao um
-# one-liner em Python — mas o console NAO tem Python. Se nao houver nc -U, a
-# unica saida e' o proprio giochi-init com --once? Nao: --once sobe um
-# servidor novo e falharia no bind. Entao a sonda e' honesta e diz o que falta.
-SONDA_NC = "command -v nc >/dev/null && nc --help 2>&1 | grep -q '\\-U'"
+# Cliente do control.sock: `nc -U` (UNIX socket) do BusyBox.
+#
+# NAO ha' sonda: `nc --help` nao serve para decidir. Medido — o OpenBSD
+# netcat suporta -U e imprime `[-46CDdFhklNnrStUuvZz]`, onde "-U" nao aparece
+# como substring; o probe reprovava um nc que funciona. Em vez de adivinhar,
+# o cliente roda o comando e classifica o ERRO: se a mensagem fala de opcao
+# invalida, o problema e' o nc; qualquer outra coisa e' o console.
+MARCAS_NC_SEM_U = ("invalid option", "unrecognized option", "unknown option",
+                   "illegal option", "not supported", "unsupported option")
 
 
 def ctl(comando: str, timeout: float = 20.0) -> subprocess.CompletedProcess:
     """Manda `comando` ao control.sock pelo SSH e devolve a resposta."""
-    remoto = (f'printf "%s\\n" "{comando}" | nc -U /run/giochi/control.sock')
+    remoto = f'printf "%s\\n" "{comando}" | nc -U {SOCK}'
     return ssh_exec(remoto, timeout=timeout)
 
 
 def cmd_ctl(args) -> int:
     comando = args.comando if isinstance(args.comando, str) else " ".join(args.comando)
 
-    probe = ssh_exec(SONDA_NC, timeout=15)
-    if probe.returncode != 0:
-        erro("o console nao tem `nc -U` (BusyBox sem CONFIG_NC_UNIX).")
-        erro("alternativa: tools/giochi-ctl.py echo para ler logs; o protocolo "
-             "so' pode ser exercitado de dentro do console sem nc -U.")
-        return 5
-
     r = ctl(comando)
-    if r.returncode != 0:
-        erro(f"falha ao falar com o control.sock: {r.stderr.strip()}")
-        return r.returncode
-
     resposta = r.stdout.strip()
+
+    if r.returncode != 0 and not resposta:
+        juntou = f"{r.stderr}".lower()
+        if any(marca in juntou for marca in MARCAS_NC_SEM_U):
+            erro("o `nc` do console nao aceita -U (BusyBox sem CONFIG_NC_UNIX).")
+            erro("o protocolo so' pode ser exercitado de dentro do console; "
+                 "use `echo` para ler o log.")
+            return 5
+        erro(f"falha ao falar com o control.sock: {r.stderr.strip()}")
+        return r.returncode if r.returncode else 1
+
+    # `nc` do BusyBox sai != 0 quando a conexao fecha; a resposta e' o que vale.
     log(f"{comando}  ->  {resposta or '(sem resposta)'}")
     return 0 if resposta.startswith(("OK", "PONG")) else 1
 

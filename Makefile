@@ -470,6 +470,8 @@ lint:
 	@python3 -m unittest tests.test_themes 2>&1 | tail -3
 	@echo "== protocolo do app (control.sock) =="
 	@python3 -m unittest tests.test_control_protocol 2>&1 | grep -E "Ran|OK|FAILED" | tail -2
+	@echo "== cliente do control.sock (por SSH) =="
+	@python3 -m unittest tests.test_giochi_ctl 2>&1 | grep -E "Ran|OK|FAILED" | tail -2
 	@echo "== modo desenvolvedor no cartao =="
 	@python3 -m unittest tests.test_dev_mode_card 2>&1 | grep -E "Ran|OK|FAILED" | tail -2
 	@echo "== app de loja do PC =="

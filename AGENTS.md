@@ -2037,6 +2037,21 @@ Encontrado ao escrever `tests/test_control_protocol.py`: o teste afirmava
   existe, a resposta certa é `ERR` — a mentira custa uma sessão de depuração no
   aparelho, e o log não tem nada para mostrar.
 
+### 3.80b Sonda de `nc -U` reprovava um `nc` que funciona
+
+O `giochi-ctl.py` perguntava `nc --help | grep -q '\-U'` para decidir se o
+console tinha socket UNIX. Medido no host: o OpenBSD netcat **suporta** `-U` e
+imprime `usage: nc [-46CDdFhklNnrStUuvZz]` — onde `-U` **não** aparece como
+substring. A sonda dizia "não tem" e o teste do cliente devolvia rc=5 em vez de
+falar com o socket.
+
+- Sonda por `--help` é frágil por natureza: cada implementação lista as opções
+  de um jeito. Quando a pergunta é "a operação funciona?", **faça a operação** e
+  classifique o erro.
+- Agora o cliente roda o comando e só conclui "sem `nc -U`" se a mensagem do
+  erro falar de opção inválida (`invalid option`, `unrecognized option`, …).
+  Qualquer outro erro é o console, e é reportado como tal.
+
 ### 3.81 `S62sshd` saía sem dizer por quê
 
 Com `developer.ssh_usb_enabled=false` (o padrão de fábrica), o script de init
