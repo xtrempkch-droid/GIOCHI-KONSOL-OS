@@ -1224,6 +1224,26 @@ mentia sobre o aparelho).
   device-tree é fallback, filtrando por `^rk[0-9]`.
 - Guarda: `test_s20graphics_le_soc_do_device_conf`.
 
+### 3.55 A API do itch.io devolve **HTTP 200** para erro de autenticação
+
+Ao avaliar o itch.io como catálogo da Loja ([docs/ITCHIO.md](docs/ITCHIO.md)),
+`GET https://itch.io/api/1/x/game/1` respondeu **200** e eu quase anotei "a API
+não exige chave". O corpo era:
+
+```json
+{"errors":["invalid key"]}
+```
+
+O itch.io não usa 401/403: erro de chave volta como **200 com `errors` no
+corpo**. Qualquer cliente que teste só o status (ou que desserialize ignorando
+`errors`) conclui que está autenticado e recebe `null` no lugar dos dados — e a
+Loja mostraria catálogo vazio "sem erro". É prima da §3.49 (a API que mente por
+omissão), com o sinal trocado.
+
+- **Regra**: ao integrar serviço de terceiro, valide o **corpo**, não o status.
+  `curl -o /dev/null -w '%{http_code}'` responde "tudo certo" para esta API.
+- Vale para o desenho do `giochi-store`: se ele reportar "0 jogos" sem erro, o
+  usuário não distingue catálogo vazio de chave inválida.
 
 ## 4. O que NÃO foi verificado
 
@@ -2389,3 +2409,63 @@ failed with error -22`).
 **Aberto:** o boot com o coldplug ainda não aconteceu. Se o DSI reclamar de novo,
 o `-517` deve desaparecer; se aparecer outro erro, agora ele é **de driver**, não
 de módulo faltando.
+
+### 2026-10-31 (22) — Copilot (itch.io como fonte da Loja: não serve, e a prova é um `enum`)
+
+O mantenedor quis usar o **itch.io** para adquirir jogos grátis e pôr no app da
+Loja. Análise em [docs/ITCHIO.md](docs/ITCHIO.md); **nada foi adotado**.
+
+**O dado que fecha a questão não é licença, é modelagem.** O modelo de dados
+oficial do itch.io (`go-itchio`, a lib do `butler` e do app oficial) define
+arquitetura como:
+
+```go
+type Architectures string
+const (
+    ArchitecturesAll   = "all"
+    Architectures386   = "386"
+    ArchitecturesAmd64 = "amd64"
+)
+```
+
+**Não existe `arm64`.** O itch.io é um mundo x86 por modelagem: quem compila
+para ARM só pode marcar "Linux", e a arquitetura é inexpressável. Logo a Loja
+**não consegue filtrar o que roda em aarch64 antes de baixar** — teria que
+baixar cada candidato e ler o cabeçalho ELF (`e_machine == 0xB7`).
+
+**Oferta medida:** busca no catálogo inteiro devolve **18 jogos** para `arm64`
+e **0** para `aarch64`, contra ≥54 (satura a página) para `linux` e `godot`, num
+catálogo de **1.718.158** títulos. Amostra de 36 jogos do "top free games":
+Linux 23 (64%), Windows 33 (92%), "Play in browser" 14 (39%), Android 13 (36%).
+Os 39% de HTML5 exigiriam motor de navegador com WebGL2 (maior que o orçamento
+inteiro da UI); os APKs arm64 exigiriam runtime Android (Waydroid) num aparelho
+de 1–2 GB — incompatível com a premissa. E rodar x86 por emulação é **proibido
+pela ADR-13** ("sem QEMU/Box86 na base", ver `docs/architecture-v1.1.md`).
+
+**Licença:** "grátis" no itch.io é custo zero, não licença livre. Os ToS dão ao
+usuário licença para usar/reproduzir/distribuir o conteúdo
+"**as permitted through the functionality of the Service**" — ou seja, pelo
+cliente, no próprio aparelho. Pré-instalar jogos na imagem é **fora** disso, e
+os "Publishers retain all ownership rights": autorizar redistribuição é caso a
+caso, com cada autor.
+
+**O que funciona:** `butler` (CLI oficial) é **MIT** e publica
+`butler-linux-arm64.zip` (9,3 MB); o login **não precisa de navegador**
+(`BUTLER_API_KEY`, `BUTLER_MANUAL_OAUTH=1`). Então um cliente de download é
+viável — só não resolve arquitetura, que é o problema real.
+
+**Recomendação registrada:** priorizar o **PortMaster** (`PortsMaster/PortMaster-New`,
+MIT, 384 estrelas) como fonte da aba Ports/Loja — é ARM por construção, e o
+repositório **já reservou a aba para ele** (`APP:portmaster` em `layout.json`).
+Segundo caminho: jogos do itch.io publicados como **projeto Godot** (re-exportar
+para aarch64, sem problema de arquitetura, dependendo do template musl do
+ADR-03 e de licença que permita recompilar).
+
+**Armadilha nova (§3.55):** a API do itch.io devolve **HTTP 200** com
+`{"errors":["invalid key"]}` para erro de autenticação. Quem testa só o status
+conclui que está autenticado.
+
+**Verificação:** tudo medido em 2026-10-31 — `go-itchio/types.go`,
+`butler` releases v15.32.0, ToS em `itch.io/docs/legal/terms`, busca e amostra
+do catálogo. **Não rodou:** nenhum build de loja, e o `giochi-store` continua
+não existindo (a aba Loja segue com `ERR launch_failed`).
