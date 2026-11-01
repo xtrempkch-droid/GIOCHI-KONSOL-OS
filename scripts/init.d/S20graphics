@@ -213,6 +213,28 @@ if [ -f "$PROBE_TXT" ] && [ -s "$PROBE_TXT" ]; then
     done < "$PROBE_TXT"
 fi
 
+# --- splash: instrumento de diagnostico, nao enfeite --------------------
+# O splash usa SO' SDL_CreateWindow + SDL_RenderCopy. Se ele aparece, o SDL
+# abriu o KMSDRM e sabe desenhar — ou seja, o problema (se houver) esta na UI,
+# nao no video. Se NAO aparece e o console volta com o log (render_open chama
+# devolver_console_de_video), o SDL nem abriu.
+#
+# 600 quadros ~= 10 s: tempo de olhar para a tela e ver. O padrao compilado
+# (180) e' curto demais para servir de teste num aparelho.
+# Desligar:   `touch nosplash` na particao 1 do cartao (mesmo padrao do
+#             `nolog` do bootlog) — nao exige recompilar.
+# Ajustar:    GIOCHI_SPLASH_FRAMES=N no ambiente do rcS.
+# Permanente: GIOCHI_SPLASH_ALWAYS=1 (fica na tela ate' um botao).
+if [ -f /boot/nosplash ] || [ -f /user/nosplash ]; then
+    export GIOCHI_SPLASH_FRAMES=0
+    log "splash: desligado pelo marcador nosplash"
+elif [ -n "${GIOCHI_SPLASH_FRAMES:-}" ]; then
+    log "splash: $GIOCHI_SPLASH_FRAMES quadros (do ambiente)"
+else
+    export GIOCHI_SPLASH_FRAMES=600
+    log "splash: 600 quadros (~10 s); use nosplash na particao 1 para desligar"
+fi
+
 if command -v gamescope >/dev/null 2>&1; then
     exec gamescope --backend drm --fullscreen --embedded \
          -W "${GIOCHI_WIDTH:-640}" -H "${GIOCHI_HEIGHT:-480}" \

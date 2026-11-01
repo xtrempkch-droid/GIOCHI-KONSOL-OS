@@ -3636,10 +3636,28 @@ hatch), `GALLIUM_DRIVER_SWRAST=y` nos dois templates, e o `S20graphics` agora
 **decide por medição**: tenta o barramento e, se a sonda falhar, usa
 `kms_swrast` logando `Mesa: AVISO sem aceleracao`.
 
-**Splash como instrumento:** default 45 → **180 quadros** (3 s), novo
-`GIOCHI_SPLASH_ALWAYS=1` que o mantém na tela, e três linhas de log que antes
-não existiam: `render: SDL2 driver=... renderizador=... saida=...`,
-`splash: exibindo N quadros` e `splash: fim; assumindo a UI`.
+**Splash como instrumento** (pedido do mantenedor: "teste ativar o splash"):
+
+- O `S20graphics` exporta `GIOCHI_SPLASH_FRAMES=600` (~10 s) — o padrão
+  compilado de 180 é curto demais para alguém olhar para a tela e concluir
+  algo. Ficou no *script*, não compilado, para poder ser ajustado sem
+  recompilar o Launcher.
+- `touch nosplash` na partição 1 desliga, mesmo padrão do `nolog` do bootlog.
+- `GIOCHI_SPLASH_ALWAYS=1` mantém o splash na tela (teste isolado do SDL).
+- Três linhas de log que antes não existiam: `render: SDL2 driver=...
+  renderizador=... saida=... layout=...`, `splash: exibindo N quadros` e
+  `splash: fim; assumindo a UI`.
+
+O raciocínio do mantenedor está certo e vale registrar: o splash usa **só**
+`SDL_CreateWindow` + `SDL_RenderCopy`. Então ele é o fio-de-barbante que separa
+"o SDL não abre" de "o SDL abre e a UI não desenha" — e com a devolução do
+console no caminho de falha, os três desfechos são distinguíveis a olho nu:
+
+| O que aparece na tela | Significado |
+|---|---|
+| logo do splash por ~10 s, depois a UI | SDL + KMSDRM OK; problema, se houver, é na UI |
+| texto do log (console devolvido) | SDL não abriu — o log diz em qual dos 5 passos |
+| nada | nem o console voltou: kernel/DRM, ver §3.42/§3.44 |
 
 **Dois defeitos do meu próprio código, encontrados no caminho:**
 

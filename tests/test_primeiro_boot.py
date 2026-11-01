@@ -142,6 +142,13 @@ class PrimeiroBootTest(unittest.TestCase):
         self.assertIn("devolver_console_de_video()", render)
         self.assertIn("/sys/class/vtconsole/vtcon%d/bind", render)
 
+        # O S20graphics liga o splash por 10 s (tempo de olhar e ver) e deixa
+        # desligar por marcador, sem recompilar — mesmo padrao do `nolog`.
+        script = sh_code(read(S20GRAPHICS))
+        self.assertIn("GIOCHI_SPLASH_FRAMES=600", script)
+        self.assertIn("nosplash", script)
+        self.assertIn("/boot/nosplash", script)
+
     def test_sonda_reporta_render_node_e_drivers_dri(self):
         """A sonda tem de dizer o que o Mesa PODE carregar.
 
