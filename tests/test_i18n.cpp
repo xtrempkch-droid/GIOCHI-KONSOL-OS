@@ -134,7 +134,7 @@ void test_paridade_de_chaves(void)
         "tab.music",      "tab.library",     "tab.home",
         "tab.store",      "tab.ports",       "library.empty",
         "library.count",  "home.continue",   "home.news",
-        "home.recent",    "music.now_playing", "store.missing",
+        "home.recent",    "music.no_decoder", "store.missing",
         "ports.missing",  "settings.title",  "settings.language",
         "settings.on",    "settings.off",    "settings.usb_mode",
         "settings.dev_mode", "hint.open",    "hint.back",

@@ -313,6 +313,18 @@ $(OBJ)/%.o: apps/%.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS_ALL) -MMD -MP -c $< -o $@
 
+# O launcher tem regra EXPLICITA, e isso nao e' redundancia: pattern rules sao
+# testadas em ORDEM, e para $(OBJ)/launcher/render.o o stem e' "launcher/render".
+# Se existir um src/launcher/render.cpp (sobra de um build ANTERIOR ao move
+# src/ -> apps/), a regra $(OBJ)/%.o: src/%.cpp casa PRIMEIRO e compila o fonte
+# velho. Regra explicita vence pattern rule sempre — e' o que tira a ambiguidade
+# da ordem. Medido: o build do pacote no Buildroot tem rsync SEM --delete, entao
+# src/launcher/ sobreviveu la e a imagem saiu com o render.o antigo (build
+# verde, binario velho, a aba Musica ausente).
+$(OBJ)/launcher/%.o: apps/launcher/%.cpp
+	@mkdir -p $(dir $@)
+	$(CXX) $(CXXFLAGS_ALL) -MMD -MP -c $< -o $@
+
 $(OBJ)/tools/%.o: tools/%.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS_ALL) -MMD -MP -c $< -o $@

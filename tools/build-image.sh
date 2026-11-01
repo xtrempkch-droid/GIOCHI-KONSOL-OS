@@ -398,9 +398,28 @@ build_device() {
     #
     # Apagar os stamps forca rsync + build + install do pacote. Sao ~4 MB de
     # codigo; o custo e' de segundos contra um rebuild de kernel.
-    for pkg in "$out"/build/build/giochi-*; do
-        [ -d "$pkg" ] || continue
-        rm -f "$pkg"/.stamp_*
+    #
+    # Mas apagar SO os stamps nao basta (§3.57): os `.o` ficam, e o rsync do
+    # Buildroot e' `rsync -au` SEM `--delete` — um fonte que saiu do repositorio
+    # (ex.: `git mv src/launcher apps/launcher`) SOBREVIVE no diretorio do
+    # pacote. Medido nesta sessao: `build/giochi-launcher-1.2/src/launcher/
+    # render.cpp` (do layout antigo) continuou la, o `.d` do objeto apontava
+    # para ele e o make compilou o FONTE VELHO — build verde, imagem com a aba
+    # Musica ausente. Recriar o diretorio do pacote (o `dirclean` do Buildroot)
+    # e' o unico jeito que nao depende de adivinhar o que sobrou.
+    #
+    # A lista vem dos PROPRIOS .mk, nao de um `giochi-*` glob: os pacotes que
+    # baixam fonte (ppsspp com 3,9 GB de submodulos, portmaster, umtprd) nao tem
+    # nada a ver com o repositorio e reextrai-los custa minutos. `GIOCHI_PKGSRC`
+    # no .mk e' exatamente o marcador de "compila codigo daqui".
+    for mk in "$ROOT"/buildroot/package/giochi-*/*.mk; do
+        [ -f "$mk" ] || continue
+        grep -q 'GIOCHI_PKGSRC' "$mk" || continue
+        nome=$(basename "$mk" .mk)
+        for pkg in "$out"/build/build/"$nome"-*; do
+            [ -d "$pkg" ] || continue
+            rm -rf "$pkg"
+        done
     done
 
     # Patch de kernel nao re-arma o pacote (AGENTS.md §3.53).
@@ -491,6 +510,20 @@ build_device() {
     # 'make' que falha (ex.: patch de kernel duplicado) nao interrompe nada, o
     # script segue, encontra o sdcard.img VELHO em images/ e imprime
     # "imagens geradas" com rc=0 (AGENTS.md §3.52).
+    #
+    # Os COMPRIMIDOS de images/ saem antes do make pelo mesmo motivo (§3.39):
+    # `images/` sobrevive ao build incremental e o post-image so' comprime se
+    # nao estiver com GIOCHI_NO_COMPRESS. Medido: com NO_COMPRESS=1 o script
+    # achava o `sdcard.img.xz` do build ANTERIOR em images/, copiava para
+    # dist/ e anunciava como artefato novo — 74 MB de arquivo velho ao lado de
+    # um .img de 20 minutos depois, com sha256 que nao conferia.
+    rm -f "$out/build/images/sdcard.img".xz \
+          "$out/build/images/sdcard.img".xz.sha256 \
+          "$out/build/images/sdcard.img".zst \
+          "$out/build/images/sdcard.img".zst.sha256 \
+          "$out/build/images/sdcard.img".gz \
+          "$out/build/images/sdcard.img".gz.sha256
+
     make -C "$buildroot" O="$out/build" BR2_EXTERNAL="$ROOT/buildroot" \
         -j"$JOBS" || {
         echo "ERRO $id: build falhou (veja o log acima)" >&2

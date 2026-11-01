@@ -4236,6 +4236,20 @@ progresso (`pos_s` já vem no `STATUS` e está no `MusicInfo`; falta só a UI).
 **Nada disto rodou no aparelho**: `giochi-musicd` e `giochi-launcher` moram no
 SquashFS, que é somente leitura — exige imagem nova.
 
+**Dívida encontrada de passagem, e NÃO paga:** o catálogo tem chaves sem
+consumidor. `music.now_playing` foi **removida** (só o `test_i18n.cpp` a citava,
+na lista que se apresenta como "chaves que a UI realmente usa" — o teste
+passava porque a chave existia, que é o §3.27 invertido). Mas medindo o sentido
+invertido (`catálogo − chaves citadas no código`) sobram **13** candidatas:
+`app.missing`, `error.reason`, `error.where`, `hint.adjust`, `hint.inert`,
+`home.continue_empty`, `home.nothing`, `home.tip.select`, `library.invalid`,
+`library.unknown_title`, `status.charging`, `status.net_off`, `status.net_on`.
+Nenhuma aparece em `apps/launcher/` nem em `tools/`. Não removi porque
+`chaves_do_codigo()` só varre `apps/launcher/` e o `dump-geometry` desenha a
+mesma UI — uma guarda de "chave morta" ingênua acusaria 22, das quais 9 são
+usadas por `tools/`. Fica registrado: **antes de remover, ampliar a varredura
+para `tools/` e só então cobrar o conjunto vazio.**
+
 ### 3.131 Binário de teste compilado e **nunca executado** é suíte que ninguém vê
 
 Esta é a quarta variação do mesmo furo neste repositório (§3.7 `make test` sem
@@ -4273,6 +4287,95 @@ protege.
 **Regra que fica**: `TEST_BINS` e a lista do runner são o **mesmo** dado em dois
 lugares. Se você precisa do mesmo número em dois arquivos, **gere o segundo** —
 e, enquanto não gerar, faça o runner provar que não sobrou ninguém de fora.
+
+### 3.132 Pattern rule casa o fonte APOSENTADO — e o build do pacote é outro mundo
+
+Esta é a §3.124 de novo, numa camada que eu não tinha coberto: **dentro do
+pacote do Buildroot**, não no `build/host`.
+
+O `Makefile` declara três regras de padrão, nesta ordem:
+
+```make
+$(OBJ)/%.o: src/%.c        # linha 302
+$(OBJ)/%.o: src/%.cpp      # linha 306
+$(OBJ)/%.o: apps/%.cpp     # linha 312
+```
+
+O GNU make testa pattern rules **em ordem**. Para `$(OBJ)/launcher/render.o` o
+stem é `launcher/render`. Se existir um `src/launcher/render.cpp`, a regra da
+**306** casa primeiro e compila o fonte velho — a de `apps/` nunca é tentada.
+
+E ele existia: depois do `git mv src/launcher apps/launcher`, o diretório do
+pacote (`build/giochi-launcher-1.2/`) manteve `src/launcher/` inteiro, porque o
+rsync de `SITE_METHOD = local` é **`rsync -au` sem `--delete`**. O `.d` do
+objeto confirmava o estrago:
+
+```
+build/target/obj/launcher/render.o: src/launcher/render.cpp \
+ src/launcher/render.hpp src/launcher/i18n.hpp ...
+```
+
+Resultado medido: build **verde**, `post-image` sem erro, imagem gerada — e o
+binário na imagem sem a aba Música (o `music.o` novo compilou, o `render.o` era
+do fonte antigo; +8 KB de tamanho, que é o que disfarça). O carimbo
+`.layout-launcher-apps` do §3.124 só limpa o `build/host`, nunca o do pacote.
+
+- **Correção de raiz**: regra **explícita** `$(OBJ)/launcher/%.o:
+  apps/launcher/%.cpp`. Regra explícita vence pattern rule sempre, então a
+  ambiguidade de ordem deixa de existir — independente de o diretório velho
+  estar lá ou não.
+- **Correção da sobra**: `build-image.sh` faz `rm -rf` do diretório do pacote
+  (o `dirclean` do Buildroot), em vez de apagar só os `.stamp_*`.
+- **A lista vem dos `.mk`, não de um glob `giochi-*`**: ppsspp (3,9 GB de
+  submódulos), portmaster e umtprd **baixam** fonte e reextraí-los custa
+  minutos por nada. O marcador é `GIOCHI_PKGSRC` no `.mk` de cada pacote local.
+- Guardas: `test_launcher_tem_regra_explicita_de_compilacao` (cobra a regra E
+  confere que `src/%.cpp` ainda vem antes — se a premissa mudar, o teste avisa)
+  e `test_build_ressincroniza_pacote_local` (proíbe voltar ao `rm -f .stamp_*`).
+  As duas testadas ao contrário.
+
+**Regra que fica**: `git mv` de diretório de fonte não termina no `git mv`. O
+build incremental do **host** e o do **pacote** têm árvores separadas, e a do
+pacote é sincronizada por rsync **sem `--delete`**. Se um dia dois diretórios
+puderem conter o mesmo nome de arquivo, torne a regra explícita em vez de
+confiar na ordem.
+
+### 3.133 O `.xz` de `images/` sobreviveu e o build o anunciou como novo
+
+Consequência direta de testar o build com `GIOCHI_NO_COMPRESS=1`: o
+`post-image.sh` não comprime, mas o `images/sdcard.img.xz` do build anterior
+continuava lá. O `build-image.sh` apagava o `.xz` de `dist/<id>/` e depois
+**copiava o de `images/`** — anunciando `-> giochi-x55-sdcard.img.xz (72M)`
+com 74 MB de arquivo velho ao lado de um `.img` de 20 minutos depois.
+
+Medido antes da correção:
+
+```
+sha256 .img  : 6550f24e...58a2
+sha256 .xz-> : 5efbf3e0...b286      <- não é a mesma imagem
+```
+
+Quem gravasse o `.xz` gravaria a imagem anterior — e o `.sha256` publicado
+descrevia o arquivo errado com toda a aparência de estar certo.
+
+- `build-image.sh` remove `images/sdcard.img.{xz,zst,gz}` (+ `.sha256`) **antes**
+  do `make` — é dentro do `make` que o post-image comprime, então o que estiver
+  ali depois é deste build, por construção.
+- Guarda: `test_comprimido_velho_nao_e_anunciado_como_novo`, com a ordem
+  verificada (`pos_rm < pos_make`). Testada ao contrário.
+- Confirmação que fecha: `sha256sum img` **é igual** a `xz -dc img.xz | sha256sum`
+  na imagem final.
+
+**Armadilha de método (a que quase me enganou aqui):** a primeira versão do
+teste usava `body.index(...)` e o **primeiro** `make -C "$buildroot"` do arquivo
+é o do `defconfig` — o teste comparava a posição com a chamada errada e passava
+sempre. É a §3.115 outra vez (`corpo.index()` casando com a chamada, não com a
+definição). E, ao provar ao contrário, eu escrevi a mutação com o mesmo `index`
+errado: ela **duplicou** um bloco em vez de remover, o arquivo continuou
+válido e o teste "passou" três vezes. **Só é prova ao contrário se a mutação
+deixar o artefato realmente alterado** — conferir `grep -c` do trecho depois de
+mutar, como fiz na quarta tentativa (`0` ocorrências), é o que separa
+"a guarda é fraca" de "a mutação não aplicou".
 
 ## 4. O que NÃO foi verificado
 

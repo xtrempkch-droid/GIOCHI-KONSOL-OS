@@ -23,6 +23,7 @@ S10STORAGE = os.path.join(ROOT, "scripts/init.d/S10storage")
 LAUNCHER_MAIN = os.path.join(ROOT, "apps/launcher/main.cpp")
 DEVICECONF_C = os.path.join(ROOT, "src/common/giochi_deviceconf.c")
 BUILD_IMAGE = os.path.join(ROOT, "tools/build-image.sh")
+MAKEFILE = os.path.join(ROOT, "Makefile")
 S05MODULES = os.path.join(ROOT, "scripts/init.d/S05modules")
 S50USB = os.path.join(ROOT, "scripts/init.d/S50usb")
 S55USBNET = os.path.join(ROOT, "scripts/init.d/S55usbnet")
@@ -328,14 +329,84 @@ class PrimeiroBootTest(unittest.TestCase):
         Buildroot só roda o rsync de `SITE_METHOD = local` quando reconstrói o
         pacote, e a versão (1.2) não muda.
 
-        Este teste falha se alguém remover o `rm` dos stamps.
+        Mas apagar SÓ os stamps não basta (§3.57), e isso foi medido de novo:
+        depois do `git mv src/launcher apps/launcher`, o diretório do pacote
+        manteve `src/launcher/render.cpp` (o rsync do Buildroot é `-au` **sem**
+        `--delete`), o `.d` do objeto continuou apontando para lá e o make
+        compilou o fonte VELHO. Build verde, imagem com a aba Música ausente.
+
+        Este teste falha se alguém voltar a apagar só os stamps.
         """
         body = read(BUILD_IMAGE)
 
-        self.assertIn("build/build/giochi-*", body,
+        self.assertIn("build/build/", body,
                       "build-image.sh não limpa os pacotes locais")
-        self.assertRegex(body, r'rm -f "\$pkg"/\.stamp_\*',
-                         "build-image.sh não apaga os stamps do pacote local")
+        # A lista dos pacotes a recriar vem dos .mk, não de um `giochi-*` glob:
+        # ppsspp (3,9 GB de submódulos), portmaster e umtprd baixam fonte e
+        # reextraí-los custa minutos por nada.
+        self.assertIn('grep -q \'GIOCHI_PKGSRC\' "$mk"', body,
+                      "a limpeza tem de distinguir pacote local de pacote que "
+                      "baixa fonte; um glob giochi-* reextrai o ppsspp inteiro")
+        # rm -rf do diretório do pacote = o `dirclean` do Buildroot.
+        self.assertRegex(body, r'rm -rf "\$pkg"',
+                         "build-image.sh não recria o diretório do pacote; "
+                         "apagar só os stamps mantém os .o e os fontes que "
+                         "saíram do repositório")
+        # O defeito original, proibido explicitamente.
+        self.assertNotRegex(body, r'rm -f "\$pkg"/\.stamp_\*',
+                            "apagar só os .stamp_* deixa os .o e os fontes "
+                            "aposentados no diretório do pacote")
+
+    def test_comprimido_velho_nao_e_anunciado_como_novo(self):
+        """`images/` sobrevive ao build; o .xz antigo era recopiado como novo.
+
+        Medido: com `GIOCHI_NO_COMPRESS=1` o post-image não comprime, mas o
+        `images/sdcard.img.xz` do build anterior continuava lá. O build-image
+        copiava para `dist/<id>/` e anunciava `-> .img.xz (72M)` — 74 MB de
+        arquivo velho ao lado de um `.img` novo, com sha256 que não conferia
+        com o descomprimido. Quem gravasse o `.xz` gravava a imagem anterior.
+
+        A classe é a do §3.39: artefato derivado em diretório que sobrevive ao
+        build incremental tem de ser **regerado**, nunca reaproveitado.
+        """
+        body = read(BUILD_IMAGE)
+
+        # Os comprimidos de images/ são removidos ANTES do make (é dentro do
+        # make que o post-image comprime).
+        self.assertIn('"$out/build/images/sdcard.img"', body,
+                      "build-image.sh não limpa os comprimidos de images/")
+        pos_rm = body.index('"$out/build/images/sdcard.img"')
+        # A chamada de BUILD, não a de defconfig: o build-image roda `make`
+        # duas vezes na mesma árvore, e a primeira é a de configuração.
+        pos_make = body.index('-j"$JOBS" || {')
+        self.assertLess(pos_rm, pos_make,
+                        "a limpeza dos comprimidos tem de vir antes do make: "
+                        "depois dele o post-image já rodou e não há o que limpar")
+
+    def test_launcher_tem_regra_explicita_de_compilacao(self):
+        """`src/launcher/` sobrevivente fazia o make compilar o fonte velho.
+
+        As pattern rules são testadas em ORDEM. Para `$(OBJ)/launcher/render.o`
+        o stem é `launcher/render`, então `$(OBJ)/%.o: src/%.cpp` casa antes de
+        `$(OBJ)/%.o: apps/%.cpp` — e compila `src/launcher/render.cpp` se ele
+        existir. No build do pacote ele existia (rsync sem `--delete`).
+
+        Regra explícita vence pattern rule sempre: é o que tira a ambiguidade
+        da ordem, em vez de depender de o diretório antigo não existir.
+        """
+        body = read(MAKEFILE)
+
+        self.assertIn("$(OBJ)/launcher/%.o: apps/launcher/%.cpp", body,
+                      "o launcher precisa de regra explícita; sem ela, um "
+                      "src/launcher/ sobrevivente no build do pacote faz o make "
+                      "compilar o fonte antigo")
+        # A ordem que produz o defeito tem de continuar documentada, para o
+        # próximo leitor entender por que a regra existe.
+        src_cpp = body.index("$(OBJ)/%.o: src/%.cpp")
+        apps_cpp = body.index("$(OBJ)/%.o: apps/%.cpp")
+        self.assertLess(src_cpp, apps_cpp,
+                        "a premissa mudou: se src/%.cpp viesse depois, a regra "
+                        "explícita seria desnecessária — revise este teste")
 
     def test_coldplug_de_modulos_no_boot(self):
         """Sem coldplug no espaço de usuário, nenhum .ko é carregado.
