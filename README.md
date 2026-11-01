@@ -51,6 +51,27 @@ E o splash de boot — este é **real**: o arquivo em
 
 Regenerar: `make screenshots` (precisa de `pillow`).
 
+### Seis temas prontos
+
+O tema não muda só a cor: muda raio de canto, borda, densidade da grade, escala
+da capa do álbum e o que a barra de dicas anuncia. Troca a quente em
+**Select → Sistema → Tema**.
+
+![Comparação dos seis temas](docs/temas/contato-1280x720.png)
+
+| Tema | Grade em 1280×720 | Para quem |
+|---|---|---|
+| `dark_default` — Netflix Dark | 5×3 | referência do projeto |
+| `neon_rose` — Neon Rosé | 5×3 | padrão de fábrica da X55 |
+| `ember_dark` — Ember Dark | 4×3 | menos coisa na tela |
+| `mono_minimal` — Mono Minimal | 6×4 | máximo de conteúdo, sem cor |
+| `mono_gamepad` — Mono Gamepad | 4×3 | só controle, sem dica de teclado |
+| `ios_glass` — Glass (iOS) | 5×3 | cards cinza, canto grande |
+
+Um tema é um JSON em [`assets/themes/`](assets/themes) — crie o seu e rode
+`make tema-galeria`. Detalhes e custo medido em
+[docs/TEMAS.md](docs/TEMAS.md).
+
 ---
 
 ## Estado da implementação

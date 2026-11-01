@@ -144,8 +144,12 @@ texturas = 2,80 MB de VRAM contra o teto de 4 MB), renders nativos das 5 abas em
 quinta coluna foram aprovadas** e aplicadas em `device/x55/layout/*.json`
 (antes: 7 fatores implícitos, 1,28 a 2,00, e 4,48 MB de thumbnail);
 `tests/test_device_scale.py` (suíte `escala-x55`) falha se a divergência voltar.
-Falta a implementação em `render.cpp`, que depende da decisão D5 (pipeline de
-texto — hoje não há fonte nem `SDL2_ttf` no rootfs).
+
+**Feito depois disso (2026-11-01):** o desenho em `render.cpp` saiu (geometria
+pura + atlas gerado, D5 resolvida sem `SDL2_ttf` — o atlas é gerado no build) e
+os **seis temas** entraram em `assets/themes/`, com densidade que muda a grade
+de verdade. Ver [TEMAS.md](./TEMAS.md) e AGENTS.md entrada 34. Falta ver na
+tela do aparelho.
 
 **Aceite:** na X55 a UI ocupa a tela sem distorção e com texto legível; nos
 aparelhos 640×480 nada muda. Regravar `docs/screenshots/x55-home.png` com o
