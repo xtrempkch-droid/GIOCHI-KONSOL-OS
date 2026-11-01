@@ -134,6 +134,37 @@ int giochi_ctl(const char *cmd, char *out, size_t outsz)
 
 Do PC, sem SDK nenhum: `tools/giochi-ctl.py ctl PING` (por SSH, ver §5).
 
+### O cliente que já existe **dentro** do console
+
+O aparelho traz `/usr/bin/giochi-ctl` (pacote `giochi-tools`), que usa o mesmo
+`giochi_sock_*` do supervisor — não há dependência nova nem `nc`:
+
+```sh
+giochi-ctl PING                      # -> PONG
+giochi-ctl USB_MODE MASS             # -> OK usb_mode MASS
+giochi-ctl SET_DATE 1793571600       # -> OK date 1793571600
+giochi-ctl --comandos                # o que ESTE aparelho aceita
+```
+
+**Códigos de saída** (é o que um script lê):
+
+| saída | significa |
+|---|---|
+| `0` | respondeu `PONG` ou `OK ...` |
+| `1` | respondeu `ERR ...` — ou uma linha que não é `OK`/`PONG`/`ERR` (protocolo tem só esses três) |
+| `2` | não deu para falar com o soquete: não existe, recusou, **ou não respondeu nada** |
+
+> Resposta vazia é **falha**, não sucesso (corrigido em 2026-11-02). Antes,
+> um console travado fazia `giochi-ctl PING` sair com `0` e stdout vazio — num
+> script, indistinguível de um `PING` respondido. O cliente em Python já
+> tratava assim; os dois discordavam no veredito sobre o mesmo protocolo. A
+> mensagem distingue **travado** ("não respondeu nada") de **morto** ("fechou
+> a conexão sem responder"), porque a ação é diferente.
+
+A lista de `--comandos` é comparada com o que o `src/init/main.c` aceita e com
+o cliente do PC e com esta página: um comando novo no supervisor que não
+apareça nos três reprova a suíte `cliente-do-console`.
+
 ---
 
 ## 3. `transition` — o canal do Launcher para o init

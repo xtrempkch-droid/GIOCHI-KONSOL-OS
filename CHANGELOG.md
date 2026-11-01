@@ -48,6 +48,27 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 - `tools/make-theme-gallery.py` e o alvo `make tema-galeria`.
 
 ### Corrigido
+- **`giochi-ctl` (o cliente do `control.sock` no console) dizia "sucesso" com
+  o console travado** (AGENTS.md §3.125). O `giochi_sock_read_line` devolve `0`
+  tanto no timeout do `poll` quanto no fim de conexão, e o cliente só tratava
+  `n < 0`: `giochi-ctl PING` contra um console que não responde saía com `0` e
+  stdout vazio — num script, indistinguível de um `PONG`. Agora resposta vazia
+  é saída **2**, e a mensagem distingue **travado** ("não respondeu nada") de
+  **morto** ("fechou a conexão sem responder"), porque a ação é diferente. O
+  cliente em Python já recusava resposta vazia; os dois discordavam.
+  - `--comandos` não listava `BT_UP`/`BT_DOWN` havia semanas, embora o
+    supervisor os implemente e o Python e o `docs/APP-SDK.md` os listem.
+  - `--socket`/`--timeout` sem valor diziam "opção desconhecida" (motivo
+    errado); agora dizem qual valor falta. `--timeout` usa `strtol` com faixa
+    em vez de `atoi` (que estourava com número grande).
+  - Resposta que não é `OK`/`PONG`/`ERR` passou a sair com 1, como no cliente
+    do PC — o protocolo só tem esses três formatos.
+  - O binário entrou em `TARGETS` (logo, em `make install`): o `make` não o
+    compilava, e era por isso que nada o testava.
+  - Guarda: suíte `cliente-do-console` (`tests/test_giochi_ctl_cliente_c.py`,
+    18 testes) — roda o binário real contra soquete real e compara os verbos
+    das quatro fontes com o que o `src/init/main.c` aceita. Testada ao
+    contrário nos seis defeitos.
 - **A fonte da UI perdia a METADE DE BAIXO de cada letra** (AGENTS.md §3.72).
   `tools/make-font.py` trocava `w` e `line_height` ao desempacotar uma lista de
   tuplas, e o recorte saía 22x11 em vez de 13x22: só a metade de cima do glifo

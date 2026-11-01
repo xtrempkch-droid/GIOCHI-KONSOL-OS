@@ -204,13 +204,23 @@ THUMBGEN_OBJ := $(patsubst src/%.c,$(OBJ)/%.o,$(THUMBGEN_SRC))
 TOOLS_SRC := tools/giochi-verify.c tools/giochi-extract.c
 TOOLS_OBJ := $(patsubst tools/%.c,$(OBJ)/tools/%.o,$(TOOLS_SRC))
 
+# Cliente do control.sock que roda NO CONSOLE. Fica em src/tools/ (junto do
+# gpu_probe) e nao em tools/ como o verify/extract: o pacote giochi-tools ja'
+# o compila daquele caminho, e o build da imagem e' a fonte da verdade.
+# Regra explicita porque $(OBJ)/tools/%.o: tools/%.c nao casa src/tools/, e
+# deixar cair no padrao generico $(OBJ)/%.o: src/%.c funcionaria por
+# coincidencia — o make so' usaria esse ramo depois de falhar no outro.
+CTL_SRC := src/tools/giochi-ctl.c
+CTL_OBJ := $(OBJ)/tools/giochi-ctl.o
+
 TARGETS := \
 	$(BIN)/giochi-init \
 	$(BIN)/giochi-musicd \
 	$(BIN)/giochi-launcher \
 	$(BIN)/giochi-thumbgen \
 	$(BIN)/giochi-verify \
-	$(BIN)/giochi-extract
+	$(BIN)/giochi-extract \
+	$(BIN)/giochi-ctl
 
 TESTS_C := \
 	tests/test_json.c \
@@ -302,6 +312,14 @@ $(BIN)/giochi-verify: $(OBJ)/tools/giochi-verify.o $(COMMON_OBJ)
 $(BIN)/giochi-extract: $(OBJ)/tools/giochi-extract.o $(COMMON_OBJ)
 	@mkdir -p $(BIN)
 	$(CC) $^ -o $@ $(LDFLAGS) $(EXTRA_LDFLAGS) $(CRYPTO_LIBS) $(ARCHIVE_LIBS)
+
+$(OBJ)/tools/giochi-ctl.o: $(CTL_SRC)
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS_ALL) -MMD -MP -c $< -o $@
+
+$(BIN)/giochi-ctl: $(CTL_OBJ) $(COMMON_OBJ)
+	@mkdir -p $(BIN)
+	$(CC) $^ -o $@ $(LDFLAGS) $(EXTRA_LDFLAGS) $(CRYPTO_LIBS)
 
 $(BIN)/test_json: $(OBJ)/tests/test_json.o $(COMMON_OBJ)
 	@mkdir -p $(BIN)
@@ -527,6 +545,13 @@ lint:
 	    -Isrc/common -o /tmp/giochi-ctl-lint \
 	    src/tools/giochi-ctl.c src/common/giochi_sock.c src/common/giochi_util.c \
 	    && rm -f /tmp/giochi-ctl-lint && echo "ok"
+	@echo "== cliente do control.sock: comportamento e protocolo =="
+	@$(MAKE) --no-print-directory $(BIN)/giochi-ctl >/dev/null 2>&1 || true; \
+	if [ -x "$(BIN)/giochi-ctl" ]; then \
+	    python3 -m unittest tests.test_giochi_ctl_cliente_c 2>&1 | grep -E "Ran|OK|FAILED" | tail -2; \
+	else \
+	    echo "  PULADA: $(BIN)/giochi-ctl ausente (sem compilador no host?)"; \
+	fi
 	@echo "== ferramentas python =="
 	@python3 -m py_compile tools/make-screenshots.py \
 	           tools/make-layout-proposal.py \

@@ -396,6 +396,22 @@ if [ -x "$ROOT/tools/giochi-ctl.py" ] && command -v python3 >/dev/null 2>&1; the
     fi
 fi
 
+# Cliente do control.sock que roda NO CONSOLE (src/tools/giochi-ctl.c). Executa
+# o binario de verdade contra um soquete Unix de verdade: PONG/OK -> 0, ERR ->
+# 1, NADA recebido -> 2 (ja' saiu com 0, escondendo console travado), e compara
+# os verbos das quatro fontes (supervisor, este cliente, o do PC, a doc).
+if [ -x "$BIN/giochi-ctl" ] && command -v python3 >/dev/null 2>&1; then
+    total=$((total + 1))
+    if (cd "$ROOT" && python3 -m unittest tests.test_giochi_ctl_cliente_c) >/dev/null 2>&1; then
+        echo "OK     cliente-do-console (python)"
+    else
+        echo "FALHA  cliente-do-console (python)"
+        fail=$((fail + 1))
+    fi
+else
+    echo "PULADA cliente-do-console: build/host/bin/giochi-ctl nao compilado"
+fi
+
 # Modo Desenvolvedor pelo lado do PC: o script que abre o SSH no cartao, e a
 # prova de que o S62sshd real sobe com o que ele escreveu.
 if [ -x "$ROOT/tools/giochi-dev-mode.sh" ] && command -v python3 >/dev/null 2>&1; then

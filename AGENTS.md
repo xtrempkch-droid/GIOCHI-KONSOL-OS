@@ -3401,6 +3401,70 @@ arquivo que não existe mais — e o make não tem como saber que é lixo.
   incremental é parte do que precisa migrar. O sintoma é um alvo inexistente
   citado pelo make antes de qualquer erro de compilação.
 
+### 3.125 `giochi_sock_read_line` devolve 0 no timeout — e o cliente chamou isso de sucesso
+
+`src/tools/giochi-ctl.c` (o cliente do `control.sock` que roda **no console**)
+tratava só `n < 0` como falha:
+
+```c
+n = giochi_sock_read_line(fd, linha, sizeof(linha), timeout_ms);
+close(fd);
+if (n < 0) { /* erro */ }        /* <-- o timeout NAO cai aqui */
+puts(linha);
+...
+return 0;
+```
+
+E `giochi_sock_read_line` (`src/common/giochi_sock.c`) devolve `0` para **dois**
+casos distintos: o `poll` estourou o tempo (`rc == 0` → `break`) e a conexão
+fechou sem dados (`read == 0` → `break`). Nenhum dos dois é `-1`. Resultado
+medido com um soquete Unix que aceita e não responde:
+
+```
+[sem resposta] rc=0 stdout='\n' stderr=''
+```
+
+Ou seja: **console travado (ou morto) saía com sucesso**, stdout vazio, stderr
+vazio. Num script isso é indistinguível de um `PING` respondido — a mesma
+classe do §3.78 (promessa sem entrega). O cliente em Python
+(`tools/giochi-ctl.py`) já recusava resposta vazia (`startswith(("OK","PONG"))`),
+então os dois clientes do **mesmo** protocolo discordavam no veredito.
+
+- Correção no cliente (não na biblioteca): `n <= 0` é falha, saída 2. A
+  biblioteca ficou como está porque os outros consumidores são servidores —
+  para eles "nada chegou" é normal, e mudar o retorno quebraria o laço deles.
+- **Travado × morto**: como o `read_line` não diz qual foi, o cliente faz um
+  `poll` de 0 ms depois: com o par já fechado o descritor fica legível com
+  `POLLHUP`. As duas mensagens são diferentes porque a ação é diferente
+  ("não respondeu nada" = processo travado; "fechou a conexão sem responder" =
+  processo morreu — ver `/boot/giochi-boot.log`).
+- Resposta que não é `OK`/`PONG`/`ERR` também passou a sair com 1: o protocolo
+  só tem esses três formatos, então linha estranha é defeito de um dos lados.
+  Antes saía com 0.
+- **Descoberto no mesmo arquivo**: `--comandos` não listava `BT_UP`/`BT_DOWN`
+  havia semanas (o supervisor implementa, o Python e a doc listam) — quem
+  consultasse o **aparelho** concluiria que Bluetooth não existe no protocolo.
+  Passou porque **nada executava este binário**: o `make` não o compilava (só
+  o `make lint` o compilava para `/tmp`, para checar sintaxe). Ele entrou em
+  `TARGETS` (e portanto em `make install`), com regra explícita
+  `$(OBJ)/tools/giochi-ctl.o: src/tools/giochi-ctl.c` — o padrão
+  `$(OBJ)/tools/%.o: tools/%.c` não casa `src/tools/`, e cair no genérico
+  `$(OBJ)/%.o: src/%.c` funcionaria só por coincidência.
+- **Armadilha que o próprio teste novo caiu** (segunda vez na sessão, ver
+  §3.118): o primeiro `test_cliente_do_console_lista_todos_os_verbos` lia o
+  arquivo inteiro procurando o verbo — e o **comentário** de `lista_comandos`
+  cita "BT_UP e BT_DOWN" explicando por que ficaram de fora uma vez. Removi o
+  `puts` e o teste continuou verde. Corrigido: o teste extrai só os literais de
+  `puts("...")` do corpo da função; a doc só as linhas de tabela (`| \``); e a
+  comparação é por palavra inteira (`SET_DATE` não vale por `SET_DATEX`).
+- Guarda: `tests/test_giochi_ctl_cliente_c.py` (18 testes, suíte
+  `cliente-do-console` em `make test` e no `make lint`). Roda o binário real
+  contra soquete real (PONG/OK → 0, ERR → 1, resposta estranha → 1, nada
+  recebido → 2, fechou sem responder → 2, soquete inexistente → 2, opção sem
+  valor e timeout inválido → 2 com o motivo) e compara os verbos das **quatro**
+  fontes com o que o `src/init/main.c` aceita (extraído por regex do próprio
+  fonte, não copiado). Testada ao contrário nos seis defeitos: todos reprovam.
+
 ### 3.104 NetworkManager desfaz o IP manual da interface USB
 
 `tools/giochi-ctl.py preparar` atribuía `10.55.0.1/24` com `ip addr add` e
@@ -3728,6 +3792,58 @@ supervisor continua preferindo `/apps/giochi-launcher` (documentado em
 [LAUNCHER-APP.md](docs/LAUNCHER-APP.md)) — o move é de **organização do
 repositório**, não de comportamento no aparelho. Nada foi testado em hardware
 nesta entrada.
+
+### 2026-11-02 (31) — Copilot (console travado saía com sucesso; BT fora da lista)
+
+Pedido: "resolva os issues", com `src/tools/giochi-ctl.c` marcado. O arquivo é
+o cliente do `control.sock` que roda **no aparelho**. Quatro defeitos, todos
+reproduzidos com soquete Unix de verdade antes de mexer no código:
+
+1. **Console que não responde = sucesso.** `giochi-ctl PING` contra um
+   soquete que aceita e não responde saía com **`rc=0`** e stdout vazio: o
+   `giochi_sock_read_line` devolve 0 no timeout do `poll` **e** no fim de
+   conexão, e o cliente só tratava `n < 0`. Num script, "travado" era
+   indistinguível de "PONG". O cliente em Python já recusava resposta vazia —
+   os dois discordavam sobre o mesmo protocolo. Armadilha §3.125.
+2. **`--comandos` sem `BT_UP`/`BT_DOWN`.** O supervisor implementa os dois
+   (`src/init/main.c`), o Python e o `docs/APP-SDK.md` os listam. Quem
+   consultasse o aparelho concluiria que Bluetooth não existe no protocolo.
+3. **Opção sem valor dizia "opção desconhecida"** — mandando procurar uma
+   opção que existe e está escrita certo. Agora `--socket exige um caminho` /
+   `--timeout exige milissegundos`, e `--timeout` usa `strtol` com faixa
+   (`atoi("999999999999")` estourava um int).
+4. **Nada executava este binário.** O `make` não o compilava: só o `make lint`
+   o compilava para `/tmp` a fim de checar sintaxe. Foi por isso que (2)
+   passou por semanas. Ele entrou em `TARGETS` (logo, em `make install`) com
+   regra explícita de compilação.
+
+**Também corrigido por simetria:** resposta que não é `OK`/`PONG`/`ERR` agora
+sai com 1 (antes 0) — o protocolo só tem esses três formatos, e o cliente em
+Python já tratava assim.
+
+**O erro do meu próprio teste, de novo:** a primeira versão de
+`test_cliente_do_console_lista_todos_os_verbos` procurava o verbo no texto do
+arquivo — e o **comentário** de `lista_comandos` cita `BT_UP`/`BT_DOWN` ao
+explicar por que ficaram de fora uma vez. Removi a linha do `puts` e o teste
+**continuou verde**. É a terceira vez nesta série de sessões que um teste casa
+com comentário em vez de código (§3.36, §3.118). Correção: extrair só os
+literais de `puts("...")` do corpo da função; na doc, só as linhas de tabela;
+e comparar por palavra inteira.
+
+**Verificação (tudo rodado):** as quatro reproduções antes da correção (com
+`rc`/stdout/stderr medidos); `make test` **41/41** (suíte nova
+`cliente-do-console`, 18 testes); `make lint` rc=0 (a seção nova compila o
+binário e roda a suíte); cross-compilação limpa para
+`aarch64-buildroot-linux-musl` com `-Werror` (22 KB). As seis guardas
+testadas ao contrário: BT fora do `puts` → reprova; BT fora da tabela da doc →
+reprova; `n < 0` de volta → reprova; mensagem "opção desconhecida" de volta →
+reprova; aceitar resposta estranha → reprova; `giochi-ctl` fora de `TARGETS` →
+reprova.
+
+**Aberto:** nada disto rodou no aparelho — o binário da imagem só sai no
+próximo build (`giochi-tools`). O `gpu_probe.c`, vizinho de diretório, também
+só é compilado pela receita do pacote (sem teste de comportamento); é o
+próximo candidato ao mesmo tratamento.
 
 ## 4. O que NÃO foi verificado
 
