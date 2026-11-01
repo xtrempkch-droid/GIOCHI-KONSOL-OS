@@ -988,8 +988,11 @@ class ArmazenamentoDoUsuario(unittest.TestCase):
         self.assertNotIn("sfdisk --delete", corpo)
         # O "+" e' "mesmo inicio, tamanho maximo"; sem ele o sfdisk poderia
         # mover a particao.
-        self.assertIn("printf ',+\\n'", corpo,
-                      "o sfdisk tem de receber ',+' (mesmo inicio, cresce)")
+        # O START vai explicito: se alguem remover o `-N` da chamada, `,`
+        # passa a significar "primeiro setor livre" e a p4 encostaria na p3.
+        self.assertIn('printf \'%s,+\\n\' "$p4_inicio"', corpo,
+                      "o sfdisk tem de receber '<inicio>,+' (mesmo inicio, "
+                      "cresce o fim)")
 
     def test_grow_confere_que_a_p4_e_a_ultima(self):
         """Estender uma particao do meio sobrescreveria a seguinte."""

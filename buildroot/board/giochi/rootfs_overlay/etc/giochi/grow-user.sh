@@ -51,7 +51,16 @@ fi
 # --- 2. qual disco tem a raiz -------------------------------------------
 # root=PARTUUID=<uuid> no /proc/cmdline; o blkid resolve (o kernel nao expoe
 # PARTUUID em /sys/class/block/*/uevent nesta configuracao — medido na X55).
-raiz_part=$(sed -n 's/.*[ ]root=\([^ ]*\).*/\1/p' /proc/cmdline 2>/dev/null | head -n1)
+# GIOCHI_ROOT_DEV aponta o DISCO a mao (imagem de teste, segundo cartao,
+# crescer um .img antes de gravar). Vazio = descobre pelo cmdline, que e' o
+# caminho normal no boot. Quando definido, a resolucao do cmdline e' pulada.
+disco=
+if [ -n "${GIOCHI_ROOT_DEV:-}" ]; then
+    disco=$GIOCHI_ROOT_DEV
+    raiz_part=$disco
+else
+    raiz_part=$(sed -n 's/.*[ ]root=\([^ ]*\).*/\1/p' /proc/cmdline 2>/dev/null | head -n1)
+fi
 case "${raiz_part:-}" in
     /dev/*)   raiz_dev=$raiz_part ;;
     PARTUUID=*|UUID=*|LABEL=*)
@@ -61,44 +70,70 @@ case "${raiz_part:-}" in
             raiz_dev=
         fi
         ;;
+    # Caminho absoluto fora de /dev (arquivo de imagem, com GIOCHI_ROOT_DEV).
+    # Os testes abaixo (`-b` / `-f`) e' que decidem se da' para usar.
+    /*)       raiz_dev=$raiz_part ;;
     *)        raiz_dev= ;;
 esac
-if [ -z "${raiz_dev:-}" ] || [ ! -b "$raiz_dev" ]; then
-    log "nao consegui resolver root=${raiz_part:-?} para um no' de bloco; nada a fazer"
-    exit 0
+eh_arquivo=0
+if [ -z "${disco:-}" ]; then
+    if [ -z "${raiz_dev:-}" ] || [ ! -b "$raiz_dev" ]; then
+        log "nao consegui resolver root=${raiz_part:-?} para um no' de bloco; nada a fazer"
+        exit 0
+    fi
+    # /dev/mmcblk1p2 -> /dev/mmcblk1 ; /dev/sda2 -> /dev/sda
+    # Mesma ordem do giochi_disk_of: DOIS digitos antes de um, senao
+    # /dev/sda10 vira /dev/sda1 e o script mexe no disco errado.
+    case "$raiz_dev" in
+        *p[0-9][0-9]) disco=${raiz_dev%p??} ;;
+        *p[0-9])      disco=${raiz_dev%p?} ;;
+        *[0-9][0-9])  disco=${raiz_dev%??} ;;
+        *[0-9])       disco=${raiz_dev%?} ;;
+        *)            log "raiz em '$raiz_dev' sem numero de particao; nada a fazer"; exit 0 ;;
+    esac
+elif [ -f "$disco" ]; then
+    # Arquivo de imagem: da' para crescer um .img antes de gravar, e o teste
+    # roda sem root/losetup.
+    eh_arquivo=1
 fi
 
-# /dev/mmcblk1p2 -> /dev/mmcblk1 ; /dev/sda2 -> /dev/sda
-# Mesma ordem do giochi_disk_of: DOIS digitos antes de um, senao
-# /dev/sda10 vira /dev/sda1 e o script mexe no disco errado.
-case "$raiz_dev" in
-    *p[0-9][0-9]) disco=${raiz_dev%p??} ;;
-    *p[0-9])      disco=${raiz_dev%p?} ;;
-    *[0-9][0-9])  disco=${raiz_dev%??} ;;
-    *[0-9])       disco=${raiz_dev%?} ;;
-    *)            log "raiz em '$raiz_dev' sem numero de particao; nada a fazer"; exit 0 ;;
-esac
+# A particao de dados e' p4 do MESMO disco (layout do genimage.cfg).
+if [ "$eh_arquivo" = "1" ]; then
+    user_part="${disco}4"      # so' rotulo para o log; nao existe como no'
+else
+    case "$raiz_dev" in
+        *p[0-9]*) user_part="${disco}p4" ;;
+        *)        user_part="${disco}4" ;;
+    esac
+fi
 
 nome=$(basename "$disco")
-[ -r "/sys/class/block/$nome/size" ] || {
-    log "sem /sys/class/block/$nome/size; nada a fazer"; exit 0; }
+if [ "$eh_arquivo" = "0" ]; then
+    [ -r "/sys/class/block/$nome/size" ] || {
+        log "sem /sys/class/block/$nome/size; nada a fazer"; exit 0; }
+fi
 
 # --- 3. a particao de dados eh p4 do mesmo disco ------------------------
-case "$raiz_dev" in
-    *p[0-9]*) user_part="${disco}p4" ;;
-    *)        user_part="${disco}4" ;;
-esac
 user_nome=$(basename "$user_part")
 
-if [ ! -b "$user_part" ]; then
+if [ "$eh_arquivo" = "0" ] && [ ! -b "$user_part" ]; then
     log "particao de dados $user_part nao existe; nada a fazer"
     exit 0
 fi
 
 # --- 4. geometria ------------------------------------------------------
-setores_disco=$(cat "/sys/class/block/$nome/size" 2>/dev/null)
-p4_inicio=$(cat "/sys/class/block/$user_nome/start" 2>/dev/null)
-p4_tam_atual=$(cat "/sys/class/block/$user_nome/size" 2>/dev/null)
+if [ "$eh_arquivo" = "0" ]; then
+    setores_disco=$(cat "/sys/class/block/$nome/size" 2>/dev/null)
+    p4_inicio=$(cat "/sys/class/block/$user_nome/start" 2>/dev/null)
+    p4_tam_atual=$(cat "/sys/class/block/$user_nome/size" 2>/dev/null)
+else
+    # Arquivo: tamanho em bytes / 512, e a entrada 4 vem do proprio sfdisk.
+    _bytes=$(wc -c <"$disco" 2>/dev/null)
+    if [ -n "${_bytes:-}" ]; then setores_disco=$(( _bytes / 512 )); fi
+    _linha=$(sfdisk --dump "$disco" 2>/dev/null | sed -n 's/.*[^0-9]4 *: *start= *\([0-9]*\).*size= *\([0-9]*\).*/\1 \2/p')
+    p4_inicio=${_linha%% *}
+    p4_tam_atual=${_linha#* }
+fi
 for v in setores_disco p4_inicio p4_tam_atual; do
     eval "valor=\${$v:-}"
     case "${valor:-}" in
@@ -108,16 +143,28 @@ done
 
 # A p4 precisa ser a ULTIMA particao da tabela: estender uma particao do meio
 # sobrescreveria a seguinte.
-for outra in /sys/class/block/"$nome"*/start; do
-    [ -r "$outra" ] || continue
-    [ "$(basename "$(dirname "$outra")")" = "$user_nome" ] && continue
-    inicio_outra=$(cat "$outra" 2>/dev/null)
-    case "${inicio_outra:-}" in ''|*[!0-9]*) continue ;; esac
-    if [ "$inicio_outra" -gt "$p4_inicio" ]; then
+if [ "$eh_arquivo" = "0" ]; then
+    for outra in /sys/class/block/"$nome"*/start; do
+        [ -r "$outra" ] || continue
+        [ "$(basename "$(dirname "$outra")")" = "$user_nome" ] && continue
+        inicio_outra=$(cat "$outra" 2>/dev/null)
+        case "${inicio_outra:-}" in ''|*[!0-9]*) continue ;; esac
+        if [ "$inicio_outra" -gt "$p4_inicio" ]; then
+            log "ha' particao depois de $user_part; nao vou estender (risco de sobrepor dados)"
+            exit 0
+        fi
+    done
+else
+    # `while` em pipe roda em subshell e o `exit` de dentro nao sai do
+    # script; o awk decide e o exit fica no nivel de cima.
+    _outras=$(sfdisk --dump "$disco" 2>/dev/null | \
+        sed -n 's/.*[^0-9]\([0-9][0-9]*\) *: *start= *\([0-9]*\).*/\1 \2/p')
+    if printf '%s\n' "$_outras" | awk -v p="$p4_inicio" \
+         '$1 != 4 && $2 > p { achou=1 } END { exit !achou }'; then
         log "ha' particao depois de $user_part; nao vou estender (risco de sobrepor dados)"
         exit 0
     fi
-done
+fi
 
 livres=$(( setores_disco - p4_inicio - p4_tam_atual ))
 if [ "$livres" -lt "$MIN_SETORES" ]; then
@@ -139,10 +186,17 @@ novo_tam=$(( setores_disco - p4_inicio ))
 log "crescendo $user_part: $((p4_tam_atual / 2048)) MiB -> $((novo_tam / 2048)) MiB (livres: $((livres / 2048)) MiB)"
 
 # --- 6. tabela de particoes -------------------------------------------
-# `sfdisk -N 4` reescreve SO' a entrada 4 (as outras ficam intactas). O "+,"
-# significa: mesmo inicio, tamanho = o maximo que couber.
+# `sfdisk -N 4` reescreve SO' a entrada 4; as outras ficam intactas.
+#
+# O START vai EXPLICITO de proposito. Medido num arquivo com o MESMO layout da
+# imagem (tests/test_grow_user.py): com `-N 4`, tanto ",+" quanto "<inicio>,+"
+# preservam o offset — o `-N` nao usa o "inicio padrao". Ou seja, o ",+" NAO
+# moveria a particao (eu tinha escrito que moveria, sem ter medido). O start
+# explicito fica como cinto de seguranca: se alguem remover o `-N` num
+# ajuste futuro, `,` passaria a significar "primeiro setor livre" e a p4
+# encostaria na p3.
 if command -v sfdisk >/dev/null 2>&1; then
-    if ! printf ',+\n' | sfdisk --force -N 4 "$disco" >/dev/null 2>&1; then
+    if ! printf '%s,+\n' "$p4_inicio" | sfdisk --force -N 4 "$disco" >/dev/null 2>&1; then
         log "ERRO: sfdisk falhou; cartao segue como estava"
         exit 0
     fi

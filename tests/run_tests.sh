@@ -152,6 +152,18 @@ if command -v python3 >/dev/null 2>&1; then
     fi
 fi
 
+# Crescimento da particao de dados: rodar o grow-user.sh REAL sobre um arquivo
+# com o layout da imagem, e o sfdisk provando que so' a p4 muda.
+if command -v python3 >/dev/null 2>&1; then
+    total=$((total + 1))
+    if (cd "$ROOT" && python3 -m unittest tests.test_grow_user) >/dev/null 2>&1; then
+        echo "OK     particao-do-usuario (python)"
+    else
+        echo "FALHA  particao-do-usuario (python)"
+        fail=$((fail + 1))
+    fi
+fi
+
 # Verificador do cartao (tools/verify-card.py). Distingue "a gravacao nao
 # terminou" de "o cartao tem setor ruim" -- medido num boot real que parou em
 # "No working init found" com a imagem integra e o cartao devolvendo EIO.
