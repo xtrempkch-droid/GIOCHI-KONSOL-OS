@@ -2251,6 +2251,22 @@ dois empatados.
   importa — **falha se o `extcon` desaparecer do `rk3566.dtsi`**. A primeira
   versão desse teste olhava só `rk356x.dtsi` e o DTS do aparelho, e foi ela
   que deu folga para eu escrever a hipótese errada aqui.
+- **Evidência de hardware de um firmware que roda** (cartão Walkmam/ROCKNIX,
+  capturado no aparelho em 01/11 04:52, preservado em
+  `~/.copilot/session-state/.../files/walkmam-ref/`): na mesma família, com
+  `dr_mode = "otg"`, o UDC **existe** —
+  `/sys/class/udc/fcc00000.usb/state = not attached` — e o kernel é 6.12 com
+  os patches deles. Ou seja: `otg` não impede o UDC de existir (confirma a
+  correção acima) e a diferença entre eles e nós é **o bind**, que eles nunca
+  fazem.
+  Isso fecha a teoria: no nosso caso o gadget é anexado **sem sessão USB**
+  (`not attached`, sem VBUS). Em `PRTCAPDIR = OTG` o controlador só aceita
+  `DEPCFG` depois da sessão; sem ela o comando não completa e o driver traduz
+  como `failed to enable ep0out`. Em `dr_mode = "peripheral"` o
+  `__dwc3_set_mode(DEVICE)` fixa `PRTCAPDIR = DEVICE` e faz o soft reset, então
+  o `DEPCFG` é aceito independente de haver cabo. É exatamente o que o patch
+  `0003` faz — e o `0004` confirma pelo código de erro (`-110` = timeout).
+
 - **Regra que fica**: `grep` de premissa tem de cobrir a **cadeia de include
   inteira**. `rk3566-powkiddy-x55.dts` → `rk3566.dtsi` → `rk356x.dtsi`; olhar
   dois de três arquivos deu um "não existe" falso, e um teste que olhava os
