@@ -84,7 +84,7 @@ Regras que o teste cobra:
 | `PING` | `PONG` | sonda de vida; use antes de qualquer coisa |
 | `USB_MODE MTP` / `USB_MODE MASS` | `OK usb_mode <arg>` | `ERR missing_mode` / `ERR invalid_mode` |
 | `DEV_MODE ON` / `DEV_MODE OFF` | `OK dev_mode <arg>` | liga o SSH via USB; `ERR invalid_mode` |
-| `LAUNCH_APP <caminho>` | `OK launch <caminho>` / `ERR launch_failed` | app ausente é erro, não sucesso |
+| `LAUNCH_APP <nome|/caminho>` | `OK launch <...>` / `ERR launch_failed` | app ausente é erro, não sucesso. Nome sem `/` resolve em `/apps/<nome>` (com fallback em `/usr/bin`); caminho absoluto executa direto |
 | `POWEROFF` / `REBOOT` / `SUSPEND` | `OK <ação>` / `ERR <ação>_failed` | derruba a sessão (menos `SUSPEND`) |
 | `WIFI_UP` / `WIFI_DOWN` | `OK wifi_up` / `ERR no_adapter` | sem rádio → `ERR no_adapter` |
 | `BT_UP` / `BT_DOWN` | `OK bt_up` / `ERR no_adapter` | idem |

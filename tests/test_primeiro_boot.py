@@ -955,55 +955,83 @@ GROW = os.path.join(ROOT, "buildroot/board/giochi/rootfs_overlay/etc/giochi/grow
 
 
 class LauncherComoApp(unittest.TestCase):
-    """O Launcher pode vir de /user/apps e ser atualizado sem regravar o sistema.
+    """O Launcher pode vir de /apps e ser atualizado sem regravar o sistema.
 
     Pedido do mantenedor: mexer no sistema sem atrapalhar o Launcher, e mexer
-    no Launcher sem recompilar a imagem. O supervisor resolve o binario em
-    /user/apps/giochi-launcher ANTES do /usr/bin da imagem, e o teste
-    funcional executa o giochi-init REAL para provar a ordem.
+    no Launcher sem recompilar a imagem. No aparelho /apps -> /user/apps
+    (symlink do post-build); o supervisor resolve /apps/giochi-launcher ANTES
+    do /usr/bin da imagem, e o teste funcional executa o giochi-init REAL para
+    provar a ordem.
     """
 
     def test_supervisor_procura_app_antes_da_imagem(self):
         corpo = read(os.path.join(ROOT, "src/init/supervisor.c"))
-        self.assertIn("giochi_launcher_program", corpo,
+        self.assertIn("int giochi_app_program", corpo,
                       "falta a resolucao do binario do Launcher")
-        pos_app = corpo.find('"/user/apps/giochi-launcher"')
-        pos_img = corpo.find('GIOCHI_LIBEXECDIR "/giochi-launcher"')
+        pos_app = corpo.find('"%s/apps/%s"')
+        pos_img = corpo.find('GIOCHI_LIBEXECDIR "/%s"')
         self.assertGreater(pos_app, 0,
                            "o caminho do app nao esta no supervisor")
         self.assertGreater(pos_img, pos_app,
-                           "o app de /user tem de ser tentado ANTES do "
+                           "o app de /apps tem de ser tentado ANTES do "
                            "binario da imagem")
 
     def test_app_quebrado_cai_para_a_imagem(self):
         corpo = read(os.path.join(ROOT, "src/init/supervisor.c"))
         # access(X_OK), nao stat: binario de upload interrompido nao derruba
         # a UI — o fallback da imagem assume.
-        trecho = corpo[corpo.index("int giochi_launcher_program"):]
+        trecho = corpo[corpo.index("int giochi_app_program"):]
         trecho = trecho[:trecho.index("\n}\n") + 3]
         self.assertIn("access", trecho)
         self.assertIn("X_OK", trecho)
+
+    def test_resolucao_recusa_nome_com_barra(self):
+        # Nome com '/' e' caminho; so' nome simples resolve em /apps. Sem a
+        # recusa, "LAUNCH_APP ../../etc/passwd" viraria /apps/../../etc/passwd.
+        corpo = read(os.path.join(ROOT, "src/init/supervisor.c"))
+        trecho = corpo[corpo.index("int giochi_app_program"):]
+        trecho = trecho[:trecho.index("\n}\n") + 3]
+        self.assertIn('strchr(name, \'/\')', trecho,
+                      "a resolucao tem de recusar nome com barra")
 
     def test_relance_re_resolve_o_binario(self):
         corpo = read(os.path.join(ROOT, "src/init/supervisor.c"))
         ini = corpo.index("void giochi_supervisor_revive_launcher")
         trecho = corpo[ini:]
         trecho = trecho[:trecho.index("\n}\n") + 3]
-        self.assertIn("giochi_launcher_program", trecho,
+        self.assertIn("giochi_app_program", trecho,
                       "sem re-resolver, instalar o app em runtime so' vale "
                       "no proximo boot")
 
     def test_assets_do_app_sobrepoem_os_da_imagem(self):
         corpo = read(LAUNCHER_MAIN)
-        self.assertIn("/user/apps/giochi-launcher/assets", corpo,
+        self.assertIn("/apps/giochi-launcher/assets", corpo,
                       "o app tem de poder trazer layout/tema/locales proprios")
         self.assertIn("layout.json", corpo)
+
+    def test_post_build_cria_o_symlink_apps(self):
+        # /apps so' existe no aparelho se o post-build o criar: a raiz e'
+        # SquashFS e /apps -> /user/apps e' o que torna o caminho gravavel.
+        corpo = read(POST_BUILD)
+        self.assertIn('ln -sfn /user/apps "$TARGET_DIR/apps"', corpo,
+                      "sem o symlink, /apps nao existe na imagem e nenhum "
+                      "app resolve")
 
     def test_storage_semeia_a_pasta_de_apps(self):
         corpo = sh_code(read(S10STORAGE))
         self.assertIn('"$_u/apps"', corpo,
                       "sem /user/apps na arvore da particao o usuario nao "
                       "tem onde colocar o binario (MTP expoe /user)")
+
+    def test_launch_app_resolve_em_apps(self):
+        corpo = read(os.path.join(ROOT, "src/init/supervisor.c"))
+        trecho = corpo[corpo.index("int giochi_supervisor_launch_app"):]
+        trecho = trecho[:trecho.index("\n}\n") + 3]
+        self.assertIn("giochi_app_program", trecho,
+                      "APP:<nome> tem de resolver em /apps, onde PortMaster "
+                      "e os demais apps moram")
+        self.assertIn('strchr(program, \'/\')', trecho,
+                      "caminho absoluto continua valendo (nao passa por /apps)")
 
 
 class LauncherComoAppFuncional(unittest.TestCase):
@@ -1028,6 +1056,9 @@ class LauncherComoAppFuncional(unittest.TestCase):
         for sub in ("run/giochi", "user/apps", "usr/bin",
                     "etc/giochi", "var/log"):
             os.makedirs(os.path.join(base, sub), exist_ok=True)
+        # No aparelho /apps e' o symlink que o post-build cria; aqui o
+        # GIOCHI_ROOT falso reproduz o mesmo arranjo.
+        os.symlink("user/apps", os.path.join(base, "apps"))
         with open(os.path.join(base, "profile.json"), "w",
                   encoding="utf-8") as fh:
             fh.write('{"device":"host","soc":"host","os_version":"1.2",'
@@ -1036,7 +1067,7 @@ class LauncherComoAppFuncional(unittest.TestCase):
         marcador_img = os.path.join(base, "imagem.rodou")
         corpo = ("#!/bin/sh\ntouch %s\nsleep 30\n" % marcador_app)
         if app is not None:
-            caminho = os.path.join(base, "user/apps/giochi-launcher")
+            caminho = os.path.join(base, "apps/giochi-launcher")
             with open(caminho, "w", encoding="utf-8") as fh:
                 fh.write(corpo)
             os.chmod(caminho, modo_app if modo_app is not None else 0o755)

@@ -29,28 +29,29 @@ static void sleep_ms(unsigned long ms)
     }
 }
 
-int giochi_launcher_program(char *buf, size_t bufsz)
+int giochi_app_program(char *buf, size_t bufsz, const char *name)
 {
     char cand[PATH_MAX];
 
-    if (buf == NULL || bufsz == 0) {
+    if (buf == NULL || bufsz == 0 || name == NULL || *name == '\0' ||
+        strchr(name, '/') != NULL) {
         return -1;
     }
     buf[0] = '\0';
 
-    /* 1. Launcher como app (particao de dados, gravavel — atualiza sem
-     *    regravar o sistema). access(X_OK), nao stat: um arquivo quebrado
-     *    (upload via MTP interrompido) NAO pode derrubar a UI — cai para o
-     *    fallback da imagem. */
-    if (giochi_path(cand, sizeof(cand), "/user/apps/giochi-launcher") == 0 &&
-        access(cand, X_OK) == 0) {
+    /* 1. /apps/<nome> — os programas do projeto ficam em /apps (symlink
+     *    para /user/apps, a particao gravavel). Atualizar = copiar + chmod,
+     *    sem regravar o sistema. */
+    if (snprintf(cand, sizeof(cand), "%s/apps/%s", giochi_root(), name)
+            < (int)sizeof(cand) && access(cand, X_OK) == 0) {
         giochi_strlcpy(buf, cand, bufsz);
         return 0;
     }
 
-    /* 2. Fallback: a imagem sempre traz o Launcher do sistema. */
-    if (giochi_path(cand, sizeof(cand),
-                    GIOCHI_LIBEXECDIR "/giochi-launcher") == 0) {
+    /* 2. Fallback: o binario da imagem (sempre presente para o Launcher e
+     *    para os apps que o sistema traz). */
+    if (snprintf(cand, sizeof(cand), "%s" GIOCHI_LIBEXECDIR "/%s",
+                 giochi_root(), name) < (int)sizeof(cand)) {
         giochi_strlcpy(buf, cand, bufsz);
         return 0;
     }
@@ -319,6 +320,8 @@ void giochi_supervisor_stop_all(giochi_supervisor *sup)
 int giochi_supervisor_launch_app(giochi_supervisor *sup, const char *app_id)
 {
     const char *program = app_id;
+    const char *child_name;
+    char resolved[PATH_MAX];
     giochi_child *child;
 
     if (sup == NULL || app_id == NULL || *app_id == '\0') {
@@ -330,18 +333,43 @@ int giochi_supervisor_launch_app(giochi_supervisor *sup, const char *app_id)
     if (*program == '\0') {
         return -1;
     }
+    child_name = program;
 
-    child = find_by_name(sup, program);
+    /* Nome simples (sem '/') resolve em /apps/<nome> com fallback no
+     * libexecdir — e' onde PortMaster e os demais apps moram. Caminho com
+     * '/' e' tratado como executavel absoluto pelo spawn_child.
+     *
+     * Duas armadilhas medidas aqui:
+     * 1. `resolved` e' da FUNCAO, nao do bloco: um buffer declarado dentro
+     *    do `if` morre no fim do bloco e `program` passaria a apontar para
+     *    a pilha ja' reutilizada pelas chamadas seguintes (o app "falhava
+     *    ao abrir" sem motivo).
+     * 2. A CHAVE do supervisor e' o nome curto (name[32]): usar o caminho
+     *    resolvido como nome truncava (/tmp/.../usr/bin/appstub > 31) e o
+     *    find_by_name depois do add nao achava o proprio filho. */
+    if (strchr(program, '/') == NULL) {
+        if (giochi_app_program(resolved, sizeof(resolved), program) != 0) {
+            GLOG_ERR("app '%s' ausente em /apps e em " GIOCHI_LIBEXECDIR,
+                     program);
+            return -1;
+        }
+        program = resolved;
+    }
+
+    child = find_by_name(sup, child_name);
     if (child != NULL) {
         if (child->running) {
             return 0;
         }
+        /* Re-resolve sempre: o app pode ter sido instalado/trocado em /apps
+         * desde o ultimo lancamento (mesma regra do Launcher como app). */
+        giochi_strlcpy(child->program, program, sizeof(child->program));
         return spawn_child(child);
     }
-    if (giochi_supervisor_add(sup, program, program, NULL, 0) != 0) {
+    if (giochi_supervisor_add(sup, child_name, program, NULL, 0) != 0) {
         return -1;
     }
-    child = find_by_name(sup, program);
+    child = find_by_name(sup, child_name);
     return child != NULL ? spawn_child(child) : -1;
 }
 
@@ -433,8 +461,8 @@ void giochi_supervisor_revive_launcher(giochi_supervisor *sup)
     /* Re-resolve o binario a cada relancamento: se o usuario instalou o
      * Launcher como app (via MTP/SSH) enquanto o sistema rodava, a troca
      * vale na proxima volta para a Home, sem reboot. */
-    if (giochi_launcher_program(launcher->program,
-                                sizeof(launcher->program)) != 0) {
+    if (giochi_app_program(launcher->program, sizeof(launcher->program),
+                           "giochi-launcher") != 0) {
         GLOG_ERR("falha ao relancar o launcher: binario nao encontrado");
         return;
     }

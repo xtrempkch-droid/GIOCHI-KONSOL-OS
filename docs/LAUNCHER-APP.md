@@ -22,15 +22,20 @@ como app:
 ### 1. Resolução do binário (supervisor)
 
 O `giochi-init` resolve o Launcher nesta ordem
-([supervisor.c](../src/init/supervisor.c), `giochi_launcher_program`):
+([supervisor.c](../src/init/supervisor.c), `giochi_app_program`):
 
-1. `/user/apps/giochi-launcher` — o app, se for executável (`access X_OK`);
+1. `/apps/giochi-launcher` — o app, se for executável (`access X_OK`).
+   No aparelho, `/apps` é um **symlink para `/user/apps`** (criado pelo
+   `post-build.sh`), então o caminho é estável e continua gravável;
 2. `/usr/bin/giochi-launcher` — o binário da imagem (fallback, sempre existe).
+
+Por que `/apps` e não `/user/apps`: é a convenção do projeto — no
+repositório os programas moram em [`apps/`](../apps/).
 
 O teste é `access(X_OK)`, **não** `stat`: um upload via MTP interrompido no
 meio (arquivo pela metade, sem bit de execução) não derruba a UI — o fallback
 da imagem assume, e o log do boot diz qual binário venceu
-(`launcher: /user/apps/giochi-launcher`).
+(`launcher: /apps/giochi-launcher`).
 
 A resolução acontece no boot **e** a cada relançamento do Launcher (volta de
 um jogo, crash): instalar o app em runtime vale na próxima volta para a Home,
@@ -38,44 +43,46 @@ sem reboot.
 
 ### 2. Assets (layout, tema, textos)
 
-Se existir `/user/apps/giochi-launcher/assets/layout.json`, o Launcher usa
-`/user/apps/giochi-launcher/assets` como diretório de assets **no lugar** de
+Se existir `/apps/giochi-launcher/assets/layout.json`, o Launcher usa
+`/apps/giochi-launcher/assets` como diretório de assets **no lugar** de
 `/usr/share/giochi`. Quem mexe em layout/theme/locales coloca os JSONs novos
 junto com o binário. `--asset-dir` explícito continua vencendo.
 
 ### 3. Instalação/atualização
 
 O MTP expõe `/user` ao PC com leitura e escrita; a árvore de boot já semeia
-`/user/apps` ([S10storage](../scripts/init.d/S10storage)). Passo a passo:
+`/user/apps` ([S10storage](../scripts/init.d/S10storage)), que é o alvo do
+symlink `/apps`. Passo a passo:
 
 1. Compile o Launcher para o alvo (ou pegue o binário do build):
    `dist/x55/build/build/giochi-launcher-1.2/build/target/bin/giochi-launcher`.
 2. Conecte o aparelho ao PC (MTP) ou use SSH (Modo Desenvolvedor).
-3. Copie o binário para `/user/apps/giochi-launcher` e dê permissão de
+3. Copie o binário para `/apps/giochi-launcher` (a pasta `apps` do MTP) e
+   dê permissão de
    execução:
 
    ```sh
    # via MTP: arraste o arquivo para a pasta "apps" e depois, por SSH:
-   ssh root@10.55.0.2 'chmod +x /user/apps/giochi-launcher'
+   ssh root@10.55.0.2 'chmod +x /apps/giochi-launcher'
 
    # via SSH direto:
-   scp giochi-launcher root@10.55.0.2:/user/apps/giochi-launcher
-   ssh root@10.55.0.2 'chmod +x /user/apps/giochi-launcher'
+   scp giochi-launcher root@10.55.0.2:/apps/giochi-launcher
+   ssh root@10.55.0.2 'chmod +x /apps/giochi-launcher'
    ```
 
-4. (Opcional) assets: `/user/apps/giochi-launcher/assets/{layout.json,
+4. (Opcional) assets: `/apps/giochi-launcher/assets/{layout.json,
    theme.json, locales/…}`.
 5. Reinicie o Launcher (o app não se substitui sozinho em execução). O caminho
    mais simples é desligar e ligar; sem reboot, abra um jogo e feche — a volta
    para a Home relança o Launcher com o binário novo.
 
-Desfazer: apague `/user/apps/giochi-launcher` — o sistema volta a usar a
+Desfazer: apague `/apps/giochi-launcher` — o sistema volta a usar a
 imagem no relançamento seguinte.
 
 ## Orçamento (adendo ao §8)
 
 O Launcher como app não muda o orçamento da §4.1.6: **RAM ≤ 60 MB em repouso,
-VRAM de UI ≤ 4 MB**. O binário adicional em `/user` não conta contra o
+VRAM de UI ≤ 4 MB**. O binário adicional em `/user` (via `/apps`) não conta contra o
 SquashFS; o fallback da imagem continua lá (uma cópia, ~2 MB).
 
 ## Limites e segurança
@@ -83,7 +90,7 @@ SquashFS; o fallback da imagem continua lá (uma cópia, ~2 MB).
 - **O app não é assinado.** O rootfs é assinado (Ed25519 + SHA-256), mas
   `/user` é a partição gravável do usuário — o Launcher de lá é confiável
   porque **o usuário** o colocou (o mesmo modelo dos ports em `/user/ports`).
-  Não há upgrade automático de rede para `/user/apps`: nada entra sem a mão
+  Não há upgrade automático de rede para `/apps`: nada entra sem a mão
   do usuário.
 - **Um app quebrado não trava o aparelho**: sem `X_OK` (ou sem o arquivo), o
   fallback da imagem assume. O pior caso é o app rodar e cair — e o supervisor

@@ -111,13 +111,13 @@ bool parse_args(int argc, char **argv, Options *opt)
     opt->run_dir = rooted("/run/giochi");
 
     /* Launcher como app (docs/LAUNCHER-APP.md): se existir
-     * /user/apps/giochi-launcher/assets/layout.json, os assets de la'
-     * SOBREPOEM os da imagem — quem desenvolve o Launcher coloca o binario
-     * novo E os assets novos na particao de dados, sem regravar o sistema.
+     * /apps/giochi-launcher/assets/layout.json, os assets de la' SOBREPOEM
+     * os da imagem — quem desenvolve o Launcher coloca o binario novo E os
+     * assets novos na particao de dados (via /apps), sem regravar o sistema.
      * O --asset-dir explicito continua vencendo (e' processado no laco
      * abaixo, depois desta checagem). */
     {
-        std::string app_assets = rooted("/user/apps/giochi-launcher/assets");
+        std::string app_assets = rooted("/apps/giochi-launcher/assets");
         std::string probe = app_assets + "/layout.json";
 
         if (access(probe.c_str(), R_OK) == 0) {

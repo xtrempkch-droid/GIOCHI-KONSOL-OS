@@ -41,10 +41,11 @@ seed_user_tree() {
     mkdir -p "$_u/music" "$_u/games" "$_u/ports" "$_u/saves" \
              "$_u/.giochi" "$_u/.cache/meta" "$_u/.cache/thumbs" \
              2>/dev/null || true
-    # /user/apps: casa do Launcher como app (docs/LAUNCHER-APP.md). O
-    # supervisor procura /user/apps/giochi-launcher ANTES do binario da
-    # imagem — basta o usuario colocar o binario aqui (via MTP/SSH) para
-    # atualizar a UI sem regravar o sistema.
+    # /user/apps: o alvo do symlink /apps (post-build.sh) — os programas do
+    # projeto moram em /apps (convencao do repositorio: apps/). O supervisor
+    # procura /apps/giochi-launcher ANTES do binario da imagem, entao basta o
+    # usuario colocar o binario aqui (via MTP/SSH) para atualizar a UI sem
+    # regravar o sistema (docs/LAUNCHER-APP.md).
     mkdir -p "$_u/apps" 2>/dev/null || true
     mkdir -p -m 700 "$_u/.ssh" 2>/dev/null || true
     # Teste de escrita de verdade: 'mkdir -p' de um diretorio que ja existe

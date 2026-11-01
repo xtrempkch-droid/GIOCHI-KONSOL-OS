@@ -513,8 +513,9 @@ int main(int argc, char **argv)
         (void)giochi_supervisor_add(&ctx.supervisor, "musicd", "giochi-musicd",
                                     NULL, 1);
         /* Launcher como app (docs/LAUNCHER-APP.md): o binario pode vir de
-         * /user/apps/giochi-launcher, com o da imagem como fallback. */
-        if (giochi_launcher_program(launcher_bin, sizeof(launcher_bin)) == 0) {
+         * /apps/giochi-launcher, com o da imagem como fallback. */
+        if (giochi_app_program(launcher_bin, sizeof(launcher_bin),
+                               "giochi-launcher") == 0) {
             GLOG_INFO("launcher: %s", launcher_bin);
             (void)giochi_supervisor_add(&ctx.supervisor, "launcher",
                                         launcher_bin, NULL, 1);

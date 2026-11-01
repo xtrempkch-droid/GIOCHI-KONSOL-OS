@@ -360,12 +360,13 @@ partição FAT → erro de I/O. Ver `AGENTS.md` §3.38–3.43.
 O Launcher pode ser atualizado sem regravar o sistema
 ([LAUNCHER-APP.md](LAUNCHER-APP.md)):
 
-- o supervisor resolve `/user/apps/giochi-launcher` **antes** de
-  `/usr/bin/giochi-launcher` (fallback da imagem, sempre presente);
+- o supervisor resolve `/apps/giochi-launcher` **antes** de
+  `/usr/bin/giochi-launcher` (fallback da imagem, sempre presente); no
+  aparelho `/apps` é symlink para `/user/apps` (criado no post-build);
 - o teste é `access(X_OK)`: upload interrompido via MTP não derruba a UI;
 - a resolução repete a cada relançamento (volta de jogo/crash): instalar o
   app em runtime vale na próxima Home, sem reboot;
-- assets: `/user/apps/giochi-launcher/assets/layout.json` sobrepõe
+- assets: `/apps/giochi-launcher/assets/layout.json` sobrepõe
   `/usr/share/giochi` (binário + layout/tema/locales viajam juntos);
 - `S10storage` semeia `/user/apps`.
 
@@ -386,6 +387,34 @@ data ([RELÓGIO.md](RELÓGIO.md)):
 - **`SET_DATE <epoch>` no control.sock:** valida, `date -s @<epoch>`, persiste
   em `/user/.giochi/relogio`. `tools/giochi-ctl.py data` manda a hora do PC
   por SSH; o app da Loja usará o mesmo comando no futuro (falta só a UI).
+
+## S5d — /apps, PPSSPP e PortMaster — feito (2026-11-01)
+
+A convencao mudou: **os programas do projeto moram em /apps** (no repositorio,
+`apps/`). No aparelho, `/apps -> /user/apps` (symlink do post-build), entao
+atualizar um programa continua sendo copiar + chmod via MTP/SSH, e a resolucao
+do supervisor cobre `APP:<nome>` (launcher, portmaster, ppsspp, store...).
+
+- **PortMaster**: pacote `giochi-portmaster` baixa o bundle oficial
+  (2026.11.01-1314), remove os firmwares alheios e os binarios armhf/x86_64,
+  ajusta o controlfolder para `/apps/PortMaster`, remove o `image_smash`
+  (muOS-only) e escreve `device_info.txt` (CFW_NAME=giochi) + `mod_giochi.txt`.
+  Wrapper `/apps/portmaster` rebinda o fbcon (a UI e' bash no terminal; o
+  S90graphics desvincula o console para a UI SDL) e devolve ao sair.
+  Runtime exige bash + curl + unzip/zip (BusyBox) — todos agora na imagem.
+- **PPSSPP CLI**: pacote `giochi-ppsspp` compila do fonte (v1.17.1) o
+  `PPSSPPSDL` **e** o `PPSSPPHeadless` (o CLI), com GLES2/EGL e SEM
+  Qt/ffmpeg/discord. Binario + assets (flash0, fontes, atlas, idiomas) em
+  `/apps/PPSSPP`, wrapper `/apps/ppsspp [rom.iso]`.
+- **Onde fica no cartao**: os dois estagiam em `BINARIES_DIR/apps-stage` (fora
+  do TARGET_DIR — §3.46) e o `post-image.sh` injeta no `user.ext4` via
+  debugfs. Nada vai para o SquashFS sob /user; o primeiro boot ja' nasce com
+  os apps.
+
+**Aberto:** nada rodou no aparelho; PortMaster depende de Wi-Fi (firmware
+`rtw8821c_fw.bin` continua fora); PPSSPP em RK3566/2 GB e' duvida de
+desempenho; a aba Ports do Launcher ainda nao lista os ports instalados
+(so' lanca o APP:portmaster).
 
 ## S6 — Configurações — esqueleto
 

@@ -33,18 +33,23 @@ typedef struct {
 
 void giochi_supervisor_init(giochi_supervisor *sup);
 
-/* Caminho do binario do Launcher, na ordem de preferencia:
+/* Resolve um programa pelo NOME, na ordem de preferencia:
  *
- *   1. /user/apps/giochi-launcher   (Launcher como app, docs/LAUNCHER-APP.md)
- *   2. <libexecdir>/giochi-launcher (fallback na imagem, nunca fica sem UI)
+ *   1. /apps/<nome>                  (os programas ficam em /apps; no aparelho
+ *                                    e' symlink para /user/apps, gravavel)
+ *   2. <libexecdir>/<nome>           (fallback da imagem, nunca fica sem UI)
  *
- * O item 1 e' o que permite mexer no Launcher sem regravar o sistema: basta
- * colocar o binario novo na particao de dados (via MTP ou SSH). O fallback
- * garante que um app quebrado nao deixa o aparelho sem interface — quem
- * decide e' o access(X_OK), nao a existencia.
+ * Por que /apps e nao /user/apps: a convencao do projeto (apps/ no repositorio
+ * e' onde os programas moram). O /apps do aparelho aponta para a particao de
+ * dados (post-build.sh: `ln -sfn /user/apps`), entao o caminho e' estavel e a
+ * atualizacao continua sendo copiar + chmod via MTP/SSH.
+ *
+ * O teste e' access(X_OK), nao stat: upload interrompido (arquivo pela metade,
+ * sem bit de execucao) nao derruba quem resolve — cai no fallback da imagem.
+ * Nome com '/' e' recusado aqui (caminho absoluto e' tratado pelo chamador).
  *
  * Retorna 0 e preenche buf, ou -1 se nenhum dos dois resolve. */
-int giochi_launcher_program(char *buf, size_t bufsz);
+int giochi_app_program(char *buf, size_t bufsz, const char *name);
 
 /* args pode ser NULL. Copia os argumentos; nao retem ponteiros. */
 int giochi_supervisor_add(giochi_supervisor *sup, const char *name,

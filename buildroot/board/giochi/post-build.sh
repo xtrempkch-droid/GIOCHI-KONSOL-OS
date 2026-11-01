@@ -254,6 +254,12 @@ if [ -d "$TARGET_DIR/etc/dropbear" ] && [ ! -L "$TARGET_DIR/etc/dropbear" ]; the
 fi
 ln -sfn /user/.ssh/dropbear "$TARGET_DIR/etc/dropbear"
 
+# /apps: os programas do projeto moram aqui (convencao do repositorio: apps/).
+# A raiz e' SquashFS somente leitura, entao /apps aponta para a particao
+# gravavel — atualizar um programa e' copiar + chmod via MTP/SSH, e a UI e os
+# apps do sistema continuam intactos (docs/LAUNCHER-APP.md).
+ln -sfn /user/apps "$TARGET_DIR/apps"
+
 # Senha de root (adendo 4.6.1: autenticacao por senha OU chave).
 # So e gravada quando o build pede explicitamente; sem ela o acesso e por
 # chave. O Modo Desenvolvedor continua desligado por padrao de qualquer forma.
