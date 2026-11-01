@@ -195,6 +195,82 @@ class ScriptNaoQuebraOBoot(unittest.TestCase):
         self.assertIn("BLKRRPART", fonte)
 
 
+
+class AtualizaAParticaoSemRelerATabela(unittest.TestCase):
+    """A raiz (p2) esta' montada: BLKRRPART recusa, entao `partx -u`.
+
+    Medido na X55, no primeiro boot com o script:
+
+        grow-user: crescendo /dev/mmcblk1p4: 512 MiB -> 30012 MiB
+        grow-user: aviso: rereadpt falhou; o mount pode ver o tamanho antigo
+        grow-user: aviso: a particao nao cresceu (1048576 <= 1048576)
+
+    O sfdisk escreveu a tabela (o disco ficou com o espaco todo na p4), mas o
+    KERNEL continuou com o tamanho antigo, entao o resize2fs nem foi tentado.
+    `partx --update` usa o ioctl BLKPG e atualiza so' a particao 4.
+    """
+
+    def test_usa_partx_e_nao_depende_do_rereadpt(self):
+        with open(GROW, encoding="utf-8") as fh:
+            fonte = fh.read()
+        self.assertIn("partx --update --nr 4:4", fonte,
+                      "partx -u e' o unico caminho com a raiz montada")
+        # A linha do blockdev pode continuar como alternativa, mas nao pode
+        # ser a UNICA tentativa.
+        # Só linhas de código: o comentário acima do partx cita o blockdev
+        # para explicar por que ele não serve aqui.
+        codigo = "\n".join(l for l in fonte.splitlines()
+                            if l.strip() and not l.lstrip().startswith("#"))
+        if "blockdev --rereadpt" in codigo:
+            self.assertLess(codigo.index("partx --update"),
+                            codigo.index("blockdev --rereadpt"),
+                            "partx tem de vir antes do blockdev")
+
+    def test_defconfig_pede_o_pacote_do_partx(self):
+        for base in ("base-rk3566.defconfig", "base-rk3326.defconfig"):
+            caminho = os.path.join(ROOT, "buildroot/board/giochi/defconfig",
+                                   base)
+            with open(caminho, encoding="utf-8") as fh:
+                corpo = fh.read()
+            with self.subTest(defconfig=base):
+                self.assertIn("BR2_PACKAGE_UTIL_LINUX_PARTX=y", corpo,
+                              "sem o pacote, `partx` nao existe na imagem e a "
+                              "particao nunca cresce no kernel")
+
+
+
+class ErroDoResizeVaParaOLog(unittest.TestCase):
+    """O script nao pode engolir a mensagem do resize2fs.
+
+    No primeiro boot com o `partx` o log dizia so' "resize2fs falhou"; a
+    MESMA chamada, feita a mao logo depois, cresceu o fs para 28,8 GB. O
+    motivo do primeiro erro existia e foi descartado com `>/dev/null 2>&1`
+    — o mesmo padrao do §3.90 (instrumento que esconde a informacao).
+    """
+
+    def test_loga_a_saida_do_resize2fs(self):
+        with open(GROW, encoding="utf-8") as fh:
+            fonte = fh.read()
+        trecho = fonte[fonte.index("resize2fs"):]
+        trecho = trecho[:trecho.index("exit 0")] if "exit 0" in trecho else trecho
+        self.assertNotIn('resize2fs "$user_part" >/dev/null 2>&1', fonte,
+                         "a saida do resize2fs tem de ser capturada, nao "
+                         "descartada")
+        self.assertIn("_erro=", fonte,
+                      "capture a saida para poder citar a causa")
+        self.assertIn("resize2fs: $(printf", fonte,
+                      "a mensagem do resize2fs tem de ir para o log")
+
+    def test_tenta_duas_vezes(self):
+        """`partx -u` propaga o tamanho de forma assincrona."""
+        with open(GROW, encoding="utf-8") as fh:
+            fonte = fh.read()
+        self.assertIn("_tentativa", fonte,
+                      "uma tentativa so' falhou no boot por corrida com o "
+                      "partx; a segunda segundos depois funcionou")
+        self.assertIn("sleep 1", fonte)
+
+
 class OrdemDosDigitosDaParticao(unittest.TestCase):
     """`giochi_disk_of` precisa aceitar 10, 11... sem comer um caractere."""
 

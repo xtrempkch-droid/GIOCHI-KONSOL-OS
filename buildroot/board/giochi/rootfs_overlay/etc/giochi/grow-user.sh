@@ -205,12 +205,21 @@ else
     exit 0
 fi
 
-# O kernel precisa reler a tabela. Com o dispositivo livre o sfdisk ja' pediu
-# isso; `blockdev --rereadpt` cobre o caso de a primeira tentativa ter
-# falhado por uso momentaneo.
-if command -v blockdev >/dev/null 2>&1; then
-    blockdev --rereadpt "$disco" 2>/dev/null || \
-        log "aviso: rereadpt falhou; o mount pode ver o tamanho antigo"
+# O kernel precisa saber do tamanho novo. A p2 (raiz, squashfs) esta'
+# MONTADA neste momento, e com qualquer particao do disco em uso o
+# BLKRRPART (`blockdev --rereadpt`) RECUSA — medido na X55:
+#
+#   grow-user: crescendo /dev/mmcblk1p4: 512 MiB -> 30012 MiB
+#   grow-user: aviso: rereadpt falhou; o mount pode ver o tamanho antigo
+#   grow-user: aviso: a particao nao cresceu (1048576 <= 1048576)
+#
+# A saida e' o ioctl BLKPG, que atualiza UMA particao sem reler a tabela
+# (`partx --update`). E' o mesmo caminho do `growpart` do cloud-init e o do
+# raspi-config. Ordem: partx primeiro (funciona com a raiz montada),
+# blockdev como alternativa em disco sem particao em uso.
+if command -v partx >/dev/null 2>&1; then
+    partx --update --nr 4:4 "$disco" >/dev/null 2>&1 || \
+        log "aviso: partx -u falhou em $disco"
 fi
 
 tam_novo=$(cat "/sys/class/block/$user_nome/size" 2>/dev/null)
@@ -229,12 +238,33 @@ fi
 # cerimonia: resize2fs recusa (ou faz besteira) num fs marcado como unclean,
 # e este cartao acabou de vir de uma imagem gravada em bloco.
 if command -v e2fsck >/dev/null 2>&1; then
-    e2fsck -f -y "$user_part" >/dev/null 2>&1 || true
+    # A saida do e2fsck vai para o log COM prefixo: num cartao recem-gravado
+    # ele costuma dizer "clean", e se disser outra coisa e' a pista de por que
+    # o resize2fs abaixo falha.
+    _out=$(e2fsck -f -y "$user_part" 2>&1)
+    case "$_out" in
+        *"is clean"*) : ;;
+        *) log "e2fsck: $(printf '%s' "$_out" | tail -n 2 | tr '\n' ' ')" ;;
+    esac
 fi
-if resize2fs "$user_part" >/dev/null 2>&1; then
-    log "pronto: $user_part com $((tam_novo / 2048)) MiB de sistema de arquivos"
-else
-    log "ERRO: resize2fs falhou; a particao tem $((tam_novo / 2048)) MiB e o fs ficou menor"
-    log "  o sistema sobe normalmente; rode 'resize2fs $user_part' a mao"
-fi
+
+# O resize2fs e' tentado DUAS vezes: `partx -u` atualiza o tamanho no kernel
+# de forma assincrona, e o proprio resize2fs le o tamanho do dispositivo
+# (BLKGETSIZE64), nao do /sys. Medido na X55: no boot ele falhou; a MESMA
+# chamada, a mao depois, cresceu para 28,8 GB. Um segundo de diferenca.
+_erro=
+for _tentativa in 1 2; do
+    if _erro=$(resize2fs "$user_part" 2>&1); then
+        log "pronto: $user_part com $((tam_novo / 2048)) MiB de sistema de arquivos"
+        exit 0
+    fi
+    [ "$_tentativa" = "1" ] && sleep 1
+done
+
+# A mensagem do resize2fs vai para o log. A versao anterior fazia
+# `>/dev/null 2>&1` e registrava so' "resize2fs falhou" — o mesmo erro de
+# sempre nesta sessao: o instrumento existe e a causa some.
+log "ERRO: resize2fs falhou; a particao tem $((tam_novo / 2048)) MiB e o fs ficou menor"
+log "  resize2fs: $(printf '%s' "$_erro" | tail -n 3 | tr '\n' ' ')"
+log "  o sistema sobe normalmente; rode 'resize2fs $user_part' a mao"
 exit 0

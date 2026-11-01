@@ -144,6 +144,13 @@ BR2_PACKAGE_UTIL_LINUX=y
 # resolve root=PARTUUID no grow-user.sh — o kernel NAO expoe PARTUUID em
 # /sys/class/block/*/uevent nesta configuracao (medido na X55).
 BR2_PACKAGE_UTIL_LINUX_BINARIES=y
+# partx: atualiza UMA particao no kernel via ioctl BLKPG. Precisa disto
+# porque a p2 (raiz, squashfs) esta' MONTADA quando o grow-user.sh roda: o
+# BLKRRPART (`blockdev --rereadpt`) recusa reler a tabela com uma particao do
+# disco em uso — medido na X55:
+#   grow-user: aviso: rereadpt falhou; o mount pode ver o tamanho antigo
+# `partx -u` funciona nesse caso (e' o que o growpart do cloud-init usa).
+BR2_PACKAGE_UTIL_LINUX_PARTX=y
 
 # --- rede/BT opcionais via dongle (ADR-14) -----------------------------
 BR2_PACKAGE_WPA_SUPPLICANT=y

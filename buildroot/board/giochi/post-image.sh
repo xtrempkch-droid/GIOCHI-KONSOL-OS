@@ -95,6 +95,7 @@ fits() {  # fits <rotulo> <arquivo> <particao>
 # O tamanho tem de ser EXATAMENTE o da particao declarada no cfg.
 USER_SIZE_MB=$(to_mb "$(part_size "$GENIMAGE_CFG" user)")
 if [ -n "$USER_SIZE_MB" ]; then
+    USER_LABEL="GIOCHI"
     if [ -f "$BINARIES_DIR/user.ext4" ]; then
         have=$(( ($(wc -c <"$BINARIES_DIR/user.ext4") + 1048575) / 1048576 ))
         if [ "$have" -ne "$USER_SIZE_MB" ]; then
@@ -102,10 +103,24 @@ if [ -n "$USER_SIZE_MB" ]; then
             rm -f "$BINARIES_DIR/user.ext4"
         fi
     fi
+    # O BINARIES_DIR sobrevive ao build incremental: mudar o ROTULO aqui nao
+    # recriava o arquivo, e o cartao saia com o rotulo antigo (medido nesta
+    # sessao: renomeei GIOCHI_USER -> GIOCHI e a imagem continuou com
+    # GIOCHI_USER porque o .ext4 de 5 dias antes foi reaproveitado). Mesma
+    # classe do boot.scr (§3.33) e do extlinux.conf (§3.39): artefato derivado
+    # tem de ser regenerado quando a ENTRADA muda, nao quando o arquivo some.
+    if [ -f "$BINARIES_DIR/user.ext4" ] && [ -n "$HOST_DIR" ] && \
+       [ -x "$HOST_DIR/sbin/e2label" ]; then
+        atual=$("$HOST_DIR/sbin/e2label" "$BINARIES_DIR/user.ext4" 2>/dev/null)
+        if [ "$atual" != "$USER_LABEL" ]; then
+            echo "post-image: aviso: user.ext4 com rotulo '${atual:-?}' != '$USER_LABEL'; recriando"
+            rm -f "$BINARIES_DIR/user.ext4"
+        fi
+    fi
     if [ ! -f "$BINARIES_DIR/user.ext4" ]; then
         dd if=/dev/zero of="$BINARIES_DIR/user.ext4" bs=1M count=0 \
            seek="$USER_SIZE_MB" status=none
-        mkfs.ext4 -q -F -L GIOCHI "$BINARIES_DIR/user.ext4"
+        mkfs.ext4 -q -F -L "$USER_LABEL" "$BINARIES_DIR/user.ext4"
     fi
 else
     echo "post-image: ERRO: particao 'user' sem 'size' em $GENIMAGE_CFG" >&2

@@ -1086,8 +1086,15 @@ class ArmazenamentoDoUsuario(unittest.TestCase):
         self.assertIn("LABEL=GIOCHI\t/user", fstab)
         post = self.fonte(os.path.join(
             ROOT, "buildroot/board/giochi/post-image.sh"))
-        self.assertIn("-L GIOCHI ", post,
+        self.assertIn('USER_LABEL="GIOCHI"', post,
                       "o rotulo gravado pelo mkfs tem de casar com o fstab")
+        self.assertIn('mkfs.ext4 -q -F -L "$USER_LABEL"', post,
+                      "o mkfs tem de usar a variavel, nao um literal solto")
+        # O .ext4 vive no BINARIES_DIR, que sobrevive ao build incremental:
+        # sem esta comparacao o cartao sai com o rotulo antigo (aconteceu).
+        self.assertIn("e2label", post,
+                      "mudar o rotulo nao recria o user.ext4: o post-image "
+                      "precisa comparar o rotulo do arquivo existente")
 
     def test_textos_do_launcher_sem_jargao(self):
         """O Launcher nao deve mostrar caminho de arquivo nem nome de particao."""
