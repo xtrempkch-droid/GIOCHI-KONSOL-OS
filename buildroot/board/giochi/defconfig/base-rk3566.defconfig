@@ -89,7 +89,16 @@ BR2_LINUX_KERNEL_IMAGE=y
 
 # --- pilha grafica (ADR-04/05/06) --------------------------------------
 BR2_PACKAGE_MESA3D=y
+# kmsro: quem fala com o display (rockchip-drm) e delega a RENDERIZACAO.
+# panfrost e' o render driver do Mali-G52/G31.
 BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_PANFROST=y
+# Rede de seguranca: sem swrast nao existe NENHUM caminho de render quando o
+# panfrost nao sobe (driver ausente, sem render node, GPU travada). Medido na
+# X55: com panfrost como unico driver, o EGL falhava e o SDL so' dizia
+# "EGL not initialized" -- sem swrast nao havia fallback (AGENTS.md §3.68).
+# Custo de imagem: swrast_dri.so e kms_swrast_dri.so sao hardlink da mesma
+# biblioteca gallium, entao o SquashFS quase nao cresce.
+BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_SWRAST=y
 BR2_PACKAGE_MESA3D_OPENGL_ES=y
 BR2_PACKAGE_MESA3D_OPENGL_EGL=y
 BR2_PACKAGE_LIBDRM=y

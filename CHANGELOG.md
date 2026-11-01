@@ -5,6 +5,37 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não publicado]
 
+### Corrigido
+- **`EGL not initialized` era configuração, não driver ausente** (AGENTS.md
+  §3.68). O `S20graphics` forçava `MESA_LOADER_DRIVER_OVERRIDE=panfrost`, mas
+  nesta placa o dispositivo DRM é o *display* (`rockchip-drm`) e quem fala com
+  ele é o `rockchip_dri.so` (kmsro), que delega a renderização ao panfrost.
+  Forçando o driver de render direto, o EGL falha. Além disso a imagem não
+  tinha **nenhum** driver de software: sem `swrast`/`kms_swrast`, uma falha do
+  panfrost não tinha para onde cair.
+  - `S20graphics` decide por medição: tenta o driver do barramento e, se a
+    sonda falhar, cai para `kms_swrast` (logando
+    `Mesa: AVISO sem aceleracao`). `GIOCHI_MESA_OVERRIDE` continua como escape
+    hatch manual.
+  - `BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_SWRAST=y` nos dois templates: é a rede
+    de segurança. `swrast_dri.so`/`kms_swrast_dri.so` são hardlink da mesma
+    `libgallium`, então o SquashFS quase não cresce.
+  - `giochi-gpu-probe` passou a listar `/dev/dri` (cards e render nodes) e os
+    drivers em `/usr/lib/dri` antes de tentar o EGL.
+  - A decisão tem três estados (passou / falhou / **não testado**): sonda
+    ausente loga `Mesa: sonda nao executada` em vez de afirmar que passou.
+- **Launcher devolve o console quando o vídeo falha**: com o fbcon
+  desvinculado pelo `S20graphics`, uma falha do SDL deixava a tela preta sem
+  nenhuma pista visível. Agora o caminho de falha re-binda o `vtcon` e sobe o
+  `console_loglevel`, então o log do boot reaparece na tela.
+- **`splash` é marcador de diagnóstico**: default de 45 → **180 quadros** (3 s),
+  `GIOCHI_SPLASH_ALWAYS=1` mantém o splash na tela (teste isolado de "o SDL
+  desenha?"), e o log ganhou `render: SDL2 driver=... renderizador=...
+  saida=...` e `splash: exibindo N quadros`.
+- **Primeiro quadro em painel 640×480 desenhava nada**: a geometria tem default
+  640×480, então a comparação "tamanho mudou" dava falso no primeiro frame e
+  `tab_count`/`capacity` ficavam zero — justamente no painel do X35S/X35H.
+
 ### Adicionado
 - **A UI do Launcher desenha** (antes o `frame()` só limpava a tela, o que fazia
   "tela lisa" se confundir com "não subiu"):

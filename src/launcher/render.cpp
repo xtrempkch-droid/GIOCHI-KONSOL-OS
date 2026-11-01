@@ -35,7 +35,7 @@ namespace {
  *
  * Formato: RGBA8888 top-down (bootlogo.rgba) + bootlogo.json com largura e
  * altura. Tamanho tipico 640x349 (~893 KB), bem abaixo do teto de 4 MB.
- * O splash e exibido por GIOCHI_SPLASH_FRAMES frames (default 45 ~= 0.75 s a
+ * O splash e exibido por GIOCHI_SPLASH_FRAMES frames (default 180 ~= 3 s a
  * 60 fps) e e interrompido no primeiro botao pressionado.
  */
 class SplashImage {
@@ -157,8 +157,20 @@ private:
     int height_ = 0;
 };
 
+/* GIOCHI_SPLASH_FRAMES=N        quantos quadros o splash fica (0 desliga)
+ * GIOCHI_SPLASH_ALWAYS=1        fica para sempre: e' o teste "o SDL desenha?",
+ *                               sem depender do resto da UI
+ * Default 180 (~3 s a 60 fps): 45 era rapido demais para o olho encontrar a
+ * tela ligando e concluir que ALGUMA coisa foi desenhada.
+ */
 int splash_frames_from_env(int fallback)
 {
+    const char *sempre = std::getenv("GIOCHI_SPLASH_ALWAYS");
+
+    if (sempre != nullptr && *sempre == '1') {
+        return -1; /* marcador de "permanente" */
+    }
+
     const char *env = std::getenv("GIOCHI_SPLASH_FRAMES");
     if (env == nullptr || *env == '\0') {
         return fallback;
@@ -537,7 +549,7 @@ public:
                                      static_cast<Uint8>(rgb & 0xFFU), 0xFFU);
         (void)SDL_RenderClear(sdl_);
 
-        if (splash_frames_ > 0) {
+        if (splash_frames_ != 0) {
             splash_.draw(sdl_);
         } else if (ui.layout != nullptr) {
             paint(sdl_, ui);
@@ -549,8 +561,10 @@ public:
             splash_frames_--;
             if (splash_frames_ == 0) {
                 splash_.release();
+                GLOG_INFO("splash: fim; assumindo a UI");
             }
         }
+        /* splash_frames_ < 0 = modo permanente: nao decrementa. */
         return 0;
     }
 
@@ -569,15 +583,26 @@ public:
     void load_splash(const char *base_dir)
     {
         if (!splash_.load(sdl_, base_dir)) {
+            GLOG_WARN("render: splash ausente em '%s'; a tela cai direto na UI",
+                      base_dir != nullptr ? base_dir : "/usr/share/giochi");
             return;
         }
-        splash_frames_ = splash_frames_from_env(45);
+        splash_frames_ = splash_frames_from_env(180);
         if (splash_frames_ == 0) {
             splash_.release();
+            return;
+        }
+        /* Sempre LOGADO: se este numero nao aparece no giochi-boot.log, o
+         * backend SDL2 nem abriu, e o problema esta antes do desenho. */
+        if (splash_frames_ < 0) {
+            GLOG_INFO("splash: modo permanente (GIOCHI_SPLASH_ALWAYS=1)");
+        } else {
+            GLOG_INFO("splash: exibindo %d quadros", splash_frames_);
         }
     }
 
-    /* Qualquer entrada do usuario encerra o splash imediatamente. */
+    /* Qualquer entrada do usuario encerra o splash — menos no modo permanente,
+     * que existe justamente para ver se o SDL desenha. */
     void dismiss_splash()
     {
         if (splash_frames_ > 0) {
@@ -598,9 +623,14 @@ private:
             out_w = ui.layout->width;
             out_h = ui.layout->height;
         }
-        if (out_w != geo_.screen_w || out_h != geo_.screen_h) {
+        /* `geo_valida` e nao "tamanho mudou": a geometria tem default
+         * 640x480, entao num painel 640x480 (= X35S/X35H) a comparacao daria
+         * "igual" no primeiro quadro e tab_count/capacity ficariam ZERO —
+         * a tela sairia sem abas e sem grade justamente no painel pequeno. */
+        if (!geo_valida || out_w != geo_.screen_w || out_h != geo_.screen_h) {
             ui_geometry_base(&geo_, out_w, out_h);
             measure_tabs(ui);
+            geo_valida = true;
         }
 
         if (ui.theme == nullptr) {
@@ -632,6 +662,7 @@ private:
     SplashImage splash_;
     Font font_;
     UiGeometry geo_;
+    bool geo_valida = false;
     int splash_frames_ = 0;
     bool quit_ = false;
 };
@@ -674,6 +705,24 @@ static Renderer *open_sdl(const giochi_layout &layout, std::string *err)
         return nullptr;
     }
 
+    /* Um lugar, no log, que diz qual driver de video o SDL escolheu, qual
+     * renderizador saiu e em que tamanho. E' o primeiro dado que separa
+     * "o SDL nao abriu" de "abriu e desenhou no lugar errado". */
+    {
+        const char *driver = SDL_GetCurrentVideoDriver();
+        SDL_RendererInfo info = {};
+        int out_w = 0;
+        int out_h = 0;
+
+        (void)SDL_GetRendererOutputSize(sdl, &out_w, &out_h);
+        (void)SDL_GetRendererInfo(sdl, &info);
+        GLOG_INFO("render: SDL2 driver=%s renderizador=%s saida=%dx%d "
+                  "layout=%dx%d",
+                  driver != nullptr ? driver : "?",
+                  info.name != nullptr ? info.name : "?", out_w, out_h,
+                  layout.width, layout.height);
+    }
+
     auto *renderer = new SdlRenderer(window, sdl);
 
     /* Bootsplash: opcional e silencioso quando ausente (ver BOOTSPLASH.md). */
@@ -689,6 +738,44 @@ static Renderer *open_sdl(const giochi_layout &layout, std::string *err)
     return renderer;
 }
 
+/* Quando a UI nao consegue abrir o video, o S20graphics ja' desvinculou o
+ * fbcon (para o cursor nao piscar por cima do desenho). O resultado, medido no
+ * aparelho, era tela preta e nenhuma pista — o log existia, mas so' no serial
+ * e no cartao.
+ *
+ * Aqui o console volta: re-bindando o vtcon, as mensagens do boot (que o rcS
+ * ja' duplica com `tee`) reaparecem na tela. Custa nada quando o video
+ * funciona, porque so' roda no caminho de falha.
+ * GIOCHI_KEEP_FBCON=1 desliga (a tela fica preta de proposito).
+ */
+void devolver_console_de_video()
+{
+    const char *keep = std::getenv("GIOCHI_KEEP_FBCON");
+
+    if (keep != nullptr && std::strcmp(keep, "1") == 0) {
+        return;
+    }
+
+    for (int i = 0; i < 8; i++) {
+        char caminho[64];
+        std::snprintf(caminho, sizeof(caminho),
+                      "/sys/class/vtconsole/vtcon%d/bind", i);
+        FILE *fp = std::fopen(caminho, "w");
+        if (fp == nullptr) {
+            continue;
+        }
+        (void)std::fputs("1\n", fp);
+        (void)std::fclose(fp);
+    }
+
+    /* Sem console_loglevel alto o fbcon nao mostra nem o warning abaixo. */
+    FILE *printk = std::fopen("/proc/sys/kernel/printk", "w");
+    if (printk != nullptr) {
+        (void)std::fputs("7 4 1 7\n", printk);
+        (void)std::fclose(printk);
+    }
+}
+
 Renderer *render_open(const giochi_layout &layout, std::string *err)
 {
     std::string motivo;
@@ -700,6 +787,7 @@ Renderer *render_open(const giochi_layout &layout, std::string *err)
          * estava certo) em vez de na compilação do SDL2 — que saiu sem o
          * backend KMSDRM porque o Kconfig descartou o símbolo em silêncio
          * (AGENTS.md §3.55). */
+        devolver_console_de_video();
         GLOG_WARN("render: SDL2 indisponivel (%s); usando backend headless",
                   motivo.empty() ? "motivo desconhecido" : motivo.c_str());
         if (err != nullptr) {

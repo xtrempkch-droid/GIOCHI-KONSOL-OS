@@ -13,7 +13,7 @@ Especificação normativa: [architecture-v1.2.md](./architecture-v1.2.md).
 |---|---|---|---|
 | 1 | Imagem bootável no aparelho 🧪 | **nunca testada em hardware** | tudo |
 | 2 | Desenho dos widgets no Launcher | **desenha** (2026-10-31), a validar no aparelho | conteúdo real das abas |
-| 3 | Layout × painel (640×480 vs 720×1280) | layout é esticado | UI na X55 |
+| 3 | Layout × painel (640×480 vs 720×1280) | **resolvido**: geometria derivada da altura do painel (4 e 5 colunas) | — |
 | 4 | Áudio: decode + mux do RK817 | pendente | aba Música |
 | 5 | Gamepad (`rocknix-joypad`) e painel (X35S/X35H) ⛔ | não empacotado | essas duas placas |
 | 6 | USB na X35S/X35H 🧪 | não ancora (`ep0out`) | SSH/MTP nelas |

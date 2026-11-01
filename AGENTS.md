@@ -1687,6 +1687,44 @@ Compilar `render.cpp`/`font.cpp` com `-Wall -Wextra` contra os headers SDL2
 assinatura, e foi assim que os dois passaram limpos — mas "compilou" continua não
 sendo "desenhou". Quem fecha isso é o aparelho.
 
+### 3.68 O `MESA_LOADER_DRIVER_OVERRIDE=panfrost` era o motivo do "EGL not initialized"
+
+Sexto boot na X55 com a tela **acesa** (o §3.48 fechou o bind do DSI) e o
+Launcher ainda em `render=null`. O `giochi-gpu-probe` foi escrito na sessão
+anterior justamente para isso, e o log (que o mantenedor ainda não mandou)
+seria a resposta — mas a causa aparece lendo o código, e é verificável sem o
+aparelho:
+
+| Fato medido | Onde |
+|---|---|
+| `SDL_CreateWindow` no KMSDRM **exige** EGL/GBM — não existe caminho sem EGL no SDL 2.28 | `SDL_kmsdrmvideo.c`, `KMSDRM_CreateWindow` chama `KMSDRM_GBMInit` + `SDL_EGL_LoadLibrary` e devolve erro se falhar |
+| nesta placa o dispositivo DRM é o **display** (`rockchip-drm`); quem fala com ele é o **kmsro** | `strings rockchip_dri.so` contém `panfrost` (tabela kmsro do Mesa 24.0.9) |
+| `S20graphics` fazia `export MESA_LOADER_DRIVER_OVERRIDE=panfrost` para o rk3566 | lido no script |
+| `swrast_dri.so` e `kms_swrast_dri.so` **não existiam** na imagem | `ls /usr/lib/dri` |
+
+Ou seja: o override forçava o driver de **render** a ser carregado direto
+contra o nó do **display**; ele não reconhece o dispositivo, o EGL falha, e o
+único fallback (`swrast`) não foi compilado. O `-22`/`EGL not initialized` era
+a ponta de um erro de configuração, não de driver ausente.
+
+- Correção 1: **não forçar override**. Sem ele, o Mesa faz
+  `rockchip` → `panfrost` pelo kmsro, que é o caminho certo.
+- Correção 2: `BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_SWRAST=y`, para existir
+  **algum** caminho quando o panfrost não subir. `swrast_dri.so` e
+  `kms_swrast_dri.so` são hardlink da mesma `libgallium`, então o SquashFS
+  praticamente não cresce.
+- Correção 3: o `S20graphics` **decide por medição** — tenta o driver do
+  barramento, e se a sonda falhar tenta `kms_swrast` e loga
+  `Mesa: AVISO sem aceleracao`. Software é lento, mas mostra a UI; tela
+  apagada não é diagnóstico.
+- Guardas: `test_mesa_nao_forca_driver_de_render`, `test_software_render_e_o_fallback`
+  (confere template **e** defconfig gerado) e `test_sonda_reporta_render_node_e_drivers_dri`.
+
+**Regra que fica:** mensagem de erro do driver (`EGL not initialized`,
+`-22`, `no working init`) diz o **sintoma final**, nunca a causa. Antes de
+instrumentar, confira o que o processo **podia** carregar: arquivos em
+`/usr/lib/dri`, nós em `/dev/dri` e variáveis de override no ambiente.
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):
@@ -3573,3 +3611,78 @@ erro.
 KMSDRM — "compilou" não é "desenhou". Pendências da proposta, registradas na §11
 do documento: hint bar por par (botão, ação) com chip, indicadores da topbar,
 conteúdo de Home/Música e capas (`thumbgen`).
+
+### 2026-10-31 (30) — Copilot (splash como teste, e o `panfrost` forçado)
+
+Sexto boot: tela acesa, Launcher ainda `render=null`. O mantenedor pediu para
+**ligar o splash** como teste — e o raciocínio dele está certo: o splash usa
+`SDL_CreateWindow` + `SDL_RenderCopy` e nada da UI nova, então é o
+fio-de-barbante que separa "o SDL não abre" de "abre e a UI não desenha".
+
+**Causa encontrada lendo código, sem precisar do log (§3.68):**
+
+- `KMSDRM_CreateWindow` (SDL 2.28) **exige** EGL/GBM; não existe caminho sem
+  EGL. Logo o splash também não apareceria: a falha é anterior a ele.
+- O `S20graphics` fazia `export MESA_LOADER_DRIVER_OVERRIDE=panfrost`. Nesta
+  placa o DRM é o display (`rockchip-drm`) e quem conversa com ele é o
+  `rockchip_dri.so` (kmsro), que **delega a renderização** ao panfrost
+  (`strings rockchip_dri.so` → `panfrost`). Forçar o driver de render direto
+  contra o nó do display derruba o EGL.
+- E não havia rede: `swrast_dri.so` e `kms_swrast_dri.so` **não existiam** na
+  imagem, então uma falha do panfrost não tinha para onde cair.
+
+**Correções:** override removido (com `GIOCHI_MESA_OVERRIDE` como escape
+hatch), `GALLIUM_DRIVER_SWRAST=y` nos dois templates, e o `S20graphics` agora
+**decide por medição**: tenta o barramento e, se a sonda falhar, usa
+`kms_swrast` logando `Mesa: AVISO sem aceleracao`.
+
+**Splash como instrumento:** default 45 → **180 quadros** (3 s), novo
+`GIOCHI_SPLASH_ALWAYS=1` que o mantém na tela, e três linhas de log que antes
+não existiam: `render: SDL2 driver=... renderizador=... saida=...`,
+`splash: exibindo N quadros` e `splash: fim; assumindo a UI`.
+
+**Dois defeitos do meu próprio código, encontrados no caminho:**
+
+1. **Primeiro quadro em painel 640×480 desenhava nada.** A comparação era
+   "o tamanho mudou", e a geometria já nasce com default 640×480: no painel do
+   X35S/X35H o primeiro `frame()` pulava `ui_geometry_base`, deixando
+   `tab_count` e `capacity` em zero. Agora há um `geo_valida` explícito.
+2. **A sonda passou a rodar antes da entrega do framebuffer.** O teste existente
+   (`test_sonda_de_video_roda_no_boot`) reprovou na hora: a ordem importa porque
+   com o fbcon vinculado o DRM tem outro dono e a sonda mediria um estado que o
+   SDL não encontra. Bloco movido para depois de `devolver_framebuffer`.
+
+**Melhoria de diagnóstico que veio do sintoma:** o `S20graphics` desvincula o
+fbcon (para o cursor não piscar por cima da UI). Se o SDL falhasse depois
+disso, a tela ficava preta e a informação existia só no serial. Agora o
+caminho de falha do `render_open` **re-binda o vtcon** e sobe o
+`console_loglevel`: o log do boot reaparece na tela do aparelho.
+
+3. **A sonda devolvia 0 quando NÃO rodava.** `[ -x /usr/bin/giochi-gpu-probe ]
+   || return 0` fazia o caminho "não testado" ser lido pelo `elif` como
+   "aprovado", e o log afirmava `Mesa: driver do barramento` sem ninguém ter
+   testado nada. Agora a função tem três códigos (0 passou, 1 falhou, **2 não
+   testado**) e o `case $?` loga `Mesa: sonda nao executada`. Encontrado
+   rodando o bloco de decisão num harness com sonda falsa, não lendo o código.
+4. **`>> "$PROBE_TXT"` falhava sem `/run/giochi`** e o comando nem executava —
+   a sonda "reprovava" sem ter tentado. `mkdir -p "$(dirname "$PROBE_TXT")"`
+   antes do redirecionamento.
+
+**Verificação:** `tests/test_primeiro_boot.py` **19 testes** OK (cinco guardas
+novas: override removido, swrast em template **e** defconfig gerado, splash com
+rastro no log, sonda com inventário de `/dev/dri` + `/usr/lib/dri`, e "sonda que
+não roda não vira sucesso"). O bloco de decisão do Mesa foi extraído para um
+harness com sonda falsa e exercitado nos **quatro** caminhos: barramento OK,
+só software, nada passa, e sonda ausente — cada um produzindo o log correto.
+`render.cpp` e `gpu_probe.c` compilados com `-Wall -Wextra -Wshadow` contra os
+headers da imagem, sem warning. `sh -n` no `S20graphics`. `make test` 28/28,
+`make lint` rc=0.
+
+**Medido na imagem final:** `swrast_dri.so`, `kms_swrast_dri.so`,
+`rockchip_dri.so` e `panfrost_dri.so` são **hardlink** do mesmo arquivo de 13,7
+MB — o SquashFS foi de 29,28 para **29,35 MB**, ou seja 70 KB para ter um
+caminho de software. `S20graphics` na imagem não tem mais nenhum
+`MESA_LOADER_DRIVER_OVERRIDE=panfrost` fora de comentário.
+
+**Aberto:** o boot com swrast + kmsro não aconteceu. Se o driver do barramento
+passar, a UI usa a GPU; se não, cai para software e o log diz qual dos dois.

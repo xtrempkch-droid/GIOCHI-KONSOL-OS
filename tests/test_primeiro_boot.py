@@ -52,6 +52,110 @@ def sh_code(text):
 
 
 class PrimeiroBootTest(unittest.TestCase):
+    def test_mesa_nao_forca_driver_de_render(self):
+        """O driver do barramento e' o kmsro, nao o panfrost.
+
+        Medido na X55: o S20graphics exportava
+        `MESA_LOADER_DRIVER_OVERRIDE=panfrost`. Nesta placa o dispositivo DRM e'
+        o *display* (rockchip-drm); quem fala com ele e' o `rockchip_dri.so`
+        (kmsro), que delega a RENDERIZACAO ao panfrost. Forcando `panfrost`, o
+        Mesa carrega o driver de render direto contra o no' do display, o EGL
+        falha e o SDL so' diz "EGL not initialized" — tela apagada com o DRM
+        bindado.
+        """
+        codigo = sh_code(read(S20GRAPHICS))
+
+        self.assertNotIn(
+            "MESA_LOADER_DRIVER_OVERRIDE=panfrost", codigo,
+            "S20graphics volta a forcar o driver de RENDER: o kmsro "
+            "(rockchip_dri.so) e' quem fala com o display")
+        # Unset explicito no caminho padrao: e' o que deixa o kmsro decidir.
+        self.assertIn("unset MESA_LOADER_DRIVER_OVERRIDE", codigo)
+        # Escape hatch para depurar sem recompilar.
+        self.assertIn("GIOCHI_MESA_OVERRIDE", codigo)
+
+    def test_sonda_que_nao_roda_nao_vira_sucesso(self):
+        """Sonda ausente devolvia 0, e o script logava "driver passou".
+
+        Medido no harness: `[ -x /usr/bin/giochi-gpu-probe ] || return 0` fazia
+        o caminho "nao testado" ser lido como "aprovado". O log afirmava um
+        resultado que ninguem mediu — o tipo de mentira que manda a
+        investigacao para o lado errado.
+        """
+        codigo = sh_code(read(S20GRAPHICS))
+
+        self.assertIn("return 2", codigo,
+                      "sonda precisa distinguir 'nao testado' de 'passou'")
+        self.assertIn("sonda nao executada", codigo)
+        # O else nao pode disparar o fallback de software quando nada rodou.
+        self.assertIn("case $?", codigo)
+
+    def test_software_render_e_o_fallback(self):
+        """Sem swrast nao existe NENHUM caminho quando o panfrost nao sobe.
+
+        Medido na imagem da X55: /usr/lib/dri nao tinha
+        kms_swrast_dri.so nem swrast_dri.so. Com panfrost como unico driver,
+        uma falha dele derrubava o EGL para sempre, sem alternativa.
+        """
+        codigo = sh_code(read(S20GRAPHICS))
+
+        self.assertIn("kms_swrast", codigo,
+                      "S20graphics perdeu o fallback de software")
+
+        for template in ("base-rk3566.defconfig", "base-rk3326.defconfig"):
+            caminho = os.path.join(ROOT, "buildroot/board/giochi/defconfig",
+                                   template)
+            self.assertIn(
+                "BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_SWRAST=y", read(caminho),
+                f"{template}: sem swrast, uma falha do panfrost nao tem "
+                f"para onde cair")
+
+        # E o defconfig GERADO tem de acompanhar (esquecer `make defconfigs`
+        # deixa o template certo e a imagem errada).
+        for aparelho in ("x55", "x35s", "x35h"):
+            gerado = os.path.join(ROOT, "buildroot/configs",
+                                  f"giochi_{aparelho}_defconfig")
+            self.assertIn(
+                "BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_SWRAST=y", read(gerado),
+                f"{aparelho}: defconfig gerado sem swrast (rode make defconfigs)")
+
+    def test_splash_e_marcador_de_diagnostico(self):
+        """O splash e' o teste "o SDL desenha?" — e tem de deixar rastro.
+
+        Se o Launcher nao abre o SDL, o splash tambem nao aparece: nesse caso o
+        log e' a unica testemunha. Por isso os dois avisos sao obrigatorios:
+        "splash: exibindo N quadros" e o do driver de video escolhido.
+        """
+        render = read(os.path.join(ROOT, "src/launcher/render.cpp"))
+
+        self.assertIn("GIOCHI_SPLASH_ALWAYS", render,
+                      "sem modo permanente nao da' para isolar o SDL da UI")
+        self.assertIn("splash: exibindo", render)
+        self.assertIn("render: SDL2 driver=", render,
+                      "sem o driver no log, 'nao desenhou' nao tem culpado")
+        # Default antigo (45 quadros) e' curto demais para o olho achar a tela
+        # ligando e concluir que algo foi desenhado.
+        self.assertNotIn("splash_frames_from_env(45)", render)
+        self.assertIn("splash_frames_from_env(180)", render)
+
+        # Falha de video tem de devolver o console: tela preta nao e' pista.
+        self.assertIn("devolver_console_de_video()", render)
+        self.assertIn("/sys/class/vtconsole/vtcon%d/bind", render)
+
+    def test_sonda_reporta_render_node_e_drivers_dri(self):
+        """A sonda tem de dizer o que o Mesa PODE carregar.
+
+        "EGL not initialized" cobre tres causas com correcoes opostas: sem
+        render node, driver de render ausente, driver de display forcado
+        errado. A sonda lista os dois inventarios antes de tentar o EGL.
+        """
+        probe = read(os.path.join(ROOT, "src/tools/gpu_probe.c"))
+
+        self.assertIn("/dev/dri", probe)
+        self.assertIn("renderD", probe)
+        self.assertIn("kms_swrast_dri.so", probe)
+        self.assertIn("rockchip_dri.so", probe)
+
     def test_rcs_nao_chama_servico_duas_vezes(self):
         """'$script' start || '$script' rodava o serviço sem argumento.
 
@@ -287,9 +391,14 @@ class PrimeiroBootTest(unittest.TestCase):
         self.assertIn("giochi-gpu-probe", body,
                       "S20graphics nao chama a sonda")
         # Roda DEPOIS do handover do framebuffer, senao mede outro estado.
+        # A tentativa padrao (`sonda_video ""`) e' a que decide o driver que o
+        # SDL vai encontrar, e ela escreve com >> para nao apagar o bloco da
+        # tentativa anterior.
         self.assertLess(body.index("devolver_framebuffer\n"),
-                        body.index("giochi-gpu-probe >"),
+                        body.index('sonda_video ""'),
                         "a sonda tem de rodar depois de devolver_framebuffer")
+        self.assertIn('giochi-gpu-probe >> "$PROBE_TXT"', body,
+                      "a sonda tem de APPENDAR: rodar duas vezes e' o normal")
         self.assertIn("GIOCHI_NO_GPU_PROBE", body,
                       "sem escape hatch a sonda nao pode ser desligada")
 

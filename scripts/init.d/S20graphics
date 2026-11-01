@@ -54,20 +54,48 @@ esac
 export GIOCHI_WIDTH GIOCHI_HEIGHT
 log "painel=$PANEL rotacao=$ROTATION => ${GIOCHI_WIDTH}x${GIOCHI_HEIGHT}"
 
-case "$SOC" in
-    rk3566*)
-        export MESA_LOADER_DRIVER_OVERRIDE=panfrost
-        ;;
-    rk3326*)
-        # Mali-G31 usa Panfrost; Lima fica disponivel para GPUs Utgard.
-        if ! ls /sys/bus/platform/drivers/panfrost >/dev/null 2>&1; then
-            export MESA_LOADER_DRIVER_OVERRIDE=panfrost
-        fi
-        ;;
-    *)
-        log "SoC '$SOC' nao reconhecido; usando defaults do Mesa"
-        ;;
-esac
+# --- escolha do driver do Mesa (AGENTS.md §3.68) ------------------------
+# NAO force MESA_LOADER_DRIVER_OVERRIDE=panfrost. Nesta placa o dispositivo
+# DRM e' o *display* (rockchip-drm), e quem conversa com ele e' o driver kmsro
+# `rockchip_dri.so`, que delega a RENDERIZACAO ao panfrost. Forcar `panfrost`
+# carrega o driver de render direto contra o no' do display; ele nao reconhece
+# o dispositivo, o EGL falha e o SDL devolve apenas "EGL not initialized" —
+# foi o que manteve a tela apagada mesmo com o DRM bindado (§3.48 fechado).
+#
+# Medido no binario da imagem: `strings rockchip_dri.so` contem "panfrost", que
+# e' a tabela kmsro do Mesa. Sem override o Mesa faz rockchip -> panfrost
+# sozinho, que e' o caminho certo.
+#
+# Se o hardware nao passar, cai para software (kms_swrast). Ele existe porque
+# BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_SWRAST=y: sem ele nao havia NENHUM caminho
+# (nem panfrost nem swrast), e o EGL falhava sempre.
+PROBE_TXT=/run/giochi/gpu-probe.txt
+mkdir -p /run/giochi 2>/dev/null || true
+
+aplicar_mesa() {
+    if [ -n "${1:-}" ]; then
+        export MESA_LOADER_DRIVER_OVERRIDE="$1"
+    else
+        unset MESA_LOADER_DRIVER_OVERRIDE 2>/dev/null || true
+    fi
+}
+
+# Roda a sonda com o override pedido ("" = deixa o Mesa decidir pelo driver do
+# DRM) e devolve 0 se os cinco passos passaram. A saida vai para o log do boot.
+# Codigos de saida: 0 = passou, 1 = falhou, 2 = NAO FOI TESTADO.
+# O 2 e' essencial: antes a funcao devolvia 0 quando a sonda nao existia, e o
+# chamador logava "driver do barramento passou" sem ninguem ter testado nada.
+sonda_video() {
+    aplicar_mesa "${1:-}"
+    [ "${GIOCHI_NO_GPU_PROBE:-0}" = "1" ] && return 2
+    [ -x /usr/bin/giochi-gpu-probe ] || return 2
+    # O redirecionamento tambem falha: sem /run/giochi o ">>" nao abre e o
+    # comando nem roda — a sonda diria FALHOU sem ter tentado nada.
+    mkdir -p "$(dirname "$PROBE_TXT")" 2>/dev/null || true
+    printf '\n--- driver=%s ---\n' "${1:-(auto)}" >> "$PROBE_TXT" 2>/dev/null || \
+        return 1
+    giochi-gpu-probe >> "$PROBE_TXT" 2>&1
+}
 
 export GIOCHI_SOC="$SOC"
 
@@ -139,26 +167,50 @@ devolver_framebuffer() {
 }
 devolver_framebuffer
 
-# --- sonda de video (roda no MESMO estado em que o SDL vai rodar) ---------
-# Por que: o Launcher so consegue dizer "EGL not initialized", que e' o sintoma
-# final — nao diz se falhou abrir /dev/dri, o GBM, a plataforma EGL, a escolha
-# de config ou o contexto. Medido na X55: /dev/dri/card0 existe, o DRM bindou
-# e o SDL2 TEM KMSDRM (chegou a tentar criar a janela), e mesmo assim o render
-# caiu para headless. A sonda faz os cinco passos e imprime onde parou.
-#
-# Roda DEPOIS do handover de proposito: com o fbcon vinculado o DRM tem outro
-# dono, e a sonda mediria uma situacao que o SDL nao vai encontrar.
-# GIOCHI_NO_GPU_PROBE=1 desliga.
-if [ "${GIOCHI_NO_GPU_PROBE:-0}" != "1" ] && \
-   [ -x /usr/bin/giochi-gpu-probe ]; then
-    giochi-gpu-probe > /run/giochi/gpu-probe.txt 2>&1
-    _probe_rc=$?
+# A decisao do Mesa vem DEPOIS de entregar o framebuffer: com o fbcon
+# vinculado o DRM tem outro dono e a sonda mediria uma situacao que o SDL nao
+# vai encontrar.
+: > "$PROBE_TXT" 2>/dev/null || true
+
+if [ -n "${GIOCHI_MESA_OVERRIDE:-}" ]; then
+    aplicar_mesa "$GIOCHI_MESA_OVERRIDE"
+    log "Mesa: override manual '$GIOCHI_MESA_OVERRIDE' (GIOCHI_MESA_OVERRIDE)"
+else
+    sonda_video ""
+    case $? in
+        0)
+            aplicar_mesa ""
+            log "Mesa: driver do barramento (kmsro rockchip -> panfrost)"
+            ;;
+        2)
+            # Nao testado (sonda ausente ou desligada): mantem o caminho
+            # normal do Mesa e diz isso, em vez de afirmar que passou.
+            aplicar_mesa ""
+            log "Mesa: sonda nao executada; deixando o Mesa escolher"
+            ;;
+        *)
+            if sonda_video kms_swrast; then
+                aplicar_mesa kms_swrast
+                log "Mesa: AVISO sem aceleracao; usando software (kms_swrast)"
+            else
+                aplicar_mesa ""
+                log "Mesa: nenhum driver passou na sonda; veja $PROBE_TXT"
+            fi
+            ;;
+    esac
+fi
+
+
+# --- relato da sonda de video -------------------------------------------
+# A sonda ja' rodou no bloco do Mesa acima, no MESMO estado em que o SDL vai
+# rodar (depois da entrega do framebuffer). Aqui so' copiamos o resultado para
+# o log, linha por linha: o S00bootlog guarda isso na particao FAT, entao o
+# proximo boot diz exatamente em qual dos cinco passos parou.
+if [ -f "$PROBE_TXT" ] && [ -s "$PROBE_TXT" ]; then
     while IFS= read -r _linha; do
         [ -n "$_linha" ] || continue
         log "sonda: $_linha"
-    done < /run/giochi/gpu-probe.txt
-    [ "$_probe_rc" -eq 0 ] || \
-        log "sonda de video: parou no primeiro FALHOU (arquivo /run/giochi/gpu-probe.txt)"
+    done < "$PROBE_TXT"
 fi
 
 if command -v gamescope >/dev/null 2>&1; then

@@ -30,6 +30,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <dirent.h>
+
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 
@@ -164,6 +166,50 @@ int main(int argc, char **argv)
     linha("info", "SDL_VIDEODRIVER=%s",
           getenv("SDL_VIDEODRIVER") != NULL ? getenv("SDL_VIDEODRIVER")
                                             : "(nao definido)");
+
+    /* 0. inventario: quais nos DRM e quais drivers DRI existem.
+     * Sem /dev/dri/renderD* o panfrost nao tem por onde ser usado, e sem
+     * kms_swrast_dri.so nao existe caminho de software — os dois casos dao o
+     * mesmo "EGL not initialized", e as correcoes sao opostas. */
+    {
+        const char *dir = "/dev/dri";
+        DIR *d = opendir(dir);
+        struct dirent *e;
+        int tem_card = 0;
+        int tem_render = 0;
+
+        if (d == NULL) {
+            linha("FALHOU", "%s nao existe: %s", dir, strerror(errno));
+            return 1;
+        }
+        while ((e = readdir(d)) != NULL) {
+            if (strncmp(e->d_name, "card", 4) == 0) {
+                tem_card++;
+            } else if (strncmp(e->d_name, "renderD", 7) == 0) {
+                tem_render++;
+            }
+        }
+        closedir(d);
+        linha(tem_card > 0 ? "OK" : "FALHOU", "%s: %d card(s), %d render node(s)",
+              dir, tem_card, tem_render);
+        if (tem_render == 0) {
+            linha("info", "sem render node: o kmsro nao pode delegar render "
+                          "ao GPU (panfrost)");
+        }
+    }
+    {
+        const char *dir = "/usr/lib/dri";
+        static const char *precisa[] = {"rockchip_dri.so", "panfrost_dri.so",
+                                        "kms_swrast_dri.so", "swrast_dri.so"};
+        char caminho[256];
+
+        for (size_t i = 0; i < sizeof(precisa) / sizeof(precisa[0]); i++) {
+            (void)snprintf(caminho, sizeof(caminho), "%s/%s", dir, precisa[i]);
+            linha(access(caminho, R_OK) == 0 ? "OK" : "aviso", "%s %s",
+                  precisa[i], access(caminho, R_OK) == 0 ? "presente"
+                                                        : "AUSENTE");
+        }
+    }
 
     /* 1. o nó DRM existe e abre. */
     fd = open(dev, O_RDWR | O_CLOEXEC);
