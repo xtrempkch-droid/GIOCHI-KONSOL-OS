@@ -4166,10 +4166,21 @@ temas — primário ≥ 4,5:1, secundário ≥ 3:1); `make tema-galeria` gera 13
 imagens; imagem X55 gerada e conferida **por dentro** (`themes/` com os 6 +
 `index.json`, `device-theme.json` = `neon_rose`, `theme.json` ausente).
 
+**Gravado às 02:05** (o mantenedor liberou o `polkit`): `dd conv=fsync` →
+981 467 136 B a 24 MB/s, e `verify-card.py` →
+`OK: o cartao e' identico a imagem, byte a byte`
+(sha256 `594577cd…392398d4` nos dois lados). Conferido no cartão, não só na
+imagem: FAT com `Image`, `board.dtb`, `dtbs/`, `boot.scr` de 6 875 B (com
+`PARTUUID=47494f43-02`) e splash.
+
+- **O cartão gravado é o SDXC de 116 GB**, não o de 29,7 GB (que está dentro da
+  X55). É o mesmo que deu `EIO` no boot de 2026-10-31 (§3.42) — e a região que
+  falhou (setores 213088–213192, ~104 MiB, dentro de `system-a`) foi lida pelo
+  `/dev/sdd` e comparada com a imagem: **hash igual**. Se o boot travar em
+  `SQUASHFS error` de novo, é mídia, não imagem.
+
 **Aberto:** nenhuma das seis telas foi vista no aparelho — a imagem foi
-regerada e conferida, o boot com ela ainda não aconteceu. **Atenção ao cartão**:
-às 01:52 o leitor tinha o **SDXC de 116 GB** (o que deu `EIO` no §3.42), não o
-de 29,7 GB — o bom estava dentro da X55. As duas tentativas de gravação foram
-barradas pelo `polkit` (sem senha digitada), então **nada foi escrito** nele. O preview continua
+regerada, conferida por dentro, gravada e verificada; o boot com ela ainda não
+aconteceu. O preview continua
 sendo rasterização da geometria publicada, **não** captura de tela. Push segue
 bloqueado por credencial.
