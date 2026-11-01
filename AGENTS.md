@@ -3045,3 +3045,56 @@ aarch64; `ports/doom3` inspecionado arquivo por arquivo. `make lint` rc=0 e
 `tests/run_tests.sh` **26/26**. **Não rodou:** nada disso em aparelho — e
 `GTAmodding/re3` não existe mais (derrubado por DMCA), o que fecha a rota
 "GTA III/VC por reimplementação".
+
+### 2026-10-31 (27) — Copilot (levantamento de engines: o teto do Mesa decide)
+
+O mantenedor pediu o levantamento do resto do mundo de engines. Registrado em
+[docs/GAMES.md](docs/GAMES.md), na **mesma** seção "Outras engines" (sem arquivo
+novo).
+
+**O dado que nenhuma análise anterior tinha — e que reordena tudo:** o teto
+gráfico real, lido no `features.txt` oficial do Mesa:
+
+| Driver | SoC | GL desktop | GLES |
+|---|---|---|---|
+| panfrost | RK3566 | **3.1** (3.0 e 3.1 "all DONE"; **3.3 fora**) | 3.1 |
+| lima | RK3326 | **2.1** (nem aparece no GL 3.0) | 2.0 |
+
+No Mesa, o `GL 3.3` lista `freedreno, nv50, nvc0, r600, radeonsi, llvmpipe,
+softpipe, virgl, zink, d3d12, iris, crocus, asahi` — **panfrost não está lá**.
+Isso é mais restritivo que a ADR-06 sugere, e vale para os dois SoCs de forma
+diferente: engine que só exige GL 2.0 (dhewm3, Minetest, ioquake3) roda nos
+**dois**; engine de GL 3.3 precisa de GLES/gl4es.
+
+**Correção de uma afirmação minha de ontem:** eu disse que GZDoom e OpenMW
+"exigem GL 3.3, estão fora". Verdade só para o caminho **GL desktop**: o GZDoom
+tem `option(HAVE_GLES2)` no CMake e o OpenMW tem `OPENMW_GL4ES_MANUAL_INIT`
+(gl4es traduz GL 2.x→GLES). Nenhum foi testado aqui, então o correto é
+**"possível, não verificado"** — rebaixado de "impossível".
+
+**O levantamento (tamanho e licença medidos no índice do Alpine aarch64):**
+
+- **já no Buildroot, custo quase zero:** Chocolate Doom, PrBoom+, Solarus,
+  Minetest;
+- **cabe com receita própria:** raylib **1,4 MB Zlib** com backend GLES2/ES3
+  explícito (145 ocorrências em `rlgl.h`) — o melhor custo/benefício do
+  levantamento; LÖVE 3,8 MB Zlib; Allegro 1,8 MB BSD-3; TIC-80 4,9 MB MIT;
+  EasyRPG 3,4 MB MIT; RetroArch 11,5 MB; dhewm3 37,8 MB; ioquake3;
+- **cabe, com dúvida de desempenho:** PPSSPP 33,8 MB, melonDS 3,2 MB (pede
+  GL 3.2 — o ponto de atenção);
+- **fora por espaço:** Xonotic (1,1 GB de dados), SuperTuxKart (717 MB).
+
+**Achado colateral de método:** busquei "GLES" com `grep -i` e o dhewm3 deu
+"1 ocorrência" — era a substring dentro de `Angles.cpp`. Depois disso passei a
+usar limite de palavra (`(^|[^A-Za-z])(GLES|OPENGL_ES)[0-9]?`). Vale como
+lembrete: busca textual sem fronteira em nome de engine é fábrica de falso
+positivo — a mesma classe do `linux-*` casando `linux-firmware` no
+`test_kernel_patch`.
+
+**Verificação:** `features.txt` do Mesa lido (níveis GL 2.1→4.6 e presença por
+driver); tamanhos e licenças do `APKINDEX` aarch64; existência no Buildroot
+**sondada por caminho** (a listagem trunca — §3.49); backends GLES conferidos no
+fonte onde havia caminho válido (raylib, GZDoom, LÖVE, OpenMW) e marcados "não
+verificado" onde não confirmei (ioquake3, dhewm3, minetest/irrlicht).
+`make lint` rc=0 e `tests/run_tests.sh` **26/26**. **Não rodou:** nenhuma dessas
+engines em aparelho — a coluna "backend" é leitura de fonte, não medição em GPU.

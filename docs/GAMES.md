@@ -92,6 +92,53 @@ não passam:
 > engine da Rockstar e o codinome da id Tech 5. As duas são fechadas; não vale
 > a pena discutir qual foi pedida.
 
+### O teto gráfico, medido (é o que decide tudo)
+
+Do `features.txt` oficial do Mesa (a fonte que os próprios drivers usam):
+
+| Driver | SoC | GL desktop | GLES |
+|---|---|---|---|
+| **panfrost** | RK3566 (Mali-G52) | **3.1** (GL 3.0 e 3.1 "all DONE"; **3.3 não**) | 3.1 |
+| **lima** | RK3326 (Mali-G31) | **2.1** (não aparece nem no GL 3.0) | 2.0 |
+
+Isso é mais restritivo do que a ADR-06 sugere e **não** é opinião: no Mesa, o
+`GL 3.3` lista `freedreno, nv50, nvc0, r600, radeonsi, llvmpipe, softpipe,
+virgl, zink, d3d12, iris, crocus, asahi` — **panfrost não está lá**.
+
+Consequência: engine que exige **GL 3.3 core** ou **Vulkan** está fora. Engine
+que usa **GL ≤ 3.1** roda com o GL desktop do panfrost (não precisa de GLES);
+engine com backend **GLES 2/3** também roda. E **renderizador por software**
+roda em qualquer um dos dois — é a categoria mais segura para o RK3326.
+
+### Levantamento (tamanho e licença medidos no Alpine aarch64)
+
+| Engine | Tam. inst. | Licença | No Buildroot? | Backend | Veredito |
+|---|---|---|---|---|---|
+| **Chocolate Doom** | — | GPL-2.0 | **sim** | software | ✅ o mais leve de todos |
+| **PrBoom+** | — | GPL-2.0 | **sim** | software/GL 1.x | ✅ |
+| **Solarus** | — | GPL-2.0 | **sim** | SDL2 (software/GL) | ✅ |
+| **Minetest** | 18,1 MB | LGPL-2.1 | **sim** | GL 2.0 | ✅ |
+| **raylib** | **1,4 MB** | **Zlib** | não | **GLES2/ES3 explícito** | ✅ melhor custo/benefício |
+| **LÖVE** | 3,8 MB | **Zlib** | não | GL 2.1 + caminho GLES | ✅ |
+| **Allegro 5** | 1,8 MB | BSD-3 | não | GL/GLES | ✅ |
+| **TIC-80** | 4,9 MB (arm64) | **MIT** | não | software/GL | ✅ cartuchos de ~100 KB |
+| **EasyRPG** | 3,4 MB | **MIT** | não | software (SDL2) | ✅ RPG Maker 2000/2003 |
+| **RetroArch + cores** | 11,5 MB | GPL-2.0 | não | GLES | ✅ `runtime` já previsto |
+| **dhewm3** (id Tech 4) | 37,8 MB | GPL-3.0 | não | GL 2.0 | ✅ cabe nos dois SoCs |
+| **ioquake3** | — | GPL-2.0 | não | GL 1.1 | ✅ |
+| **PPSSPP** | 33,8 MB | GPL-2.0 | não | GLES 2/3 | ⚠️ cabe, mas emular PSP em 2 GB é dúvida |
+| **melonDS** | 3,2 MB | GPL-3.0 | não | GL 3.2 | ⚠️ o GL 3.2 é o ponto |
+| **GZDoom** | 25,9 MB | GPL-3.0 | não | **GL 3.3 core**; tem `HAVE_GLES2` (caminho Android) | ⚠️ **só pelo GLES2, não verificado** |
+| **OpenMW** | 26,1 MB | GPL-3.0 | não | GL 3.3; tem `gl4es` | ⚠️ **só com gl4es, não verificado** |
+| **Xonotic** | 0,6 MB + **1,1 GB** dados | GPL-2.0 | não | GL 2 | ❌ espaço |
+| **SuperTuxKart** | 17,4 MB + **717 MB** dados | GPL-3.0 | não | GL 2–3 | ❌ espaço |
+
+**Correção de uma afirmação minha da véspera:** eu disse que GZDoom e OpenMW
+"exigem GL 3.3, fora". Isso é verdade para o **caminho GL desktop**, mas os dois
+têm rota alternativa — GZDoom tem `option(HAVE_GLES2)` no CMake e o OpenMW tem
+`OPENMW_GL4ES_MANUAL_INIT` (gl4es traduz GL 2.x para GLES). Nenhuma das duas foi
+testada aqui, então o correto é **"possível, não verificado"**, não "impossível".
+
 ### O que **é** viável na mesma família
 
 **id Tech 4** — `DOOM-3-BFG` é **GPL-3.0** (repositório oficial da id Software) e
