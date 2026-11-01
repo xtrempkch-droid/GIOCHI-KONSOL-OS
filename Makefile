@@ -474,6 +474,8 @@ lint:
 	@python3 -m unittest tests.test_giochi_ctl 2>&1 | grep -E "Ran|OK|FAILED" | tail -2
 	@echo "== modo desenvolvedor no cartao =="
 	@python3 -m unittest tests.test_dev_mode_card 2>&1 | grep -E "Ran|OK|FAILED" | tail -2
+	@echo "== diagnostico de usb =="
+	@python3 -m unittest tests.test_usb_diag 2>&1 | grep -E "Ran|OK|FAILED" | tail -2
 	@echo "== gravacao do cartao =="
 	@python3 -m unittest tests.test_flash_card 2>&1 | grep -E "Ran|OK|FAILED" | tail -2
 	@echo "== app de loja do PC =="

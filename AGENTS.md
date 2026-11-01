@@ -2301,6 +2301,34 @@ USB que nem chegou a funcionar.
 - **Regra que fica**: `umount` seguido de operação que pode falhar precisa de
   caminho de volta. Desmontar e "torcer" custa ao usuário a partição inteira.
 
+### 3.90 A ferramenta de diagnóstico olhava só o fim do log
+
+`tools/giochi-usb-diag.sh --cartao` imprimia `tail -25` do `giochi-boot.log`.
+Num log real do aparelho (1 141 linhas) a sonda do `S50usb` fica **centenas de
+linhas antes do fim** — ou seja, a ferramenta escrita para responder "o gadget
+ancorou?" nunca mostrava a resposta. Pior que não ter a ferramenta: ela
+imprimia um log plausível e a conclusão saía como "não há dado relevante".
+
+- Agora `usb_do_log()` **extrai** as linhas de USB de qualquer posição do
+  arquivo (sonda, bind, erros do `dwc3`) e as **classifica**:
+  - `UDC VAZIO` + `dr_mode = peripheral` → o probe do dwc3/PHY não completou
+    (é o estado mais confuso: quem lê "peripheral" conclui que o patch
+    resolveu, e não resolveu);
+  - `dr_mode = otg` → o patch de DT não entrou na imagem;
+  - `ep0out: -110` → timeout, `PRTCAPDIR` não está em DEVICE;
+  - `ep0out: -22` → `NO_RESOURCE`; `-11` → `BUS_EXPIRY`;
+  - `ep0out` sem número → imagem anterior ao patch 0004, e o log **diz** isso
+    em vez de adivinhar.
+- O `tail` continua, menor, só para contexto (`--linhas N` ajusta).
+- Guarda: suíte `diagnostico-de-usb` (`tests/test_usb_diag.py`, 11 testes)
+  roda a função real sobre logs sintéticos de **1 100+ linhas** — é o tamanho
+  que expõe o `tail`. Testada ao contrário: removendo a chamada de
+  `usb_do_log` do `ler_cartao`, reprova.
+- **Regra que fica**: ferramenta de diagnóstico que imprime "as últimas N
+  linhas" de um log longo precisa **procurar o que importa**, não confiar na
+  posição. O sintoma tem o mesmo formato do §3.42 (log termina no meio de uma
+  linha): a informação existe, o instrumento não a mostra.
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):
@@ -4720,3 +4748,32 @@ power-cycle o serial não tem o que mostrar. O próximo boot responde sozinho:
 a sonda no `giochi-boot.log` diz o estado do UDC e do bind, e o patch 0004
 diz o número do erro.
 
+### 2026-11-01 (23) — Copilot (a ferramenta de diagnóstico escondia a resposta)
+
+Sem hardware disponível (cartão fora do leitor, nenhum gadget no barramento,
+serial mudo), fui atrás do instrumento em vez do sintoma — e achei um defeito
+que teria custado a próxima sessão inteira:
+
+**`tools/giochi-usb-diag.sh --cartao` imprimia `tail -25`.** O log real do
+aparelho tem 1 141 linhas e a sonda do `S50usb` fica centenas de linhas antes
+do fim. A ferramenta escrita exatamente para responder "o gadget ancorou?"
+**nunca mostrava a resposta**. E não falhava: imprimia um log plausível, então
+a conclusão saía como "o log não diz" — que é pior que "não tenho o log".
+
+- `usb_do_log()` agora **procura e classifica** as linhas de USB em qualquer
+  posição: `UDC VAZIO` (separado do caso `peripheral`, que significa "o patch
+  entrou e o probe do PHY não completou"), `dr_mode` efetivo, o bind, e o erro
+  do `dwc3` com o número (`-110` timeout / `-22` NO_RESOURCE / `-11`
+  BUS_EXPIRY / sem número = imagem antiga).
+- `--linhas N` ajusta o contexto.
+- Suíte nova `diagnostico-de-usb` (11 testes) roda a função **real** sobre
+  logs sintéticos de 1 100+ linhas — o tamanho é o que expõe o `tail`.
+  Provada ao contrário: removendo a chamada do `ler_cartao`, reprova.
+
+`make test` **36/36**, `make lint` rc=0.
+
+**Aberto, e é o mesmo de antes:** o boot com os patches 0003+0004 não foi
+capturado (o console está ligado há horas e sem power-cycle o serial não
+mostra o passado). Quando o cartão voltar ao leitor, o caminho é:
+`tools/flash-card.sh /dev/sdd` (imagem `d9c9b82b`, com a sonda) e, no boot
+seguinte, `tools/giochi-usb-diag.sh --cartao` — que agora responde.

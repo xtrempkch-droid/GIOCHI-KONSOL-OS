@@ -165,6 +165,19 @@ if command -v python3 >/dev/null 2>&1; then
     fi
 fi
 
+# Diagnostico de USB (tools/giochi-usb-diag.sh): a ferramenta que responde
+# "o gadget ancorou?" olhava so' o fim do giochi-boot.log, e num log real de
+# 1141 linhas a sonda do S50usb fica centenas de linhas antes do fim.
+if command -v python3 >/dev/null 2>&1; then
+    total=$((total + 1))
+    if (cd "$ROOT" && python3 -m unittest tests.test_usb_diag) >/dev/null 2>&1; then
+        echo "OK     diagnostico-de-usb (python)"
+    else
+        echo "FALHA  diagnostico-de-usb (python)"
+        fail=$((fail + 1))
+    fi
+fi
+
 # Gravar o cartao (tools/flash-card.sh). Une dd + verificacao + Modo
 # Desenvolvedor; cada recusa do script e' um jeito de perder o cartao ou o
 # tempo de quem esta' com o console na mao.

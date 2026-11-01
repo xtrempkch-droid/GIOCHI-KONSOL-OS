@@ -20,12 +20,19 @@
 #   tools/giochi-usb-diag.sh              # mede agora e explica o resultado
 #   tools/giochi-usb-diag.sh --esperar 30 # espera o dispositivo aparecer
 #   tools/giochi-usb-diag.sh --cartao     # le o log de boot do cartao montado
+#   tools/giochi-usb-diag.sh --cartao --linhas 60   # mais contexto do log
+#
+# O `--cartao` NAO mostra so' o fim do log: extrai primeiro as linhas de USB
+# (a sonda do S50usb, o bind, os erros do dwc3) e as CLASSIFICA. Num log real
+# de 1 141 linhas a sonda fica centenas de linhas antes do fim, e o `tail`
+# sozinho escondia exatamente a resposta que a ferramenta existe para dar.
 set -u
 
 PROG=giochi-usb-diag
 ESPERAR=0
 CARTAO=0
 IFACE=
+LINHAS=15
 HOST=${GIOCHI_HOST:-10.55.0.2}
 PC_IP=10.55.0.1
 
@@ -37,7 +44,8 @@ while [ $# -gt 0 ]; do
         --esperar) ESPERAR=${2:-30}; shift 2 ;;
         --cartao)  CARTAO=1; shift ;;
         --iface)   IFACE=${2:-}; shift 2 ;;
-        -h|--help) sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --linhas)  LINHAS=${2:-15}; shift 2 ;;
+        -h|--help) sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) printf '%s: opcao desconhecida %s\n' "$PROG" "$1" >&2; exit 2 ;;
     esac
 done
@@ -54,7 +62,13 @@ ler_cartao() {
             # O marcador .inprogress diz se o boot ANTERIOR terminou (§3.32).
             [ -f "$d/giochi-boot.inprogress" ] && \
                 printf '    ATENCAO: giochi-boot.inprogress presente -> o boot anterior NAO terminou\n'
-            tail -n "${LINHAS:-25}" "$f" | sed 's/^/    /'
+            # As linhas do USB primeiro, e o rabo do log depois. Antes isto era
+            # so' `tail -25`: num log de 1100 linhas a sonda do S50usb fica
+            # centenas de linhas antes do fim e NUNCA aparecia — a ferramenta
+            # feita para responder "o gadget ancorou?" nao mostrava a resposta.
+            usb_do_log "$f"
+            log "--- ultimas ${LINHAS:-15} linhas"
+            tail -n "${LINHAS:-15}" "$f" | sed 's/^/    /'
         done
     done
     if [ "$achou" = "0" ]; then
@@ -63,6 +77,78 @@ ler_cartao() {
         log "  se o cartao esteve no aparelho e nao ha log, o rcS NAO rodou:"
         log "  o boot parou antes do userspace (kernel/DTB/raiz)."
         return 1
+    fi
+    return 0
+}
+
+# Extrai e CLASSIFICA as linhas de USB de um log de boot.
+#
+# Cada padrao abaixo corresponde a um estado diferente do controlador, e a
+# acao muda em cada um. A sonda do S50usb (AGENTS.md §3.88) existe porque o
+# log anterior nao distinguia "configurado" de "anexado".
+usb_do_log() {
+    arq=$1
+    log "--- USB neste boot"
+
+    # 1. A sonda do S50usb.
+    sonda=$(grep -aE "S50usb:.*sonda:" "$arq" 2>/dev/null | sed 's/^.*sonda: *//')
+    if [ -n "$sonda" ]; then
+        printf '%s\n' "$sonda" | sed 's/^/    /'
+        # O caso COMBINADO e' o mais informativo: DT ja' em peripheral e,
+        # mesmo assim, nenhum UDC. Aí o problema nao e' o papel do controlador
+        # — e' o probe dele (PHY, clock, power domain). Dizer isso separa
+        # "falta o patch" de "o patch entrou e outra coisa quebrou".
+        case "$sonda" in
+            *"udc VAZIO"*)
+                case "$sonda" in
+                    *"peripheral"*)
+                        log "   -> DT ja' esta' em peripheral e MESMO ASSIM nao ha'"
+                        log "      UDC: o probe do dwc3/PHY nao completou. Procure"
+                        log "      'dwc3' e 'usb2phy' no dmesg deste log." ;;
+                    *)
+                        log "   -> o CONTROLADOR nao entrou em modo dispositivo."
+                        log "      E' DT (dr_mode/extcon) ou PHY. Nao e' script, e"
+                        log "      nao adianta mexer no giochi-usb-mode." ;;
+                esac ;;
+        esac
+        case "$sonda" in
+            *"dr_mode USB-C = otg"*)
+                log "   -> o DT ainda esta' em OTG: o patch de DT nao entrou"
+                log "      na imagem (confira o dr_mode no DTB do cartao)." ;;
+            *"dr_mode USB-C = peripheral"*)
+                log "   -> o DT esta' em peripheral (patch aplicado)." ;;
+        esac
+    else
+        log "    (sem sonda: imagem anterior a 2026-11-01 06:00)"
+    fi
+
+    # 2. O bind do gadget.
+    if grep -qa "S50usb:.*gadget anexado ao UDC" "$arq" 2>/dev/null; then
+        log "    bind: OK (o configfs recebeu o controlador)"
+    elif grep -qa "S50usb:.*gadget NAO anexado" "$arq" 2>/dev/null; then
+        log "    bind: FALHOU (o configfs ficou sem controlador)"
+    fi
+
+    # 3. O que o kernel reclamou. `failed to enable <ep>: <n>` vem do patch
+    #    0004; sem ele a mesma mensagem nao traz o numero.
+    kernel_usb=$(grep -aE "dwc3 .*(failed|error)|failed to enable ep|\
+failed to initialize (peripheral|host)|dwc3 .*no UDC" "$arq" 2>/dev/null)
+    if [ -n "$kernel_usb" ]; then
+        printf '%s\n' "$kernel_usb" | sed 's/^/    /'
+        case "$kernel_usb" in
+            *"ep0out: -110"*|*"ep0out: -62"*)
+                log "   -> -110/-62 e' TIMEOUT: o comando DEPCFG nao completou."
+                log "      O core nao esta' em modo dispositivo (PRTCAPDIR) —"
+                log "      e' o que o dr_mode = \"peripheral\" corrige (§3.88)." ;;
+            *"ep0out: -22"*)
+                log "   -> -22 e' NO_RESOURCE/EINVAL: falta recurso de endpoint."
+                log "      Procure o WARN 'No resource for ep0out' acima." ;;
+            *"ep0out: -11"*)
+                log "   -> -11 e' BUS_EXPIRY: a janela de tempo passou." ;;
+            *"ep0out"*)
+                log "   -> ep0out recusado SEM o codigo de erro: imagem anterior"
+                log "      ao patch 0004. O codigo decide o diagnostico." ;;
+        esac
     fi
     return 0
 }
