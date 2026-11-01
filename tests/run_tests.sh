@@ -165,6 +165,19 @@ if command -v python3 >/dev/null 2>&1; then
     fi
 fi
 
+# Gravar o cartao (tools/flash-card.sh). Une dd + verificacao + Modo
+# Desenvolvedor; cada recusa do script e' um jeito de perder o cartao ou o
+# tempo de quem esta' com o console na mao.
+if command -v python3 >/dev/null 2>&1; then
+    total=$((total + 1))
+    if (cd "$ROOT" && python3 -m unittest tests.test_flash_card) >/dev/null 2>&1; then
+        echo "OK     gravacao-do-cartao (python)"
+    else
+        echo "FALHA  gravacao-do-cartao (python)"
+        fail=$((fail + 1))
+    fi
+fi
+
 # Painel do DTS escolhido por aparelho: uma imagem cujo DTS nao tem no de
 # painel utilizavel nunca acende a tela, e o build termina com sucesso.
 if command -v python3 >/dev/null 2>&1; then

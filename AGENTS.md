@@ -4474,3 +4474,70 @@ regerada, conferida por dentro, gravada e verificada; o boot com ela ainda não
 aconteceu. O preview continua
 sendo rasterização da geometria publicada, **não** captura de tela. Push segue
 bloqueado por credencial.
+
+### 2026-11-01 (21) — Copilot (`exec` no rcS: o USB nunca ia subir)
+
+O pedido era "dispositivo ligado, teste a conexão ssh ou mtp". Zero
+dispositivos USB no barramento, e o TTL de volta (`1a86:5523`). Os 114 KB de
+serial responderam o que seis tentativas anteriores não tinham respondido:
+**o boot inteiro era `S00bootlog`, `S05modules` e `S20graphics`.**
+
+**A causa raiz (§3.86):** o `S20graphics` termina em
+`exec /usr/bin/giochi-init`, e o `rcS` chama os scripts **dentro de um laço**.
+`exec` substitui o processo do laço: `S30swap`, `S40dongle`, **`S50usb`**,
+**`S55usbnet`**, **`S60mtpd`** e **`S62sshd`** nunca rodaram. Sem gadget, sem
+rede USB, sem MTP e sem SSH — e nenhuma mensagem de erro em lugar nenhum. "O
+USB não funciona" e "não consigo SSH" tinham a mesma causa, e não era driver,
+DTS nem imagem: eu já tinha descartado os três nas rodadas anteriores.
+
+**A segunda armadilha, essa mais cara (§3.87):** corrigido o `exec`
+(`git mv S20graphics S90graphics`), o build rodou com rc=0, o `post-image`
+passou e a imagem foi gerada — e o SquashFS continuava com `S20graphics`,
+`S90graphics` **e** `S99launcher`. O `TARGET_DIR` sobrevive ao build
+incremental e não apaga o que sai do repositório; como o `rcS` ordena pelo
+nome, o script **antigo** rodava primeiro e o laço morria antes do novo. A
+correção existia no repositório e **não** existia na imagem. Só apareceu
+porque montei o SquashFS e **listei** o conteúdo, em vez de confiar no build
+verde.
+
+- `post-build.sh` agora mantém um manifesto **fora da imagem**
+  (`../.giochi-init-managed`) com o que ele instalou, e apaga na execução
+  seguinte todo nome que sumiu da lista. Cobre renomeação futura sem lista
+  escrita à mão; `S20graphics`/`S99launcher` ficam numa lista de limpeza única
+  com o motivo ao lado.
+- `tools/build-image.sh` apagava o `.xz` antigo e deixava o `.sha256` antigo ao
+  lado: dois arquivos com o mesmo nome e hashes de builds diferentes
+  (`ca705d10…` descrevia a imagem de 03:02 com a de 03:22 ao lado).
+
+**Ferramenta nova para o ciclo que falha sempre:** `tools/flash-card.sh` une
+`dd conv=fsync` + `verify-card.py` + `giochi-dev-mode.sh` num comando. Cada
+recusa é um jeito de perder o cartão ou o tempo de quem está com o console na
+mão: partição (`/dev/sdd1`), disco da raiz, **leitor USB sem cartão** (0
+setores — o `dd` falharia no meio e ninguém saberia se o cartão foi tocado) e
+alvo menor que a imagem. E, no fim, **reabre o Modo Desenvolvedor**: regravar
+recria a `/user` vazia, `ssh_usb_enabled` volta a `false` e o SSH "para de
+funcionar" sem nenhuma relação com a imagem.
+
+**Verificação (tudo rodado):**
+- `post-build.sh` **real** contra um `TARGET_DIR` temporário com
+  `S20graphics`+`S90graphics`+`S99launcher`: sobra só o `S90graphics`;
+  idempotente na segunda execução; nome inventado posto no manifesto também é
+  removido. Teste ao contrário (lista de aposentados vazia): reprova com os
+  três na árvore.
+- Imagem regerada: o SquashFS tem `S90graphics` e **não** tem `S20graphics`
+  nem `S99launcher`; o bloco `system-a` da `.img` confere byte a byte com o
+  `rootfs.squashfs` gerado (`ce1234ad…` nos dois).
+- `tools/flash-card.sh` testado nas quatro recusas contra os dispositivos
+  reais desta máquina (o leitor multi-cartão está **vazio**: 0 setores por
+  slot). Suíte nova `gravacao-do-cartao`, 13 testes.
+- `make test` **35/35**, `make lint` rc=0.
+
+**Aberto:** a imagem nova (`f3744d28…` → `.xz` `55099cf9…`) **não foi gravada
+nem bootada**. O cartão está **dentro do console**, não no leitor do PC —
+`lsblk` mostra os quatro slots do multi-leitor com 0 setores —, então gravar
+exige tirá-lo de lá. O serial capturou 0 bytes em 300 s, ou seja, o console
+está desligado ou o cabo de dados não está no CH341. Nada de SSH/MTP pode ser
+testado antes de uma dessas duas coisas. O log de 134 bytes que sobrou de antes
+mostra o mantenedor trocando o modo USB no menu e
+`nao foi possivel gravar usb_mode ('/user/settings.json')` — que é a §3.46 na
+imagem antiga, não um defeito novo.

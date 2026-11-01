@@ -358,6 +358,28 @@ sudo sync
 sudo tools/verify-card.py dist/x55/giochi-x55-sdcard.img /dev/sdX
 ```
 
+Os quatro passos acima estão num comando só, `tools/flash-card.sh`, que ainda
+recusa as três formas de errar o alvo e reabre o Modo Desenvolvedor no fim:
+
+```sh
+tools/flash-card.sh --listar        # quais dispositivos USB existem
+tools/flash-card.sh /dev/sdd        # grava, confere e reabre o SSH via USB
+tools/flash-card.sh --checar /dev/sdd   # so' confere (somente leitura)
+```
+
+| Recusa | Por quê |
+|---|---|
+| `parece PARTICAO` | `/dev/sdd1` deixa o MBR velho e metade da imagem |
+| `contem a raiz do sistema` | não tem desfazer |
+| `reporta 0 setores` | leitor USB **sem** cartão; o `dd` falharia no meio |
+| alvo menor que a imagem | a gravação sairia truncada |
+
+Depois de gravar ele **reabre o Modo Desenvolvedor**: a partição `/user` acabou
+de ser criada vazia, então `developer.ssh_usb_enabled` volta a `false` e o SSH
+via USB fica desligado — sem isso, "o SSH que funcionava" para de responder
+depois de todo regrave, por um motivo que não tem relação com a imagem.
+`--sem-ssh` pula essa etapa.
+
 O verificador dá um de três resultados, com ações diferentes:
 
 | Resultado | Significado | Ação |
