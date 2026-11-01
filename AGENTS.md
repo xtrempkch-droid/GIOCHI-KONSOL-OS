@@ -4354,6 +4354,18 @@ final é `6f531459…`. **As três são invisíveis no aparelho** com os temas a
 então gravar a final pode esperar — mas três tentativas de `pkexec` expiraram
 (senha não digitada), então o cartão **não** tem a `6f531459`.
 
+**Cartão preparado para SSH (2026-11-01, 02:56).** Com o cartão de 29,7 GB no
+leitor: `tools/giochi-dev-mode.sh` gravou `settings.json` com
+`developer.ssh_usb_enabled = true` (preservando `theme_id`, `language` e
+`usb_mode` do aparelho, com `.bak`) e `ssh/authorized_keys` com a chave
+`ssh-ed25519 …II6fxqqL4fl` do mantenedor. **O console não estava plugado**
+(nenhuma interface `10.55.x`, nenhum gadget na lista USB), então o `PING` por
+SSH ainda não foi executado — é o primeiro comando a rodar quando ele ligar:
+
+```sh
+tools/giochi-ctl.py preparar && tools/giochi-ctl.py ctl PING   # espera PONG
+```
+
 **Aberto:** nenhuma das seis telas foi vista no aparelho — a imagem foi
 regerada, conferida por dentro, gravada e verificada; o boot com ela ainda não
 aconteceu. O preview continua
