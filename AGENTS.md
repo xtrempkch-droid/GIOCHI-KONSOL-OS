@@ -26,7 +26,7 @@ em que ordem em [docs/roadmap.md](docs/roadmap.md); inventário de cada app
 | Kernel, DTB e raiz na X55 | **bootou**: `Mounted root (squashfs) on device 179:2` por `root=PARTUUID` |
 | Painel do X35S/X35H | **bloqueado** por driver fora da árvore (GPL, licenciamento adiado — §3.43) |
 | Gravação do cartão | **verificada byte a byte** (`tools/verify-card.py`); SDXC de 116 GB falhou com `EIO` |
-| USB: gadget composto (MTP + rede/SSH + Mass Storage) | **pronto** no código; **não ancora na X55**: o bind é tentado (o UDC existe) e o `SETEPCONFIG` do ep0 é recusado em `dr_mode = "otg"` (§3.88). Patch de DT para `peripheral` + sonda no `S50usb` — **boot com o patch ainda não capturado** |
+| USB: gadget composto (MTP + rede/SSH + Mass Storage) | **pronto** no código; **não ancora na X55**: o UDC existe, o bind é tentado e o `SETEPCONFIG` do ep0 é recusado — o log não diz com qual erro (§3.88). Instrumentado (patch 0004 + sonda no `S50usb`); **resultado pendente de um boot** |
 | Modo Desenvolvedor (§4.6.1): SSH via USB desligado por padrão | **pronto**, testado |
 | Launcher: motor de layout, tema, `settings.json`, overlay 2 níveis, biblioteca | **pronto** |
 | Launcher: **desenho dos widgets** no backend SDL2 | **desenha** em hardware: geometria pura + atlas gerado, i18n pt-BR/en, status (Wi-Fi/bateria/cabo), hint bar em chips, paisagem (§3.69–3.73) |
@@ -2198,10 +2198,10 @@ antes do novo. A correção existia no repositório e **não** existia na imagem
   conteúdo do SquashFS**. `make` com rc=0, `post-image` sem erro e arquivo de
   origem novo não provam que a imagem mudou.
 
-### 3.88 USB-C da X55: `otg` sem extcon dá um UDC que recusa `SETEPCONFIG`
+### 3.88 USB-C da X55: o bind do ep0 falha e a mensagem não diz por quê
 
-O serial do aparelho (imagem com o §3.86/§3.87 já corrigidos) mostrou os
-scripts **passando** e o USB continuando invisível no PC:
+O serial do aparelho mostrou os scripts **passando** e o USB continuando
+invisível no PC:
 
 ```
 [    5.711245] configfs-gadget.giochi gadget.0: HOST MAC 02:47:69:6f:63:69
@@ -2209,50 +2209,52 @@ scripts **passando** e o USB continuando invisível no PC:
 [    5.714811] dwc3 fcc00000.usb: failed to enable ep0out
 ```
 
-**O que cada linha prova — e o que eu errei na primeira leitura:**
+**O que cada linha prova** (as duas primeiras leituras que fiz estavam erradas,
+e o erro é instrutivo):
 
-| Linha | Origem | O que significa |
+| Linha | Origem | Significa |
 |---|---|---|
-| `HOST MAC` / `MAC` | `u_ether.c:800`/`875` | a função **ECM** foi criada no configfs. **Não** prova bind no UDC. |
-| `failed to enable ep0out` | `dwc3/gadget.c:2900` (`__dwc3_gadget_start`) | o UDC **existia** e o bind foi tentado; o comando `SETEPCONFIG` do ep0 falhou. |
+| `HOST MAC` / `MAC` | `u_ether.c:800`/`875` | a função **ECM** foi criada no configfs. **Não** é bind no UDC. |
+| `failed to enable ep0out` | `dwc3/gadget.c:2900` (`__dwc3_gadget_start`) | o UDC **existia** e o bind foi tentado; `SETEPCONFIG` do ep0 foi recusado. |
 
-A primeira versão desta seção dizia "`/sys/class/udc` fica vazio, então o
-`dr_mode = "otg"` impede o gadget de existir". **Está errado**, e o erro é
-instrutivo: em OTG com `OSTS.CONIDSTS` indicando dispositivo, o
-`dwc3_otg_update()` **chama** `dwc3_gadget_init()` e o UDC é registrado. O
-problema é mais adiante.
+**Duas hipóteses minhas que caíram, as duas por medir:**
 
-**A diferença que sobrou entre os dois caminhos**, lida no 6.12 desta árvore:
+1. "`/sys/class/udc` fica vazio porque `dr_mode = "otg"`". Falso — o erro só
+   aparece quando o UDC existe e o gadget faz bind.
+2. "O caminho OTG chama `dwc3_gadget_init()` **sem** o
+   `dwc3_core_soft_reset()` que o `peripheral` faz". Também falso: eu tinha
+   procurado `extcon` em `rk356x.dtsi` e no DTS da X55 e não achei — mas
+   **`rk3566.dtsi` declara `extcon = <&usb2phy0>`**, e com extcon o
+   `dwc3_drd_init()` registra o notifier e o `dwc3_drd_update()` chama
+   `__dwc3_set_mode(DEVICE)`, que **faz** o soft reset antes do gadget_init.
 
-| Caminho | Quem chama `dwc3_gadget_init` | Passa por `dwc3_core_soft_reset`? |
-|---|---|---|
-| `dr_mode = "peripheral"` | `dwc3_core_init_mode()` → `__dwc3_set_mode(DEVICE)` (`core.c:254`) | **sim**, na linha anterior |
-| `dr_mode = "otg"` + CONIDSTS=device | `dwc3_otg_update()` (`drd.c:409`) | **não** |
+O que sobra é o que o log **não diz**: qual erro o `SETEPCONFIG` devolveu.
+`-ETIMEDOUT`, `-EINVAL` (`NO_RESOURCE`) e `-EAGAIN` (`BUS_EXPIRY`) pedem ações
+opostas, e a única pista é indireta — a mensagem **não** vem acompanhada do
+`WARN "No resource for ep0out"`, o que descarta `-EINVAL` e deixa os outros
+dois empatados.
 
-Sem o soft reset do core antes do `dwc3_gadget_init()`, os comandos de
-endpoint (`SETEPCONFIG`) não são aceitos e o ep0out não habilita — que é
-exatamente a mensagem do log. É hipótese forte, não fato medido em hardware
-ainda: **o boot com o patch não foi capturado**.
-
-- Correção: patch `0003-arm64-dts-rockchip-x55-usb-c-em-modo-dispositivo.patch`
-  (`dr_mode = "peripheral"`), no mesmo molde do mainline para os outros
-  portáteis RK3566 (`rk3566-powkiddy-rk2023.dtsi` e `rk3566-anbernic-rgxx3.dtsi`;
-  o do Anbernic documenta: *"port works as a peripheral (and not a host or OTG
-  port)"*). Vale por si, mesmo sem provar que é **a** causa: torna o caminho
-  determinístico em vez de depender de um estado de pino lido no probe.
-- **Medido no DTB gerado**, não no fonte: `otg\0` = 0, `peripheral\0` = 1.
-- `S50usb` agora **sonda e registra** no log do cartão o que separa as quatro
-  causas: se `/sys/class/udc` está vazio, o `dr_mode` que o kernel está usando
-  (lido de `/sys/firmware/devicetree/base/usb@fcc00000/dr_mode`) e, depois do
-  helper, se o arquivo `UDC` do configfs recebeu o nome do controlador. O
-  helper sai 0 também quando não anexa ("configurado mas inativo"), então o
-  log anterior não distinguia "anexou" de "ficou parado".
-- Guardas: `tests/test_kernel_patch.py` (patch, `dr_mode`, ordem `0003-`, e
-  falha se o DTS passar a declarar `extcon`/`usb-role-switch`); `S50usb` coberto
-  por `tests/test_primeiro_boot.py`.
-- **Regra que fica**: `HOST MAC` no log **não** é bind. Para saber se o gadget
-  ancorou, leia o arquivo `UDC` do configfs; para saber se o controlador tem
-  modo dispositivo, leia `/sys/class/udc`. Confundir os dois custou uma sessão.
+- Instrumentação: patch `0004-usb-dwc3-mostra-o-codigo-de-erro-do-ep0.patch`
+  imprime o `ret` no próprio `dev_err`. Duas linhas, caminho de erro, sem
+  mudança de comportamento.
+- Patch `0003-...-usb-c-em-modo-dispositivo.patch` (`dr_mode = "peripheral"`)
+  fica: é o que **todas** as outras placas RK3566 fazem (mainline
+  `powkiddy-rk2023`, `anbernic-rgxx3`; e a ROCKNIX usa o mesmo em `rk-ds` e
+  `rk-ds-plus`). Honestidade sobre o alcance: a ROCKNIX usa o **DTS mainline
+  da X55 sem override de USB**, ou seja, ela roda `otg`+`extcon` — então o
+  patch torna o modo determinístico, mas **não está provado como a correção**.
+- `S50usb` sonda e registra no log do cartão: `/sys/class/udc` (vazio ou não),
+  o `dr_mode` efetivo lido de `/sys/firmware/devicetree/base/usb@fcc00000/`,
+  e se o arquivo `UDC` do configfs recebeu o controlador — o helper sai 0
+  também quando **não** anexa.
+- Guardas: `tests/test_kernel_patch.py` exige os dois patches e — o que mais
+  importa — **falha se o `extcon` desaparecer do `rk3566.dtsi`**. A primeira
+  versão desse teste olhava só `rk356x.dtsi` e o DTS do aparelho, e foi ela
+  que deu folga para eu escrever a hipótese errada aqui.
+- **Regra que fica**: `grep` de premissa tem de cobrir a **cadeia de include
+  inteira**. `rk3566-powkiddy-x55.dts` → `rk3566.dtsi` → `rk356x.dtsi`; olhar
+  dois de três arquivos deu um "não existe" falso, e um teste que olhava os
+  mesmos dois arquivos confirmou o erro.
 
 ### 3.89 `mass` desmonta `/user` e, se o gadget falhar, o cartão "some"
 
@@ -4638,52 +4640,67 @@ isso ate' tentar conectar. A chave agora e' resolvida como o **usuario**
 formas diferentes) e viaja por **argumento**, inclusive na re-execucao. Dois
 testes novos; provado ao contrario removendo o repasse, o teste reprova.
 
-### 2026-11-01 (22) — Copilot (diagnóstico do USB: a leitura errada e a sonda)
+### 2026-11-01 (22) — Copilot (duas hipóteses do USB caíram; ficou a instrumentação)
 
 O mantenedor ligou o console com o TTL e o cartão novo. O serial pegou o boot
-**inteiro** (37 KB, DDR → U-Boot → kernel → userspace) — e ele provou duas
-coisas e desmentiu uma terceira.
+**inteiro** (37 KB, DDR → U-Boot → kernel → userspace), que provou duas coisas
+e desmentiu **duas hipóteses minhas** — as duas escritas neste arquivo como se
+fossem fato.
 
-**1. As correções do §3.86/§3.87 funcionaram.** O `rcS` passou por
-`S00bootlog`, `S05modules`, …, `configfs-gadget.giochi` apareceu no log, e a
-tela acendeu: `render: SDL2 driver=KMSDRM renderizador=opengles2`, `5 abas`,
-em 6,6 s.
+**Provado no hardware:** (a) as correções do §3.86/§3.87 funcionaram — o `rcS`
+passou por `S00bootlog`, `S05modules`, … e `configfs-gadget.giochi` apareceu;
+(b) a tela acende: `render: SDL2 driver=KMSDRM`, `5 abas`, em 6,6 s.
 
-**2. Eu li o log do USB errado, e escrevi a leitura errada aqui.** O par
+**Hipótese 1, caída:** "`dr_mode = "otg"` deixa `/sys/class/udc` vazio".
+Falso. `failed to enable ep0out` vem de `__dwc3_gadget_start()`, que só roda
+**depois** de o UDC existir e o gadget fazer bind. E `HOST MAC`, que eu li
+como sinal de sucesso, vem de `u_ether.c` — é a função ECM no configfs.
 
-```
-configfs-gadget.giochi gadget.0: HOST MAC 02:47:69:6f:63:69
-dwc3 fcc00000.usb: failed to enable ep0out
-```
+**Hipótese 2, caída:** "o caminho OTG não faz o `dwc3_core_soft_reset()`".
+Falso também: eu procurei `extcon` em `rk356x.dtsi` e no DTS da X55, não achei,
+e concluí "sem detecção de papel". **`rk3566.dtsi` declara
+`extcon = <&usb2phy0>`** — com extcon o `dwc3_drd_update()` chama
+`__dwc3_set_mode(DEVICE)`, que faz o soft reset antes do `dwc3_gadget_init()`.
+O teste que eu escrevi para "sustentar" a hipótese olhava os mesmos dois
+arquivos, então concordou com o erro.
 
-parecia "o UDC não existe". Não é: `HOST MAC` vem de `u_ether.c` (função ECM
-no configfs), e `failed to enable ep0out` vem de `__dwc3_gadget_start()`, que
-**só roda quando o UDC existe e o bind é tentado** — o que falhou foi o
-`SETEPCONFIG` do ep0. A causa provável (hipótese, não medida) é que o caminho
-OTG chama `dwc3_gadget_init()` **sem** o `dwc3_core_soft_reset()` que o
-caminho `peripheral` faz. O patch `dr_mode = "peripheral"` continua, por
-determinismo, mas **não está provado como a correção** — e §3.88 agora diz
-isso, com a tabela do que cada linha prova.
+**O que sobrou, e é o que dá para atacar:** o log não diz **qual** erro o
+`SETEPCONFIG` devolveu. `-ETIMEDOUT`, `-EINVAL`/`NO_RESOURCE` e
+`-EAGAIN`/`BUS_EXPIRY` pedem ações opostas. A única pista é indireta: não há
+`WARN "No resource for ep0out"`, o que descarta `-EINVAL`.
 
-**3. Para não depender de outra sessão de adivinhação**, o `S50usb` sonda e
-registra no log do cartão: `/sys/class/udc`, o `dr_mode` efetivo lido de
-`/sys/firmware/devicetree/base/usb@fcc00000/dr_mode`, e se o arquivo `UDC` do
-configfs recebeu o nome do controlador (o helper sai 0 também quando **não**
-anexa).
+**Feito a partir disso:**
 
-Defeito achado pelo teste novo: `tr ... < arquivo_inexistente 2>/dev/null`
-vaza `cannot open ... No such file` no stderr do shell — as redireções são
-aplicadas da esquerda para a direita, e a mensagem sai antes do `2>/dev/null`.
-Agora há `[ -r ]` antes.
+1. Patch `0004-usb-dwc3-mostra-o-codigo-de-erro-do-ep0.patch`: imprime o `ret`
+   no `dev_err` do ep0. Duas linhas, caminho de erro, sem mudar comportamento.
+2. `S50usb` sonda e registra no log do cartão: `/sys/class/udc`, o `dr_mode`
+   efetivo lido de `/sys/firmware/devicetree/base/usb@fcc00000/`, e se o
+   arquivo `UDC` do configfs recebeu o controlador (o helper sai 0 **também**
+   quando não anexa — era o que faltava para distinguir "configurado" de
+   "anexado").
+3. Defeito achado pelo teste novo do `S50usb`: `tr ... < arquivo_inexistente
+   2>/dev/null` vaza `cannot open ... No such file` no log (as redireções são
+   aplicadas da esquerda para a direita). Agora há `[ -r ]` antes.
+4. Teste que mentia, corrigido: `test_dts_usado_nao_declara_extcon_nem_role_switch`
+   foi substituído por `test_extcon_do_rk3566_vem_do_dtsi_da_familia`, que olha
+   o `rk3566.dtsi` e **falha se o extcon sumir**.
 
-**Verificação:** dois testes novos em `primeiro-boot` (um lê o script, outro
-**roda** o `S50usb` real com `logger` falso no `PATH` e cobra a sonda na
-saída); provado ao contrário removendo a chamada, o teste reprova. `make test`
-**35/35**, `make lint` rc=0.
+**Evidência externa (útil, e com o limite anotado):** a ROCKNIX põe
+`dr_mode = "peripheral"` em **todos** os RK3566 que ela suporta
+(`rk-ds`, `rk-ds-plus`, `rk2023`) — mas para a **X55 ela usa o DTS mainline
+sem override de USB**, ou seja, roda `otg`+`extcon` como nós. Logo o patch
+`0003` torna o modo determinístico, e **não** está provado como a correção.
 
-**Aberto:** o boot com o patch do `dr_mode` **não foi capturado**. Duas
-capturas de 10 e 15 minutos voltaram com 32 bytes (fragmento de `DDR V1.18`
-no buffer do CH341); o console já estava ligado, e sem power-cycle o serial
-não tem o que mostrar. O próximo boot é o que decide: procurar no
-`giochi-boot.log` as três linhas da sonda.
+**Verificação:** 14 testes em `test_kernel_patch` (2 novos, um provado ao
+contrário removendo o patch 0004) e 31 em `primeiro-boot` (2 novos, um deles
+rodando o `S50usb` **real** com `logger` falso e cobrando a sonda na saída,
+provado ao contrário removendo a chamada). `make test` **35/35**,
+`make lint` rc=0.
+
+**Aberto:** o boot com os patches 0003+0004 **não foi capturado**. Três
+capturas (10, 15 e 15 min) voltaram com 0 ou 32 bytes — fragmento de
+`DDR V1.18` no buffer do CH341 — porque o console já estava ligado e sem
+power-cycle o serial não tem o que mostrar. O próximo boot responde sozinho:
+a sonda no `giochi-boot.log` diz o estado do UDC e do bind, e o patch 0004
+diz o número do erro.
 

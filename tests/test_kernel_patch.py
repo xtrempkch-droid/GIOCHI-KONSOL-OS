@@ -158,36 +158,54 @@ class FormatoDoPatch(unittest.TestCase):
         self.assertTrue(nome.startswith("0003-"),
                         "o patch do USB tem de ordenar depois do TRNG")
 
-    def test_dts_usado_nao_declara_extcon_nem_role_switch(self):
-        """A premissa do patch: sem extcon, OTG nao escolhe papel sozinho.
+    def test_extcon_do_rk3566_vem_do_dtsi_da_familia(self):
+        """A premissa do patch: o papel do USB e' declarado no rk3566.dtsi.
 
-        Se um dia o DTS (ou o dtsi) ganhar `extcon`/`usb-role-switch`, o
-        patch deixa de ser necessario — e este teste avisa em vez de deixar
-        um `dr_mode` forcado sem motivo.
+        Primeira versao deste teste olhava so' `rk356x.dtsi` e o DTS do
+        aparelho, concluia "nao ha extcon" e dava folga para eu escrever no
+        AGENTS.md que o `dr_mode = "otg"` deixava o dwc3 sem deteccao de
+        papel. **Falso**: `rk3566.dtsi` (que o DTS da X55 inclui por
+        `rk356x.dtsi` -> familia) declara `extcon = <&usb2phy0>`.
+
+        Consequencia de medir direito: com extcon, `dwc3_drd_init()` registra
+        o notifier e `dwc3_drd_update()` chama `__dwc3_set_mode(DEVICE)`, que
+        **faz** o `dwc3_core_soft_reset()` — entao a hipotese anterior ("o
+        caminho OTG nao faz o soft reset") tambem estava errada.
         """
         arvores = kernel_trees()
         if not arvores:
             self.skipTest("nenhuma arvore de kernel em dist/")
-        dts = os.path.join(arvores[0], "arch/arm64/boot/dts/rockchip",
-                           "rk3566-powkiddy-x55.dts")
         dtsi = os.path.join(arvores[0], "arch/arm64/boot/dts/rockchip",
-                            "rk356x.dtsi")
-        if not (os.path.isfile(dts) and os.path.isfile(dtsi)):
-            self.skipTest("DTS da X55 nao encontrado na arvore")
+                            "rk3566.dtsi")
+        if not os.path.isfile(dtsi):
+            self.skipTest("rk3566.dtsi nao encontrado na arvore")
 
-        for caminho in (dtsi, dts):
-            corpo = read(caminho)
-            nome = os.path.basename(caminho)
-            with self.subTest(arquivo=nome):
-                # O patch pode ter sido revertido pela propria suite acima,
-                # entao procuramos so' as propriedades de deteccao de papel.
-                self.assertNotIn("extcon", corpo,
-                                 "%s passou a declarar extcon: o patch do "
-                                 "USB pode ter ficado desnecessario" % nome)
-                self.assertNotIn("usb-role-switch", corpo,
-                                 "%s passou a declarar usb-role-switch: o "
-                                 "patch do USB pode ter ficado "
-                                 "desnecessario" % nome)
+        corpo = read(dtsi)
+        self.assertIn("&usb_host0_xhci", corpo)
+        # O teste FALHA se o extcon sumir: e' ele que faz o dwc3 descobrir o
+        # papel sem depender de um pino ID que a placa nao tem.
+        self.assertIn("extcon", corpo,
+                      "rk3566.dtsi perdeu o `extcon`: o papel do USB passa a "
+                      "depender de deteccao que estas placas nao tem")
+
+    def test_patch_do_ep0_mostra_o_codigo_de_erro(self):
+        """`failed to enable ep0out` sem o motivo nao decide nada.
+
+        -ETIMEDOUT, -EINVAL (NO_RESOURCE) e -EAGAIN (BUS_EXPIRY) pedem acoes
+        opostas. Medido na X55: a mensagem nao vem acompanhada do WARN de
+        "No resource", o que descarta -EINVAL e deixa os outros dois
+        empatados. O patch imprime o valor no dev_err.
+        """
+        nome = "0004-usb-dwc3-mostra-o-codigo-de-erro-do-ep0.patch"
+        caminho = os.path.join(PATCH_DIR, nome)
+        self.assertTrue(os.path.isfile(caminho),
+                        "patch de instrumentacao do dwc3 ausente: %s" % caminho)
+        texto = read(caminho)
+        self.assertIn("drivers/usb/dwc3/gadget.c", texto)
+        self.assertIn("dep->name, ret", texto,
+                      "o patch nao imprime o codigo de retorno")
+        self.assertTrue(nome.startswith("0004-"),
+                        "o patch de instrumentacao tem de ordenar por ultimo")
 
     def test_build_rearma_o_kernel_quando_os_patches_mudam(self):
         """Mudar o conjunto de patches NAO invalida o .stamp_patched.

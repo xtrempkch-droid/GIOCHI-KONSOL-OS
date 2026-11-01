@@ -1,0 +1,47 @@
+O dwc3 esconde QUAL erro recusou o endpoint 0 (instrumentacao)
+
+`failed to enable ep0out` e' a unica mensagem que o kernel da' quando o bind
+do gadget falha no ep0, e ela nao diz o motivo — que e' o que decide o
+diagnostico:
+
+  -ETIMEDOUT  o core nunca completou o comando -> nao esta em modo
+              dispositivo (PRTCAPDIR), clock/PHY parados
+  -EINVAL     DEPEVT_TRANSFER_NO_RESOURCE -> sem recurso de endpoint
+              (acompanha um WARN "No resource for ep0out")
+  -EAGAIN     DEPEVT_TRANSFER_BUS_EXPIRY -> janela de tempo perdida
+
+Medido na X55: a mensagem aparece em ~5,7 s, logo depois de o configfs ser
+montado, e NAO vem acompanhada do WARN de "No resource". Isso descarta
+-EINVAL e deixa timeout e bus-expiry empatados — o mesmo log que nao diz
+qual dos dois.
+
+Este patch imprime o valor no proprio `dev_err`. Custa duas linhas e nao
+muda comportamento nenhum: e' `dev_err` de caminho de erro.
+
+Verificado: o DTB e os .ko saem iguais; a mensagem passa a ser
+"failed to enable ep0out: -110" (ou -22, ou -11) no proximo boot.
+
+--- a/drivers/usb/dwc3/gadget.c
++++ b/drivers/usb/dwc3/gadget.c
+--- a/drivers/usb/dwc3/gadget.c
++++ b/drivers/usb/dwc3/gadget.c
+@@ -2897,7 +2897,8 @@
+ 	dep->flags = 0;
+ 	ret = __dwc3_gadget_ep_enable(dep, DWC3_DEPCFG_ACTION_INIT);
+ 	if (ret) {
+-		dev_err(dwc->dev, "failed to enable %s\n", dep->name);
++		dev_err(dwc->dev, "failed to enable %s: %d\n",
++			dep->name, ret);
+ 		goto err0;
+ 	}
+ 
+@@ -2905,7 +2906,8 @@
+ 	dep->flags = 0;
+ 	ret = __dwc3_gadget_ep_enable(dep, DWC3_DEPCFG_ACTION_INIT);
+ 	if (ret) {
+-		dev_err(dwc->dev, "failed to enable %s\n", dep->name);
++		dev_err(dwc->dev, "failed to enable %s: %d\n",
++			dep->name, ret);
+ 		goto err1;
+ 	}
+ 
