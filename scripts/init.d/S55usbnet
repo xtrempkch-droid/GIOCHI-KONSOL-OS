@@ -66,6 +66,17 @@ if [ "$dev_enabled" != "1" ]; then
     if ip addr show dev "$IFACE" 2>/dev/null | grep -q "inet $CONSOLE_IP/"; then
         ip addr del "$CONSOLE_IP/$PREFIX" dev "$IFACE" 2>/dev/null
     fi
+    # A interface fica DOWN de proposito (0 MB em repouso, adendo 4.6.1).
+    # Consequencia que o log precisa dizer: o PC ve a interface do gadget em
+    # NO-CARRIER e `ping`/`preparar` falham — nao por defeito no USB.
+    # Antes este script saia CALADO, e "o USB nao tem rede" nao tinha
+    # nenhuma linha no log para culpar (medido na X55, imagem de 01/11).
+    if [ -e "/sys/class/net/$IFACE" ]; then
+        ip link set "$IFACE" down 2>/dev/null
+        log "Modo Desenvolvedor desligado: $IFACE down, sem $CONSOLE_IP (PC vera NO-CARRIER)"
+    else
+        log "Modo Desenvolvedor desligado: $IFACE ausente (gadget sem funcao de rede?)"
+    fi
     exit 0
 fi
 

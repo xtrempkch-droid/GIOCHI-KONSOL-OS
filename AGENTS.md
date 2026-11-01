@@ -2848,6 +2848,63 @@ em `mass` não teria chave de host nenhuma.
   dele na ordem de execução — e a guarda tem de comparar as posições, não só
   a presença.
 
+### 3.106 Não existe sysfs para função USB — as duas sondas que inventei
+
+Para responder "a função `f_fs` está no kernel?", tentei dois caminhos
+`/sys` e **os dois não existem**:
+
+| caminho | por que não serve |
+|---|---|
+| `/sys/module/usb_f_fs` | só aparece para `=y` **com** `module_param`; `f_fs` está em vmlinux (`nm vmlinux \| grep ffs_alloc` acha) |
+| `/sys/bus/usb-function/drivers/ffs` | **não existe**: `usb_function_register()` só insere numa lista em memória |
+
+```c
+/* drivers/usb/gadget/functions.c — nao cria barramento nenhum */
+int usb_function_register(struct usb_function_driver *newf)
+{
+	list_add_tail(&newf->list, &func_list);
+}
+```
+
+As duas deram `AUSENTE` com o `f_fs` funcionando, e mandaram investigar o
+kconfig — que estava certo — enquanto o defeito real (§3.100, §3.99) ficava
+mais uma rodada escondido. **Duas sondas erradas custaram mais que sonda
+nenhuma.**
+
+- A sonda passou a medir o que **existe**: `configfs` montado? algum
+  `functionfs` montado? O resto quem responde é o **uso** —
+  `mkdir functions/ffs.<nome>`, cujo desfecho distingue os três casos
+  (criou / `EBUSY` = reservado pelo g_ffs / `ENOENT` = kernel sem a função).
+- Guarda: `test_sonda_nao_inventa_caminho_no_sysfs`, que proíbe os dois
+  caminhos **nas linhas de código** (o comentário cita os dois de propósito).
+- **Regra que fica**: sonda de sysfs se confere **lendo o fonte do kernel**
+  antes de escrever o script. Um caminho plausível (`/sys/bus/usb-function`)
+  é mais perigoso que a ausência de sonda, porque produz uma resposta com
+  cara de fato.
+
+### 3.107 Script que sai calado deixa "o USB não tem rede" sem culpado
+
+Com o Modo Desenvolvedor desligado, o log de boot tinha:
+
+```
+S50usb: modo USB: mtp (origem: padrao)
+giochi-usb: gadget anexado em fcc00000.usb (modo efetivo: mtp, rede=1, mtp=1)
+S62sshd: Modo Desenvolvedor desativado (developer.ssh_usb_enabled=false)
+```
+
+…e **nenhuma linha do `S55usbnet`**. Ele saía com `exit 0` sem log no ramo
+"desligado", e o efeito no PC é interface em `NO-CARRIER` com `ping` e
+`preparar` falhando. Sem a linha, a conclusão natural é "o gadget não subiu"
+— que é falsa (o `mtp=1, rede=1` está na linha de cima).
+
+- O ramo desligado agora registra `Modo Desenvolvedor desligado: usb0 down,
+  sem 10.55.0.2 (PC vera NO-CARRIER)`, com variante para "interface ausente".
+- Deixa explícito que `usb0` DOWN é **decisão** (0 MB em repouso, adendo
+  4.6.1), não falha.
+- **Regra que fica**: todo ramo de saída de script de init precisa dizer o
+  que fez, inclusive — principalmente — o ramo "não fiz nada porque está
+  desligado". É o que separa "desligado" de "quebrado".
+
 ### 3.104 NetworkManager desfaz o IP manual da interface USB
 
 `tools/giochi-ctl.py preparar` atribuía `10.55.0.1/24` com `ip addr add` e

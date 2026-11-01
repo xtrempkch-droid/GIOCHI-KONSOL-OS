@@ -1030,18 +1030,34 @@ class MeuCuidadoComOEp0DoFunctionfs(unittest.TestCase):
         self.assertIn('"$FFS_DIR/ep0"', fonte,
                       "o helper tem de conferir o ep0 depois do mount")
 
-    def test_sonda_nao_usa_sys_module(self):
-        """Código embutido (=y) não aparece em /sys/module sem parâmetros.
+    def test_sonda_nao_inventa_caminho_no_sysfs(self):
+        """Nem `/sys/module/usb_f_fs` nem `/sys/bus/usb-function` existem.
 
-        A sonda olhava `/sys/module/usb_f_fs`, dava "AUSENTE" com o `f_fs`
-        dentro de vmlinux (conferido com `nm vmlinux | grep ffs_alloc`), e
-        mandava investigar o kconfig — que estava certo.
+        Duas tentativas erradas de responder "a funcao `f_fs` esta' no
+        kernel?", ambas com falso negativo na X55:
+
+        * `/sys/module/usb_f_fs` — so' aparece para `=y` **com** parametros;
+          o `f_fs` esta' em vmlinux (`nm vmlinux | grep ffs_alloc` acha);
+        * `/sys/bus/usb-function/drivers/ffs` — **nao existe**:
+          `usb_function_register()` (drivers/usb/gadget/functions.c) so'
+          insere numa lista em memoria, sem barramento sysfs.
+
+        A sonda confiavel e' USAR: `mkdir functions/ffs.<nome>` no configfs,
+        que e' o que o helper faz. O teste cobra que o script nao volte a
+        perguntar ao sysfs por um caminho inventado.
         """
         with open(S50USB, encoding="utf-8") as fh:
             fonte = fh.read()
-        self.assertIn("/sys/bus/usb-function/drivers/ffs", fonte,
-                      "a sonda precisa do registro do driver, nao de "
-                      "/sys/module")
+        # Só as linhas de código: o comentário cita os caminhos para explicar
+        # por que não servem.
+        codigo = [l for l in fonte.splitlines()
+                  if l.strip() and not l.lstrip().startswith("#")]
+        self.assertFalse(
+            any("/sys/bus/usb-function" in l for l in codigo),
+            "esse barramento nao existe; a sonda tem de usar o configfs")
+        self.assertFalse(
+            any("/sys/module/usb_f_fs" in l for l in codigo),
+            "codigo =y sem parametros nao cria entrada em /sys/module")
 
 
 if __name__ == "__main__":

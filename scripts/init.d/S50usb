@@ -130,35 +130,33 @@ sonda_udc() {
 sonda_udc
 
 # --- sonda do FunctionFS -------------------------------------------------
-# O mount de functionfs e' o passo que o MTP precisa e o que menos fala:
-# quando falha, a unica pista e' "nao montou". Medir aqui, ANTES do helper,
-# separa tres causas que dao o mesmo sintoma:
+# NAO da' para perguntar ao kernel se a funcao `f_fs` esta' disponivel:
 #
-#   /sys/module/usb_f_fs ausente   -> a funcao nao esta' no kernel
-#   mount falha com EBUSY          -> ja' ha um functionfs montado
-#   mount ok e sem ep0             -> o kernel nao criou os endpoints
+#   /sys/module/usb_f_fs      -> so' existe para `=y` COM parametros
+#   /sys/bus/usb-function/... -> NAO EXISTE: usb_function_register()
+#                                (drivers/usb/gadget/functions.c) so' insere
+#                                numa lista em memoria, sem barramento sysfs
+#
+# As duas tentativas deram falso negativo na X55 com o f_fs compilado dentro
+# do kernel (`nm vmlinux | grep ffs_alloc` acha), e mandaram investigar o
+# kconfig, que estava certo (AGENTS.md §3.101).
+#
+# A unica sonda confiavel e' USAR: `mkdir functions/ffs.<nome>` no configfs.
+# Quem faz isso e' o helper, e o log dele distingue os tres desfechos:
+#   criou            -> MTP vai subir
+#   EBUSY            -> f_fs existe mas esta' reservado (g_ffs legado, §3.94)
+#   ENOENT/ENODEV    -> o kernel nao tem a funcao
 sonda_functionfs() {
-    # NAO usar /sys/module/usb_f_fs: codigo embutido (=y) so' ganha entrada em
-    # /sys/module quando tem parametros. O `f_fs` ESTA' no kernel (compilado em
-    # `usb_f_fs.o`, dentro de vmlinux) e /sys/module nao o lista — medir por
-    # ali deu falso negativo na X55 e mandou investigar o kconfig, que estava
-    # certo. A fonte de verdade e' o registro do driver no barramento de
-    # funcoes USB.
-    if [ -e /sys/bus/usb-function/drivers/ffs ]; then
-        log "sonda: driver ffs registrado no barramento usb-function"
-    elif [ -d /sys/module/usb_f_fs ]; then
-        log "sonda: usb_f_fs presente em /sys/module (modulo)"
+    if mountpoint -q /sys/kernel/config 2>/dev/null; then
+        log "sonda: configfs montado"
     else
-        log "sonda: ffs nao localizado (CONFIG_USB_F_FS=y?)"
+        log "sonda: configfs NAO montado (o helper vai montar)"
     fi
     _mnt=$(mount 2>/dev/null | awk '$5 == "functionfs" { print $3; exit }')
     if [ -n "${_mnt:-}" ]; then
         log "sonda: functionfs ja' montado em $_mnt"
     else
-        log "sonda: nenhum functionfs montado"
-    fi
-    if [ -e /dev/ffs-mtp/ep0 ]; then
-        log "sonda: /dev/ffs-mtp/ep0 existe"
+        log "sonda: nenhum functionfs montado (o helper monta no modo mtp)"
     fi
 }
 
