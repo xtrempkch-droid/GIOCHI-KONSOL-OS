@@ -4001,3 +4001,44 @@ wifi e não rede igual a de celular"* e *"no preview ainda está bugado"*.
 com o atlas e os locales, mas o boot com ela ainda não aconteceu. O preview
 continua sendo rasterização da geometria publicada, **não** captura do
 aparelho.
+
+### 2026-11-01 (33) — Copilot (imagem com o atlas novo, gravada e verificada)
+
+O build anterior tinha gerado imagem **antes** da correção da fonte (§3.72), então
+o cartão ainda rodava o atlas com metade das letras. Esta entrada fecha o ciclo:
+imagem regerada, conferida **por dentro** e gravada.
+
+**Conferido dentro do `.img`, não no `BINARIES_DIR`** (é a regra do §3.39 —
+artefato em `images/` sobrevive ao build incremental e pode ser cópia velha):
+
+| Item | Verificação |
+|---|---|
+| `usr/share/giochi/font.a8` (458 042 B) | sha256 igual ao `assets/font.a8` do repo |
+| `usr/share/giochi/font.json` | sha256 igual ao do repo |
+| `usr/share/giochi/locales/{en,pt_BR}.json` | presentes e idênticos |
+| `rootfs.squashfs` nos **dois** slots (p2 e p3) | sha256 igual ao `rootfs.squashfs` do build |
+| `boot.scr` (6 875 B) | contém `giochi_fbcon 3`, derivado do `device.conf` |
+| `dtbs/rockchip/rk3566-powkiddy-x55.dtb` | presente no FAT, junto do `board.dtb` plano |
+
+**Gravação.** `sudo` nesta máquina pede senha interativa e o agente não pode
+digitá-la; o caminho que funcionou foi `pkexec` (o `gnome-shell` desta sessão é
+o agente polkit, então o pedido de senha aparece na tela do usuário):
+
+```sh
+pkexec /usr/bin/dd if=<abs>/dist/x55/giochi-x55-sdcard.img of=/dev/sdd bs=4M conv=fsync
+pkexec /usr/bin/python3 tools/verify-card.py <abs>/...img /dev/sdd
+```
+
+- **Use caminho absoluto no `pkexec`**: a primeira tentativa falhou com
+  `dd: falha ao abrir 'dist/x55/...': No such file or directory` — o `pkexec`
+  não herdou o diretório de trabalho do shell. O arquivo existia; o `cwd` é que
+  não era o esperado. Mesma classe do §3.4: o erro aponta o arquivo, a causa é
+  outra.
+- Resultado: `981 467 136 bytes copiados, 23,2 s, 42 MB/s` e
+  `verify-card: OK: o cartao e' identico a imagem, byte a byte`
+  (sha256 `f330c37c…e1a30a` nos dois lados).
+
+**Aberto:** o boot com esta imagem ainda não aconteceu. O que confirmar no log
+do próximo boot: `i18n: idioma '...' carregado`, `render: SDL2 driver=...` e o
+texto legível na tela. O push para o GitHub continua bloqueado por credencial;
+`~/giochi-builder/pending.bundle` foi recriado com os dois commits desta sessão.
