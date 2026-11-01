@@ -1,47 +1,78 @@
-O dwc3 esconde QUAL erro recusou o endpoint 0 (instrumentacao)
+Mostra por que o ep0 do dwc3 nao habilita (instrumentacao)
 
 `failed to enable ep0out` e' a unica mensagem que o kernel da' quando o bind
-do gadget falha no ep0, e ela nao diz o motivo — que e' o que decide o
-diagnostico:
+do gadget falha no ep0, e ela nao diz o estado do controlador — que e' o que
+decide o diagnostico.
 
-  -ETIMEDOUT  o core nunca completou o comando -> nao esta em modo
-              dispositivo (PRTCAPDIR), clock/PHY parados
-  -EINVAL     DEPEVT_TRANSFER_NO_RESOURCE -> sem recurso de endpoint
-              (acompanha um WARN "No resource for ep0out")
-  -EAGAIN     DEPEVT_TRANSFER_BUS_EXPIRY -> janela de tempo perdida
+Medido na X55 com a instrumentacao minima (so' o codigo do erro): `-110`,
+ou seja `-ETIMEDOUT`. O comando de endpoint nao completou. Tres causas
+possiveis, e o codigo nao as separa:
 
-Medido na X55: a mensagem aparece em ~5,7 s, logo depois de o configfs ser
-montado, e NAO vem acompanhada do WARN de "No resource". Isso descarta
--EINVAL e deixa timeout e bus-expiry empatados — o mesmo log que nao diz
-qual dos dois.
+  * o core nao esta' em modo dispositivo (GCTL.PrtCapDir != DEVICE);
+  * o core esta' parado (DCTL.RunStop = 0) — assim TODO comando expira;
+  * o core esta' sem sessao e recusa DEPCFG (DSTS.USBLnkSt (bits 21:18) = SS_DIS).
 
-Este patch imprime o valor no proprio `dev_err`. Custa duas linhas e nao
-muda comportamento nenhum: e' `dev_err` de caminho de erro.
+Nao e' config de kernel: o `.config` embutido no Image de um firmware que
+roda nessa familia (extraido com IKCFG_ST) tem os MESMOS simbolos de USB
+(USB_DWC3, USB_DWC3_DUAL_ROLE, USB_GADGET, USB_CONFIGFS, USB_CONFIGFS_F_FS,
+PHY_ROCKCHIP_INNO_USB2, ROCKCHIP_PM_DOMAINS). Tambem nao e' dr_mode: o
+`-110` aparece com "otg" e com "peripheral".
 
-Verificado: o DTB e os .ko saem iguais; a mensagem passa a ser
-"failed to enable ep0out: -110" (ou -22, ou -11) no proximo boot.
+Este patch imprime os tres registradores no proprio `dev_err`. Custa um
+helper `static` e nao muda comportamento nenhum: e' caminho de erro.
+
+Verificado: aplica limpo sobre o `drivers/usb/dwc3/gadget.c` do tarball
+linux-6.12 (o teste `patch-de-kernel` cobra isso, e roda contra o tarball
+porque a arvore de build pode estar em qualquer estado).
 
 --- a/drivers/usb/dwc3/gadget.c
 +++ b/drivers/usb/dwc3/gadget.c
---- a/drivers/usb/dwc3/gadget.c
-+++ b/drivers/usb/dwc3/gadget.c
-@@ -2897,7 +2897,8 @@
+@@ -2616,6 +2616,30 @@
+ 
+ static void dwc3_gadget_disable_irq(struct dwc3 *dwc);
+ static void __dwc3_gadget_stop(struct dwc3 *dwc);
++/*
++ * Diagnostico: `failed to enable ep0out` so' diz que o comando de endpoint
++ * nao completou. Os registradores dizem POR QUE (AGENTS.md 3.88):
++ *
++ *   GCTL.PrtCapDir   bits 13:12  1 = device. Se nao for DEVICE, o core nao
++ *                    aceita comando de endpoint.
++ *   DSTS.USBLnkSt    bits 21:18  estado do link: 0 = SS.Disabled (sem sessao),
++ *                    4 = HS.On, 5 = FS.On ...
++ *   DCTL             bit 31 RunStop — se o core esta' parado, TODO comando
++ *                    expira, e o driver traduz como -ETIMEDOUT (-110).
++ */
++static void dwc3_erro_ep0(struct dwc3 *dwc, struct dwc3_ep *dep, int ret)
++{
++	u32 gctl = dwc3_readl(dwc->regs, DWC3_GCTL);
++	u32 dsts = dwc3_readl(dwc->regs, DWC3_DSTS);
++	u32 dctl = dwc3_readl(dwc->regs, DWC3_DCTL);
++
++	dev_err(dwc->dev,
++		"failed to enable %s: %d [GCTL=0x%08x prtcap=%u DSTS=0x%08x link=%u DCTL=0x%08x]\n",
++		dep->name, ret, gctl,
++		(gctl & DWC3_GCTL_PRTCAPDIR(DWC3_GCTL_PRTCAP_OTG)) >> 12,
++		dsts, DWC3_DSTS_USBLNKST(dsts), dctl);
++}
++
+ static int __dwc3_gadget_start(struct dwc3 *dwc);
+ 
+ static int dwc3_gadget_soft_disconnect(struct dwc3 *dwc)
+@@ -2897,7 +2921,7 @@
  	dep->flags = 0;
  	ret = __dwc3_gadget_ep_enable(dep, DWC3_DEPCFG_ACTION_INIT);
  	if (ret) {
 -		dev_err(dwc->dev, "failed to enable %s\n", dep->name);
-+		dev_err(dwc->dev, "failed to enable %s: %d\n",
-+			dep->name, ret);
++		dwc3_erro_ep0(dwc, dep, ret);
  		goto err0;
  	}
  
-@@ -2905,7 +2906,8 @@
+@@ -2905,7 +2929,7 @@
  	dep->flags = 0;
  	ret = __dwc3_gadget_ep_enable(dep, DWC3_DEPCFG_ACTION_INIT);
  	if (ret) {
 -		dev_err(dwc->dev, "failed to enable %s\n", dep->name);
-+		dev_err(dwc->dev, "failed to enable %s: %d\n",
-+			dep->name, ret);
++		dwc3_erro_ep0(dwc, dep, ret);
  		goto err1;
  	}
  

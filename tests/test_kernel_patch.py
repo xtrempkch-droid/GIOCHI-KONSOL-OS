@@ -46,6 +46,25 @@ def read(path):
         return fh.read()
 
 
+def tarball_do_kernel():
+    """O tarball do kernel em DL_DIR, ou None.
+
+    Testar a aplicação contra o TARBALL é a única forma determinística: a
+    árvore em `dist/<id>/build/build/linux-*` pode estar em qualquer estado
+    (patch já aplicado, patch ANTIGO aplicado, árvore pela metade). O
+    `build-image.sh` apaga essa árvore quando a assinatura dos patches muda e
+    o Buildroot re-extrai do tarball — então é o tarball que manda.
+    """
+    import glob as _glob
+    for padrao in ("linux-6.12.tar.xz", "linux-6.12.tar.gz",
+                   "linux-6.12.tar.bz2"):
+        achados = _glob.glob(os.path.join(ROOT, ".cache", "buildroot-dl",
+                                          "linux", padrao))
+        if achados:
+            return achados[0]
+    return None
+
+
 def patch_files():
     return sorted(glob.glob(os.path.join(PATCH_DIR, "*.patch")))
 
@@ -266,55 +285,97 @@ class DefconfigApontaParaOPatch(unittest.TestCase):
                                 "%s não tem nenhum .patch" % alvo)
 
 
-class PatchAplicaNaArvore(unittest.TestCase):
-    def test_aplica_limpo(self):
-        arvores = kernel_trees()
-        if not arvores:
-            self.skipTest("nenhuma árvore de kernel em dist/ para testar")
+class PatchAplicaNoOriginal(unittest.TestCase):
+    """Todo patch tem de aplicar sobre o FONTE ORIGINAL, não sobre a árvore.
+
+    Foi assim que um patch quebrado passou por 14 testes e morreu no build:
+    eu editei o `0004` gerando o diff contra uma árvore que **já tinha o 0004
+    antigo aplicado**, então o hunk levava contexto duplicado. Na árvore ele
+    "aplicava" (o reverso casava); no tarball limpo, dois hunks falhavam.
+
+    O tarball em `DL_DIR` é a referência: é dele que o Buildroot extrai a
+    árvore nova quando a assinatura dos patches muda.
+    """
+
+    def test_todo_patch_aplica_no_tarball(self):
+        tarball = tarball_do_kernel()
+        if not tarball:
+            self.skipTest("tarball do kernel nao esta em DL_DIR")
         patch_bin = shutil.which("patch")
         if not patch_bin:
-            self.skipTest("'patch' não instalado")
+            self.skipTest("'patch' nao instalado")
 
-        for arvore in arvores:
+        # Uma extração só para todos os patches: ler o tar.xz é o custo
+        # dominante (a extração sozinha leva ~1 min num tarball de 130 MB).
+        todos = []
+        for caminho in patch_files():
+            texto = read(caminho)
+            for ln in texto.splitlines():
+                if ln.startswith("+++ b/"):
+                    todos.append(ln.split("+++ b/", 1)[1].strip())
+        todos = sorted(set(todos))
+
+        tmp = tempfile.mkdtemp(prefix="giochi-patch-orig-")
+        try:
+            if not self._extrai(tarball, todos, tmp):
+                self.skipTest("tarball nao tem todos os arquivos alvo")
+            patch_bin = shutil.which("patch")
             for caminho in patch_files():
                 nome = os.path.basename(caminho)
-                with self.subTest(arvore=os.path.basename(arvore), patch=nome):
-                    self._aplica(arvore, caminho, patch_bin)
-
-    def _aplica(self, arvore, patch_file, patch_bin):
-        # A árvore do build já tem o patch aplicado (é o estado normal depois
-        # de um build). Por isso o teste usa uma cópia do arquivo original:
-        # se o patch reverter limpo, ele também aplica limpo.
-        texto = read(patch_file)
-        alvos = [ln.split("+++ b/", 1)[1].strip()
-                 for ln in texto.splitlines() if ln.startswith("+++ b/")]
-        self.assertTrue(alvos, "%s não declara arquivo alvo"
-                        % os.path.basename(patch_file))
-
-        tmp = tempfile.mkdtemp(prefix="giochi-patch-")
-        try:
-            for alvo in alvos:
-                destino = os.path.join(tmp, alvo)
-                os.makedirs(os.path.dirname(destino), exist_ok=True)
-                shutil.copyfile(os.path.join(arvore, alvo), destino)
-
-            # A árvore de um build já traz o patch aplicado (é o estado normal
-            # depois de compilar). Reverter as cópias devolve o estado em que
-            # o patch tem de aplicar.
-            reverso = subprocess.run([patch_bin, "-p1", "-R", "-s",
-                                      "--dry-run"], cwd=tmp, input=texto,
-                                     capture_output=True, text=True)
-            if reverso.returncode == 0:
-                subprocess.run([patch_bin, "-p1", "-R", "-s"], cwd=tmp,
-                               input=texto, capture_output=True, text=True)
-
-            r = subprocess.run([patch_bin, "-p1", "-s", "--dry-run"], cwd=tmp,
-                               input=texto, capture_output=True, text=True)
-            self.assertEqual(r.returncode, 0,
-                             "o patch não aplica na árvore %s: %s"
-                             % (arvore, (r.stdout + r.stderr).strip()))
+                with self.subTest(patch=nome):
+                    texto = read(caminho)
+                    r = subprocess.run([patch_bin, "-p1", "-s", "--dry-run"],
+                                       cwd=tmp, input=texto,
+                                       capture_output=True, text=True)
+                    self.assertEqual(
+                        r.returncode, 0,
+                        "%s NAO aplica sobre o fonte original: %s\n"
+                        "  (regerar o diff contra o tarball, nao contra a "
+                        "arvore de build)"
+                        % (nome, (r.stdout + r.stderr).strip()))
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+
+    @staticmethod
+    def _extrai(tarball, alvos, destino_raiz):
+        """Extrai do tarball só os arquivos que o patch toca."""
+        import tarfile
+        try:
+            with tarfile.open(tarball, "r:*") as tar:
+                nomes = tar.getnames()
+                for alvo in alvos:
+                    achado = None
+                    for nome in nomes:
+                        if nome.endswith("/" + alvo):
+                            achado = nome
+                            break
+                    if achado is None:
+                        return False
+                    destino = os.path.join(destino_raiz, alvo)
+                    os.makedirs(os.path.dirname(destino), exist_ok=True)
+                    origem = tar.extractfile(achado)
+                    if origem is None:
+                        return False
+                    with open(destino, "wb") as fp:
+                        fp.write(origem.read())
+            return True
+        except (tarfile.TarError, OSError):
+            return False
+
+    def test_patch_0004_imprime_registradores(self):
+        """O `-110` sozinho nao diz o que corrigir.
+
+        GCTL.PrtCapDir (modo), DSTS.LinkState (sessao) e DCTL.RunStop (parado)
+        separam tres causas que pedem correcoes diferentes.
+        """
+        nome = "0004-usb-dwc3-mostra-o-codigo-de-erro-do-ep0.patch"
+        caminho = os.path.join(PATCH_DIR, nome)
+        self.assertTrue(os.path.isfile(caminho))
+        texto = read(caminho)
+        for campo in ("GCTL=0x", "DSTS=0x", "DCTL=0x", "prtcap=", "link="):
+            with self.subTest(campo=campo):
+                self.assertIn(campo, texto,
+                              "o 0004 nao imprime %s" % campo)
 
 
 if __name__ == "__main__":
