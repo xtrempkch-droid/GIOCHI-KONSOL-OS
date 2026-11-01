@@ -80,7 +80,19 @@ def instalar(pacotes, games: Path, dry_run: bool) -> tuple[int, int]:
             continue
 
         alvo = games / p.caminho.name
-        shutil.copy2(p.caminho, alvo)
+        # copyfile, NAO copy2: o copy2 tenta replicar metadados (utime) e o
+        # MTP responde `OSError: [Errno 95] Operation not supported` — o
+        # conteudo ja' foi escrito e o comando estoura no fim, deixando o
+        # pacote no cartao E um traceback na cara do usuario. Medido em
+        # 2026-11-01 com o console ligado pelo cabo.
+        # O sha256 conferido logo abaixo e' o que realmente importa: se o
+        # conteudo chegou inteiro, os atributos sao irrelevantes.
+        try:
+            shutil.copyfile(p.caminho, alvo)
+        except OSError as exc:
+            falhas += 1
+            print(f"  ERRO     {p.caminho.name:32s} {exc.strerror or exc}")
+            continue
         if sha256_de(alvo) != p.sha256:
             alvo.unlink(missing_ok=True)
             falhas += 1

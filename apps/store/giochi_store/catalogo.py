@@ -18,7 +18,19 @@ SCHEMA = "1.0"
 # O Launcher so' aceita aarch64 (ADR-13 proibe emulacao).
 ARCH_OK = "aarch64"
 RUNTIMES_OK = ("godot", "retroarch", "proton")
-CAMPOS_OBRIGATORIOS = ("id", "title", "version", "entrypoint")
+
+# `id` NAO esta' aqui de proposito: o schemas/metadata.schema.json nao o exige
+# (required = title, developer, version, arch, runtime, entrypoint) e o
+# giochi-forge segue o schema. Exigir `id` na leitura fazia o store RECUSAR um
+# pacote feito pelo forge — medido em 2026-11-01, de ponta a ponta:
+#
+#   forge: gerado arcade-volleyball.giochi (90 KB)
+#   store: pulado arcade-volleyball.giochi  metadata.json sem 'id'
+#
+# A identidade ja' tem fallback no nome do arquivo (Pacote.id), que e' estavel
+# porque o forge grava <slug>.giochi. Quem quiser um id proprio continua
+# podendo declara-lo no metadata.
+CAMPOS_OBRIGATORIOS = ("title", "version", "entrypoint")
 
 
 @dataclass

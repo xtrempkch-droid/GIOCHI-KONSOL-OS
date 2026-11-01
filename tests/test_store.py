@@ -98,7 +98,11 @@ class ValidacaoTest(unittest.TestCase):
         self.assertIn("runtime", p.motivo)
 
     def test_campo_obrigatorio_ausente_diz_qual(self):
-        for campo in ("id", "title", "version", "entrypoint"):
+        # `id` NAO esta' nesta lista de proposito: o metadata.schema.json nao o
+        # exige, o forge segue o schema e a identidade tem fallback no nome do
+        # arquivo. Exigir `id` aqui fazia o store recusar um pacote feito pelo
+        # forge (medido de ponta a ponta em 2026-11-01).
+        for campo in ("title", "version", "entrypoint"):
             meta = dict(META_OK)
             del meta[campo]
             p = validar(escrever_pacote(self.dir / f"{campo}.giochi", meta))
@@ -106,6 +110,16 @@ class ValidacaoTest(unittest.TestCase):
             self.assertFalse(p.ok)
             self.assertIn(campo, p.motivo,
                           f"o motivo nao cita o campo que falta: {p.motivo}")
+
+    def test_pacote_sem_id_e_aceito_e_usa_o_nome_do_arquivo(self):
+        """O forge grava <slug>.giochi e o schema nao exige `id`: um pacote
+        dele tem de passar. Sem isso o fluxo forge -> store quebrava."""
+        meta = dict(META_OK)
+        meta.pop("id", None)
+        p = validar(escrever_pacote(self.dir / "meu-jogo.giochi", meta))
+
+        self.assertTrue(p.ok, f"pacote do forge recusado: {p.motivo}")
+        self.assertEqual("meu-jogo", p.id)
 
     def test_entrypoint_fora_de_bin_e_recusa(self):
         for entry in ("jogo", "bin/../etc/passwd", "/bin/jogo"):
@@ -247,6 +261,35 @@ class InstalacaoTest(unittest.TestCase):
         self.assertFalse((games / "ruim.giochi").exists(),
                          "pacote recusado foi copiado para o cartao")
 
+    def test_destino_sem_utime_nao_quebra_a_copia(self):
+        """O MTP responde EOPNOTSUPP em utime.
+
+        Medido em 2026-11-01 com o console ligado pelo cabo: `shutil.copy2`
+        copiava o conteudo e estourava no copystat com
+        `OSError: [Errno 95] Operation not supported` — o pacote chegava ao
+        cartao e a ferramenta saia com traceback. Aqui o destino recusa utime
+        de proposito; a copia tem de terminar com sucesso.
+        """
+        from giochi_store.cli import instalar
+        import shutil as _shutil
+
+        games = self.dir / "games"
+        games.mkdir()
+        original = _shutil.copystat
+
+        def sem_utime(src, dst, **kw):
+            raise OSError(95, "Operation not supported")
+
+        _shutil.copystat = sem_utime
+        try:
+            copiados, falhas = instalar(varrer(self.dir / "src"), games, False)
+        finally:
+            _shutil.copystat = original
+
+        self.assertEqual((copiados, falhas), (1, 1))
+        self.assertTrue((games / "bom.giochi").is_file(),
+                        "o conteudo tinha de chegar mesmo sem utime")
+
 
 class DestinoTest(unittest.TestCase):
     """Descoberta do ponto de cópia: cartão no leitor ou MTP pelo cabo.
@@ -273,6 +316,21 @@ class DestinoTest(unittest.TestCase):
 
     def test_diretorio_vazio_nao_e_destino(self):
         self.assertFalse(_tem_assinatura(self.dir))
+
+    def test_mtp_entra_no_volume_e_nao_so_na_raiz_do_mount(self):
+        """O gvfs monta o VOLUME e o /user aparece como uma pasta dentro dele.
+
+        Medido em 2026-11-01 com o console ligado: o mount era
+        /run/user/1000/gvfs/mtp:host=.../ e o `games/` estava em .../Giochi/
+        games — olhar so' a raiz do mount fazia `destinos` responder "nenhum
+        destino encontrado" com o aparelho visivel na tela.
+        """
+        volume = self.dir / "mtp:host=Fake_Giochi_0001"
+        (volume / "Giochi" / "games").mkdir(parents=True)
+
+        # A raiz do mount nao tem assinatura; o volume tem.
+        self.assertFalse(_tem_assinatura(volume))
+        self.assertTrue(_tem_assinatura(volume / "Giochi"))
 
     def test_arquivo_nao_e_diretorio(self):
         (self.dir / "games").write_text("nao e diretorio")

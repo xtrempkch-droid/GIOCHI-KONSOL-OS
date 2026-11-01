@@ -3568,6 +3568,69 @@ video device", que parece falta de driver e é falta de **posse do DRM**.
   aparelho onde o **Launcher desenha**, é disputa de DRM master — não é driver,
   não é lib faltando. Confira **por qual tipo** o processo foi lançado.
 
+### 3.128 O fluxo `forge` → `store` estava quebrado em três pontos
+
+O mantenedor pediu para instalar o Spacewar "usando a ferramenta store+forge" —
+era um teste de verdade, e ele reprovou. Três defeitos independentes, cada um
+medido com o console LIGADO (MTP montado) antes de mexer no código:
+
+**1. `store destinos` não achava o console.** O gvfs monta o **volume** em
+`/run/user/<uid>/gvfs/mtp:host=.../`, e o `/user` aparece como uma pasta
+dentro dele (`.../Giochi/`, do uMTP-Responder). A descoberta olhava só a raiz
+do mount, onde não existe `games/`:
+
+```
+$ giochi-store destinos
+nenhum destino encontrado.        <- com o aparelho visível na tela
+```
+
+- Correção: procura a assinatura (`games/` ou `.giochi/`) também um nível
+  abaixo, dentro do volume MTP.
+- **Regra**: ponto de montagem de MTP não é o `/user`; é o volume. Descoberta
+  por conteúdo continua certa — mas o conteúdo está um nível abaixo.
+
+**2. O `store` recusava pacote feito pelo `forge`.** O `schemas/metadata.schema.json`
+exige `title, developer, version, arch, runtime, entrypoint` — **não** exige
+`id` —, e o `forge` segue o schema. O `store` tinha
+`CAMPOS_OBRIGATORIOS = ("id", "title", ...)`, então:
+
+```
+forge: gerado arcade-volleyball.giochi (90 KB)
+store: pulado  arcade-volleyball.giochi   metadata.json sem 'id'
+```
+
+- A identidade já tinha fallback (`Pacote.id` → nome do arquivo), então exigir
+  `id` na validação era só contradição interna.
+- Correção: `id` saiu dos obrigatórios; a suíte ganhou
+  `test_pacote_sem_id_e_aceito_e_usa_o_nome_do_arquivo`.
+- **Regra**: quando duas ferramentas compartilham um arquivo de dados, o
+  contrato tem de morar num lugar só (o schema). O teste que *exigia* `id`
+  codificava o defeito — ele passou a ser a guarda do contrato certo.
+
+**3. `shutil.copy2` estoura no MTP.** O MTP não implementa `utime`:
+
+```
+File ".../shutil.py", line 446, in copystat
+    lookup("utime")(dst, ...)
+OSError: [Errno 95] Operation not supported
+```
+
+O conteúdo **já estava copiado** e o comando saía com traceback — pior dos
+dois mundos: o usuário não sabe se instalou.
+
+- Correção: `shutil.copyfile` (só dados) + o `sha256` conferido no destino, que
+  é o que de fato importa. `OSError` na cópia agora vira
+  `ERRO <nome> <motivo>` e conta como falha, sem traceback.
+- Guarda: `test_destino_sem_utime_nao_quebra_a_copia` (destino que recusa
+  `copystat`) e `test_mtp_entra_no_volume_e_nao_so_na_raiz_do_mount`.
+  Testadas ao contrário: reintroduzir `copy2` reprova; descoberta só na raiz
+  faz `destinos` voltar a dizer "nenhum destino" com o console plugado.
+
+**Verificação de ponta a ponta, no aparelho:** `forge store` gerou
+`arcade-volleyball.giochi` (90 KB) → `store instalar` copiou para
+`/user/games` → `sha256` **idêntico** à origem (`17725af3cac5031b`), conferido
+por SSH no console. `make test` 42/42, `make lint` rc=0.
+
 ### 3.104 NetworkManager desfaz o IP manual da interface USB
 
 `tools/giochi-ctl.py preparar` atribuía `10.55.0.1/24` com `ip addr add` e

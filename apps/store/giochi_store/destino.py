@@ -63,9 +63,22 @@ def _candidatos() -> list[tuple[Path, str]]:
 
     # 1. MTP pelo gvfs: o mais volátil, então vem primeiro (se o aparelho está
     #    plugado, é o que o usuário quer).
+    #
+    #    ATENÇÃO ao nível: o gvfs monta o VOLUME em
+    #    /run/user/<uid>/gvfs/mtp:host=.../, e o /user da partição aparece como
+    #    uma pasta dentro dele (no uMTP-Responder o volume se chama "Giochi").
+    #    Olhar só a raiz do mount nunca acha a assinatura `games/`: medido em
+    #    2026-11-01, com o console ligado e o MTP montado, `destinos` imprimia
+    #    "nenhum destino encontrado" — o aparelho estava visível e a ferramenta
+    #    dizia que não.
     for base in Path("/run/user").glob("*/gvfs"):
         for item in sorted(base.glob("mtp*")):
-            lista.append((item, "mtp"))
+            if _tem_assinatura(item):
+                lista.append((item, "mtp"))
+                continue
+            for dentro in sorted(item.glob("*")):
+                if dentro.is_dir() and _tem_assinatura(dentro):
+                    lista.append((dentro, "mtp"))
 
     # 2. Cartão montado pelo udisks.
     for base in (Path("/run/media"), Path("/media")):
