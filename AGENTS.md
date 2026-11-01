@@ -590,9 +590,10 @@ num diretório dentro do SquashFS somente-leitura (`settings.json`, `/user/music
 ### 3.31 Sem `fbcon`, falha antes do Launcher é invisível
 
 `linux.fragment` declara `CONFIG_FB=n` (decisão por boot rápido: ~1 MB de
-kernel e alguns ms). O efeito colateral é que o kernel **não tem console de
-vídeo**: qualquer erro de driver, de montagem da raiz ou de painel acontece com
-a tela apagada. Não há o que ver.
+kernel e alguns ms). **Isso NÃO desliga o console de vídeo** — ver §3.59: o
+`DRM_FBDEV_EMULATION` faz `select FB` e o fbcon existe assim mesmo. A
+ferramenta de diagnóstico abaixo continua válida (ela garante fbcon com o
+`linux-debug.fragment`), mas a premissa "o kernel não tem console" era errada.
 
 - Imagem de diagnóstico: `tools/build-image.sh <aparelho> --debug` (ou
   `GIOCHI_DEBUG_BOOT=1`) anexa `board/giochi/linux-debug.fragment` à lista de
@@ -1332,6 +1333,43 @@ $MODALIAS=.*	root:root 660 @modprobe "$MODALIAS"
 
 - Guarda: `test_coldplug_de_modulos_no_boot` recusa `modprobe -b` sem a feature
   no `busybox.fragment`, e exige `FEATURE_MDEV_CONF`/`MDEV`.
+
+
+### 3.59 `CONFIG_FB=n` no fragmento NÃO desliga o fbcon (`DRM_FBDEV_EMULATION`)
+
+O `linux.fragment` declara `CONFIG_FB=n` desde a v1.2, com a justificativa
+"boot rápido, ~1 MB de kernel". A afirmação do §3.31 — de que a imagem não tem
+console de vídeo — é **falsa**. Medido no `.config` do build da X55:
+
+```
+# CONFIG_FB is not set            <- o fragmento pediu
+CONFIG_DRM_FBDEV_EMULATION=y     <- default do DRM
+CONFIG_FRAMEBUFFER_CONSOLE=y     <- o que realmente vale
+```
+
+`DRM_FBDEV_EMULATION` faz `select FB` e `select FRAMEBUFFER_CONSOLE` quando o
+`DRM_KMS_HELPER` está ligado, então o `=n` do fragmento é descartado. O console
+de vídeo **sempre existiu** nesta imagem — foi ele que apareceu na tela do
+aparelho ("terminal com falha, cursor piscando") antes de o Launcher rodar.
+
+Consequência que atrapalha a UI: o cursor do vt pisca e **repinta** a tela, e
+qualquer `printk` novo pinta por cima do que o SDL desenhou — e este kernel
+imprime `rk817-charger: Battery voltage 19590 below minimum` **a cada 8 s**.
+
+- Decisão: **manter** o fbcon (é o diagnóstico mais barato que existe, e foi
+  ele que mostrou o boot chegando ao userspace) e **entregar o framebuffer**
+  em runtime no `S20graphics`: baixa `console_loglevel` para 1 e desvincula o
+  `vtcon` do fbcon (`/sys/class/vtconsole/*/bind`), que é o que para o cursor e
+  os printk. O log continua no serial (`ttyS2`) e no cartão (S00bootlog).
+- `GIOCHI_KEEP_FBCON=1` mantém o console ligado (depurar com a tela).
+- Remover de verdade exigiria `CONFIG_DRM_FBDEV_EMULATION=n` — não é o que a
+  v1.2 faz.
+- Guarda: `test_framebuffer_entregue_a_ui` (suíte `primeiro-boot`).
+
+**Armadilha de método:** o comentário do fragmento dizia uma coisa e o
+`.config` dizia outra havia várias sessões, e ninguém notou porque o efeito
+(*mais* console, não menos) parece uma melhoria. Comentário de config não é
+prova; `grep` no `.config` do build é.
 
 
 ## 4. O que NÃO foi verificado
@@ -2610,3 +2648,54 @@ ocorrências de `kmsdrm`, com `drmModeAddFB` e `gbm_create_device`.
 **Aberto:** o boot com o SDL2 correto ainda não aconteceu. Se a tela mostrar o
 Launcher, o próximo item é o desenho dos widgets (`TODO(v1.2)` em
 `render.cpp`). Se cair para headless de novo, agora o log diz **por quê**.
+
+### 2026-10-31 (23) — Copilot (correção: fonte sim, mas o sujeito é o autor — e o template é glibc)
+
+O mantenedor apontou um furo na entrada anterior: *"se o itch.io liberar o código
+fonte não seria possível compilar em arm64?"*. **Está certo, e o §3 do
+[docs/ITCHIO.md](docs/ITCHIO.md) era mais estreito do que o texto sugeria** —
+ele vale para **binários publicados**, não para o jogo. Corrigido com uma seção
+nova (§3.4) e o veredito do topo.
+
+Três separações que faltavam:
+
+1. **O itch.io não é dono do código dos jogos.** Ele hospeda; quem libera fonte
+   é cada desenvolvedor. Não existe "o itch.io libera o código" — o que o
+   itch.io tem aberto é o **cliente** (`itchio/itch`, MIT) e o `butler` (MIT),
+   e isso não alcança os jogos.
+2. **Existe oferta real de fonte**, sim: a tag `tag-open-source` traz Mindustry,
+   Battle for Wesnoth, SuperTuxKart, Friday Night Funkin'.
+3. **Mas a oferta está concentrada justamente onde o recompile é caro:**
+   Mindustry GPL-3.0/Java, Wesnoth GPL-2.0/C++, SuperTuxKart NOASSERTION/C++,
+   FNF Psych Apache-2.0/Haxe. "Compilar em arm64" para esses é portar engine e
+   dependências para musl — o mesmo trabalho de port que o projeto já faz à mão
+   — e a licença volta a bater no §6 (anti-tivoization).
+
+**O elo técnico que faltava (medido, baixando o template):** o Godot **tem**
+template de exportação aarch64 — `Godot_v4.3-stable_linux.arm64.zip`, 47,1 MB
+(103,6 MB descomprimido), ELF64 com `e_machine = 0xB7` (AArch64, confirmado no
+cabeçalho). Mas ele é **glibc**: referencia `GLIBC_2.17…2.28` e `libc.so.6`;
+`ld-musl`/`libc.musl` **ausentes**. Nosso rootfs é musl
+(`BR2_TOOLCHAIN_BUILDROOT_MUSL=y`, ADR-03), então o template oficial **não
+roda** na imagem.
+
+ Isso não invalida o caminho — é o que o ADR-03 já manda (recompilar todo
+binário de runtime a partir do fonte), e a spec já anota o item:
+`| musl × Godot export template | Recompilação obrigatória (ADR-03) |`.
+
+**Alavancagem que isso revela:** recompilar o template do Godot contra musl
+destrava **duas** coisas de uma vez — os jogos do itch.io publicados como
+projeto Godot **e** os três jogos padrão do repositório (Arcade Volleyball,
+Spacewar, Colossal Cave), que hoje instalam projeto em vez de binário pelo
+mesmo motivo. Virou o item 4 da recomendação em `docs/ITCHIO.md`.
+
+**Modelo corrigido:** o itch.io não serve como *catálogo automático* (o dado de
+arquitetura não existe), mas serve como **coleção curada** — por jogo,
+perguntar *"é Godot?"* e *"a licença permite distribuir?"*. Duas respostas "sim"
+= minutos; qualquer "não" = um port.
+
+**Verificação:** template arm64 baixado e inspecionado (ELF + strings de libc);
+licenças e linguagens conferidas via API do GitHub (`Anuken/Mindustry`,
+`wesnoth/wesnoth`, `supertuxkart/stk-code`, `ShadowMario/FNF-PsychEngine`);
+`check-links` ok (29 arquivos) e `make lint` rc=0. **Não rodou:** nenhum export
+do Godot, e o build musl do template continua pendente.

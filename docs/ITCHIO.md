@@ -19,7 +19,13 @@ aparelho". O que existe de aproveitável está em §6.
 | Filtrar por arquitetura pelo catálogo | **impossível** — só existe `all/386/amd64` (§3) |
 | Rodar jogos x86 via emulação | **proibido** pela spec (ADR-13) |
 | Oferta de jogos ARM64 nativos | **~18** em 1,7 milhão (§3.3) |
+| **Compilar do fonte para aarch64** | **sim — e é o único caminho que funciona** (§3.4) |
 | `giochi-store` existe hoje | **não** — é app a escrever do zero (§5) |
+
+**A pergunta que muda o veredito:** *"e se o itch.io liberar o código fonte, não
+dá para compilar em arm64?"* Dá — e essa é a saída. Mas §3 vale só para
+**binários**; §3.4 mostra que, com fonte, a arquitetura deixa de ser o problema
+e o gargalo vira **motor + licença**.
 
 Contexto de hardware que vale para tudo abaixo: alvo é **aarch64 (Cortex-A55)**,
 RK3566 com 2 GB de RAM / 128 MB de VRAM, RK3326 com 1 GB / 64 MB, orçamento de
@@ -154,6 +160,93 @@ resultados para `arm64` é ruído estatístico — e ainda são jogos que apenas
 **Isto é a resposta dura:** mesmo que a Loja fosse perfeita, o estoque de jogos
 ARM64 nativos descobríveis no itch.io é da ordem de algumas dezenas.
 
+### 3.4 Se o desenvolvedor publica o código, compilar em arm64 resolve — mas o sujeito não é o itch.io
+
+Este é o contraponto honesto ao §3, e ele é correto: **arquitetura não é
+obstáculo quando existe fonte.** O que o §3 prova é mais estreito do que parece
+— ele vale para **binários publicados**, não para o jogo.
+
+Três coisas precisam ser separadas:
+
+1. **O itch.io não é dono do código dos jogos.** Ele hospeda. Quem pode liberar
+   fonte é cada desenvolvedor, um por um. Não existe um botão "o itch.io libera
+   o código". (O que o itch.io tem de aberto é o **cliente** dele,
+   `itchio/itch`, MIT — e o `butler`, também MIT. Isso não alcança os jogos.)
+2. **Muita gente de fato publica fonte.** A tag `tag-open-source` existe e a
+   lista é séria: Mindustry, Battle for Wesnoth, SuperTuxKart, Friday Night
+   Funkin' e centenas de outros.
+3. **Mas publicar fonte não é o mesmo que poder redistribuir.** É §2 de novo:
+   fonte visível sob GPL não autoriza pré-instalar na imagem assinada.
+
+#### O que a fonte muda (medido nos jogos em destaque)
+
+| Jogo | Licença | Motor / linguagem | Compilar p/ aarch64 é… |
+|---|---|---|---|
+| Mindustry | **GPL-3.0** | Java/libGDX | portar JVM + libGDX |
+| Battle for Wesnoth | **GPL-2.0** | C++ | portar ~30 dependências |
+| SuperTuxKart | NOASSERTION | C++/Irlicht | portar engine + assets GPL |
+| Friday Night Funkin' (Psych) | **Apache-2.0** | Haxe/HaxeFlixel | portar HashLink/Haxe |
+| **Jogo em Godot** | depende do autor | **Godot** | **re-exportar (minutos)** |
+
+Repare no padrão: os projetos abertos que aparecem no itch.io são justamente os
+**grandes**, escritos sobre engines pesadas, e quase todos **GPL**. Para esses,
+"compilar em arm64" não é um `make ARCH=arm64` — é portar engine e dependências
+para musl/aarch64, o mesmo trabalho de port que o projeto já faz à mão. E a
+licença volta a bater no §6 (anti-tivoization).
+
+#### A exceção que vale ouro: Godot
+
+Se o jogo é Godot e o autor publica o projeto, **não há problema de
+arquitetura**: o Godot já tem template de exportação aarch64. Verificado
+baixando o template oficial:
+
+```console
+$ ... Godot_v4.3-stable_linux.arm64.zip       47,1 MB (103,6 MB descomprimido)
+magic: b'\x7fELF'   EI_CLASS: ELF64
+e_machine = 0xb7      -> AArch64  (confirmado)
+```
+
+**Porém — e este é o elo que faltava:** esse template é **glibc**:
+
+```
+GLIBC_2.17  2.18  2.24  2.25  2.27  2.28     (libc.so.6)
+ld-musl: ausente      libc.musl: ausente
+```
+
+Nosso rootfs é **musl** (`BR2_TOOLCHAIN_BUILDROOT_MUSL=y`, ADR-03). Então o
+template oficial **não roda** na imagem. Isso não invalida o caminho: é
+exatamente o que o ADR-03 já manda fazer — *"recompilação obrigatória de todos
+os binários de runtime a partir do fonte"* — e a própria spec já anota o item:
+
+> `| musl × Godot export template | Recompilação obrigatória (ADR-03) |`
+
+Consequência prática importante: **recompilar o template do Godot contra musl
+destrava duas coisas de uma vez** — os jogos do itch.io publicados como projeto
+Godot **e** os três jogos padrão do repositório (Arcade Volleyball, Spacewar,
+Colossal Cave), que hoje instalam projeto em vez de binário pelo mesmo motivo.
+É o item de maior alavancagem de todo esse eixo.
+
+#### Licença para o caso Godot
+
+Mesmo com fonte e com template musl, pré-instalar exige licença permissiva.
+Godot publica sob MIT, mas **o jogo tem licença própria** — alguns são MIT/CC0
+(e aí servem), muitos não declaram nada.
+
+#### Veredito do caminho "fonte"
+
+| Pergunta | Resposta |
+|---|---|
+| Compilar fonte em arm64 resolve arquitetura? | **sim** |
+| O itch.io pode "liberar" o código? | **não** — é de cada autor |
+| Existe oferta real de fonte? | **sim**, mas concentrada em engines pesadas e GPL |
+| Serve para a Loja **sem curadoria**? | **não** — cada caso exige licença e trabalho de port |
+| Serve para **curadoria** de jogos Godot? | **sim** — e é o caminho mais curto |
+
+Ou seja: o modelo deixa de ser "catálogo automático" e passa a ser **coleção
+curada**, jogo a jogo, com duas perguntas por título — *é Godot?* e *a licença
+permite distribuir?* Onde as duas respostas são "sim", o trabalho é minutos.
+Onde é "não", o trabalho é um port.
+
 ## 4. A ferramenta oficial funciona no aparelho (isto é bom)
 
 Nem tudo são obstáculos: o `butler`, CLI oficial do itch.io, é **MIT** e publica
@@ -228,6 +321,11 @@ binário nativo — e o runtime já é o do sistema (ADR-07). Exige o export tem
 musl que os três jogos padrão também esperam (ADR-03), e exige **licença que
 permita recompilar e redistribuir**.
 
+Detalhado em **§3.4**: o template oficial aarch64 existe e é ELF64
+`e_machine=0xB7`, mas é **glibc**; o nosso rootfs é **musl**. Recompilar o
+template contra musl é o item de maior alavancagem deste eixo, porque resolve
+este caso e os três jogos padrão ao mesmo tempo.
+
 ### 6.3 Portes próprios
 
 É o que o repositório já faz com Arcade Volleyball, Spacewar e Colossal Cave:
@@ -246,9 +344,17 @@ mal, mas é o único caminho com controle total.
 3. **Sim** considerar `butler` (arm64, MIT) se algum dia houver um caso de uso
    pontual de download em nome do usuário — mas por decisão explícita, não como
    base da Loja.
-4. **Priorizar PortMaster** como fonte da Loja/Ports. É ARM por construção, é
+4. **Priorizar a alavancagem máxima: recompilar o template do Godot contra
+   musl** (ADR-03). Isso destrava de uma vez os jogos do itch.io publicados como
+   projeto Godot **e** os três jogos padrão do repositório, que hoje instalam
+   projeto em vez de binário pelo mesmo motivo. Sem isso, "compilar do fonte em
+   arm64" não vira binário executável no aparelho (§3.4).
+5. **Priorizar PortMaster** como fonte da Loja/Ports. É ARM por construção, é
    MIT, e o repositório já reservou a aba para ele.
-5. Enquanto o `giochi-store` não existir, a aba Loja continua mostrando
+6. Se o itch.io entrar, é como **coleção curada**, não catálogo: por jogo,
+   responder *"é Godot?"* e *"a licença permite distribuir?"*. Duas respostas
+   "sim" = minutos de trabalho; qualquer "não" = um port.
+7. Enquanto o `giochi-store` não existir, a aba Loja continua mostrando
    `ERR launch_failed` com log claro — comportamento correto e já testado.
 
 ---
