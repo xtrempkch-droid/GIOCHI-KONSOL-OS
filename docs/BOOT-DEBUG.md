@@ -475,6 +475,15 @@ causas que exigem ações opostas:
 que a função ECM foi criada. Quem diz se o gadget ancorou é o arquivo
 `/sys/kernel/config/usb_gadget/giochi/UDC` — por isso a sonda o lê.
 
+Com o cartão no PC, este comando já faz a extração e a classificação:
+
+```sh
+tools/giochi-usb-diag.sh --cartao
+```
+
+Ele procura a sonda em **qualquer posição** do log (não só no fim — a sonda
+fica centenas de linhas antes) e diz o que fazer em cada caso.
+
 ### Segundo: o que o kernel reclamou
 
 ```sh
@@ -483,7 +492,10 @@ grep -iE "dwc3|udc|gadget|ep0" /boot/giochi-boot.dmesg
 
 | Mensagem | Causa |
 |---|---|
-| `failed to enable ep0out` | o UDC **existe** e o bind foi tentado; o comando `SETEPCONFIG` do ep0 foi recusado (§3.88) |
+| `failed to enable ep0out: -110` | **timeout** do `DEPCFG`: o core não está em modo dispositivo (`PRTCAPDIR`). É o que `dr_mode = "peripheral"` corrige (§3.88) |
+| `failed to enable ep0out: -22` | `NO_RESOURCE`: falta recurso de endpoint; procure o WARN `No resource for ep0out` |
+| `failed to enable ep0out: -11` | `BUS_EXPIRY`: a janela de tempo do comando passou |
+| `failed to enable ep0out` (sem número) | imagem anterior ao patch `0004`: o código de erro é o que decide o diagnóstico |
 | `failed to initialize peripheral` | `dwc3_gadget_init()` falhou — não chegou a registrar UDC |
 | `no UDC available` / nada | modo ou PHY: veja a sonda acima |
 
