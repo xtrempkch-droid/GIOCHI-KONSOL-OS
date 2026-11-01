@@ -33,7 +33,7 @@ constexpr float kGravity = 0.6f;
 
 constexpr int kFloorY = kWindowHeight - kGroundHeight;
 
-/* Paleta do tema dark_default (assets/theme.json): nenhuma cor inventada. */
+/* Paleta do tema dark_default (assets/themes/dark_default.json): nenhuma cor inventada. */
 constexpr SDL_Color kColorBackground = {15, 15, 15, 255};   /* #0F0F0F background */
 constexpr SDL_Color kColorGround = {30, 30, 30, 255};       /* #1E1E1E surface */
 constexpr SDL_Color kColorNet = {51, 51, 51, 255};          /* #333333 divider */

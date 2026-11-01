@@ -1,0 +1,29 @@
+{
+  "$schema": "../../schemas/theme.schema.json",
+  "theme_id": "neon_rose",
+  "name": "Neon Rosé",
+  "description": "Azul-noite profundo com acento rosé e cards de vidro. Canto generoso, borda em todo tile e capa do álbum maior.",
+  "origin": "layout1.md do mantenedor (brand.dark #0B0F19, accent #F43F5E)",
+  "colors": {
+    "background": "#07090E",
+    "surface": "#161E2E",
+    "surface_elevated": "#1F2A40",
+    "text_primary": "#F8FAFC",
+    "text_secondary": "#94A3B8",
+    "hint_bar_bg": "#0B0F19",
+    "divider": "#2A374E",
+    "accent": "#F43F5E"
+  },
+  "metrics": {
+    "tile_corner_radius": 10,
+    "tile_border": 1,
+    "focus_ring": 2,
+    "density": "normal",
+    "topbar_height": 40,
+    "hint_bar_height": 30,
+    "cover_pct": 115,
+    "title_scale_pct": 100
+  },
+  "features": { "hints": "completo" },
+  "typography": { "font_family": "builtin_sans", "topbar_size": 14, "tile_title_size": 12 }
+}

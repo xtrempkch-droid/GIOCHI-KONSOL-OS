@@ -14,12 +14,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 BOOTLOGO = ROOT / "assets" / "bootlogo"
-DEVICES = ROOT / "buildroot" / "board" / "giochi" / "devices"
+DEVICES = ROOT / "device"   # device/<id>/device.conf
 
 
 def devices_panels() -> dict[str, tuple[int, int]]:
     panels: dict[str, tuple[int, int]] = {}
-    for conf in sorted(DEVICES.glob("*.conf")):
+    for conf in sorted(DEVICES.glob("*/device.conf")):
         values = {}
         for line in conf.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -61,7 +61,7 @@ class BootlogoTest(unittest.TestCase):
 
     def test_splash_bmp_per_device(self):
         panels = devices_panels()
-        self.assertTrue(panels, "nenhum devices/*.conf encontrado")
+        self.assertTrue(panels, "nenhum device/*/device.conf encontrado")
 
         for device, (width, height) in panels.items():
             bmp = BOOTLOGO / device / "splash.bmp"

@@ -1,7 +1,7 @@
 # Proposta de layout — as 5 abas em 640×480 e 1280×720
 
 **Status:** a decisão de layout foi aprovada em 2026-10-30 (perfil ×1,5 e 5
-colunas) e **aplicada nos assets do aparelho** — `assets/devices/x55/*.json`
+colunas) e **aplicada nos assets do aparelho** — `device/x55/layout/*.json`
 agora carrega o perfil, e `tests/test_device_scale.py` impede que ele volte a
 divergir. O desenho no `render.cpp` continua pendente (depende de D5, o
 pipeline de texto). A especificação `docs/architecture-v1.2.md` **não** foi
@@ -18,10 +18,10 @@ O estado dos renders de documentação (`docs/screenshots/`) está em
 
 ## 1. O que a proposta é e o que não é
 
-**É:** geometria e tipografia calculadas a partir de `assets/theme.json`
+**É:** geometria e tipografia calculadas a partir de `assets/themes/dark_default.json`
 (cores, `tile_corner_radius`, `tile_title_size`) e dos tamanhos declarados em
 `assets/home.json`, `assets/library.json` e `assets/music.json` — e, no painel
-da X55, dos três arquivos equivalentes em `assets/devices/x55/`, que são o
+da X55, dos três arquivos equivalentes em `device/x55/layout/`, que são o
 layout canônico multiplicado por 1,5. O gerador **lê** esses arquivos: não
 aplica escala em cima de escala.
 
@@ -30,7 +30,7 @@ aplica escala em cima de escala.
 - **captura de tela** — `src/launcher/render.cpp` ainda só pinta o fundo do tema
   e o splash (o `TODO(v1.2)` na linha 219);
 - **medida em aparelho** — nada desta proposta rodou em hardware;
-- **cor nova** — os 10 renders usam apenas as 8 cores de `assets/theme.json`;
+- **cor nova** — os 10 renders usam apenas as 8 cores de `assets/themes/dark_default.json`;
 - **proposta de conteúdo** — os nomes de jogo e de faixa são de exemplo, como em
   `tools/make-screenshots.py`; existem para dar escala ao tile.
 
@@ -103,7 +103,7 @@ quinta coluna cabe porque o perfil é ×1,5, não ×2.
 
 ### 3.3 O que os assets da X55 declaram — e o guarda que impede a volta
 
-Até 2026-10-30 `assets/devices/x55/*.json` **não** seguia um fator único: cada
+Até 2026-10-30 `device/x55/layout/*.json` **não** seguia um fator único: cada
 campo tinha sido escolhido à mão. Medido nos arquivos daquela versão:
 
 | Campo | 640 (base) | X55 (antes) | Fator implícito |
@@ -124,7 +124,7 @@ texturas ocupam **2,80 MB** — a quinta coluna entra sem estourar o teto.
 
 **Os assets foram reescritos para o perfil** e o número agora é conferido por
 `tests/test_device_scale.py` (suíte `escala-x55`, em `make test` **e**
-`make lint`): cada inteiro de `assets/devices/x55/*.json` tem de ser
+`make lint`): cada inteiro de `device/x55/layout/*.json` tem de ser
 `round(base × 1,5)`, ou estar na lista explícita de política (igual ao base:
 `vram_budget_kb`, `rows`, `max_items`, `max_textures_per_tab`, tempos de
 `hold`…), ou ser um dos especiais do painel (`screen.*` = 1280×720 e
@@ -136,7 +136,7 @@ orçamento de VRAM, e foi validado ao contrário: voltar `tile_size.width` para
 288 faz falhar com `288 != 228 : esperado round(152 x 1,5)`.
 
 Consequência para o gerador de renders: ele passou a **ler** os arquivos do
-aparelho (`assets/devices/x55/*.json`) em vez de multiplicar o layout base. Os
+aparelho (`device/x55/layout/*.json`) em vez de multiplicar o layout base. Os
 10 PNGs de `docs/proposta/` saíram byte a byte idênticos depois da troca — prova
 de que o valor está nos assets, não no script.
 
@@ -364,7 +364,7 @@ tile para desenhar, só retângulos.
 
 | Onde | Mudança | Estado |
 |---|---|---|
-| `assets/devices/x55/*.json` | perfil ×1,5 no lugar dos 7 fatores implícitos, `columns: 5` | **feito** em 2026-10-30, com `tests/test_device_scale.py` |
+| `device/x55/layout/*.json` | perfil ×1,5 no lugar dos 7 fatores implícitos, `columns: 5` | **feito** em 2026-10-30, com `tests/test_device_scale.py` |
 | `tools/make-layout-proposal.py` | lê os assets do aparelho em vez de multiplicar o base | **feito** (10 PNGs byte a byte idênticos) |
 | `src/launcher/render.cpp` | topbar, hint bar, grade com anel de foco e `ellipsize` medido em pixels | **feito** em 2026-10-31 (§11): geometria em `ui_geometry.cpp`, texto pelo atlas gerado |
 | `src/launcher/layout.cpp` + schema | tipo de aba (`layout`/`app`) com texto de fallback, em vez do prefixo `APP:` implícito (schema 1.7) | pendente |

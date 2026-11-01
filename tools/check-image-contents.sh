@@ -24,6 +24,7 @@ fail=0
 # --- 1. nada de ferramenta de PC no TARGET --------------------------------
 # Estes arquivos pertencem ao lado do PC (autor/publicador) por definicao.
 PC_ONLY="giochi-pack.sh giochi-sign.sh giochi-keys.sh giochi-forge \
+         giochi-store \
          serial-capture.py serial-capture.sh verify-card.py"
 
 for mk in buildroot/package/*/*.mk; do
@@ -39,10 +40,10 @@ for mk in buildroot/package/*/*.mk; do
                 ;;
         esac
     done
-    # src/forge (app de PC em Python) tambem nao vai ao aparelho.
+    # apps/forge e apps/store (apps de PC em Python) tambem nao vao ao aparelho.
     case "$block" in
-        *src/forge*)
-            echo "  ERRO $mk instala src/forge no rootfs (app de PC)" >&2
+        *apps/forge*|*apps/store*|*src/forge*)
+            echo "  ERRO $mk instala app de PC (apps/) no rootfs" >&2
             fail=$((fail + 1))
             ;;
     esac

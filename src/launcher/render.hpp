@@ -13,6 +13,7 @@
 #include "settings.hpp"
 #include "status.hpp"
 #include "theme.hpp"
+#include "ui_geometry.hpp"
 
 namespace giochi {
 
@@ -37,12 +38,21 @@ struct UiMenuItem {
 struct UiState {
     const giochi_layout *layout = nullptr;
     const giochi_theme *theme = nullptr;
+    /* Metrica que o tema impoe a geometria (raio, borda, densidade...). Nula
+     * = tokens compilados, o que mantem os testes de host intactos. */
+    const UiThemeMetrics *theme_metrics = nullptr;
     int current_tab = 0;
     int focus_index = 0;
     bool settings_open = false;
     int settings_index = 0;
     bool music_playing = false;
     std::string hint;
+
+    /* Primeira linha de /user/.cache/news.json (produzido pelo app de loja do
+     * PC). Vazio = Home mostra as dicas compiladas. docs/APPS.md registrava
+     * que ninguem escrevia esse arquivo; agora ha' produtor E consumidor. */
+    std::string news_title;
+    std::string news_body;
 
     /* Grade da Biblioteca (vazio nas outras abas). */
     const UiItem *items = nullptr;

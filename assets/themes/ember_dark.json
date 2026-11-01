@@ -1,0 +1,35 @@
+{
+  "$schema": "../../schemas/theme.schema.json",
+  "theme_id": "ember_dark",
+  "name": "Ember Dark",
+  "description": "Preto OLED com vermelho vivo e cantos largos. Grade mais arejada (espacosa) e capa do album maior.",
+  "origin": "layout2.md do mantenedor (brand.dark #020408, accent #EF4444)",
+  "colors": {
+    "background": "#020408",
+    "surface": "#0D1117",
+    "surface_elevated": "#161D29",
+    "text_primary": "#F3F4F6",
+    "text_secondary": "#6B7280",
+    "hint_bar_bg": "#05070C",
+    "divider": "#1F2937",
+    "accent": "#EF4444"
+  },
+  "metrics": {
+    "tile_corner_radius": 14,
+    "tile_border": 1,
+    "focus_ring": 3,
+    "density": "espacosa",
+    "topbar_height": 40,
+    "hint_bar_height": 30,
+    "cover_pct": 120,
+    "title_scale_pct": 100
+  },
+  "features": {
+    "hints": "completo"
+  },
+  "typography": {
+    "font_family": "builtin_sans",
+    "topbar_size": 14,
+    "tile_title_size": 12
+  }
+}

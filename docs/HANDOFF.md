@@ -435,7 +435,7 @@ partição FAT → erro de I/O. Ver `AGENTS.md` §3.38–3.43.
 
 ## S13 — giochi-forge — feito
 
-- `src/forge/giochi_forge/`: `profile.py` (device_profile + 3 perfis manuais),
+- `apps/forge/giochi_forge/`: `profile.py` (device_profile + 3 perfis manuais),
   `classify.py` (§4.5.3, pior caso, lista todas as pendências),
   `package.py` (build/assinar/chaves), `__main__.py` (CLI).
 - Testes em `tests/forge/` (classificação, ordem do tar, rejeições).

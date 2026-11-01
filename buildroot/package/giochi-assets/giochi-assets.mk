@@ -23,6 +23,12 @@ define GIOCHI_ASSETS_INSTALL_TARGET_CMDS
 	mkdir -p $(TARGET_DIR)/usr/share/giochi/locales
 	$(INSTALL) -m 0644 $(@D)/assets/locales/*.json \
 		$(TARGET_DIR)/usr/share/giochi/locales/
+	# Catalogo de temas: as cinco propostas de layout + o tema original. Sem o
+	# diretorio, o Launcher cai no tema compilado e o menu Sistema > Tema nao
+	# tem o que alternar.
+	mkdir -p $(TARGET_DIR)/usr/share/giochi/themes
+	$(INSTALL) -m 0644 $(@D)/assets/themes/*.json \
+		$(TARGET_DIR)/usr/share/giochi/themes/
 endef
 
 $(eval $(generic-package))

@@ -188,7 +188,7 @@ Três decisões, em ordem de urgência: **fugir do star**, **desviar de torpedo*
 ## Integração com o repositório
 
 ```console
-$ python3 -m src.forge.giochi_forge check --device rk3566-2gb \
+$ apps/forge/giochi-forge check --device rk3566-2gb \
       --project "Jogos/Spacewar/godot"
 ```
 

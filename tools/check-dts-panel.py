@@ -34,7 +34,7 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DEVICES = os.path.join(ROOT, "buildroot", "board", "giochi", "devices")
+DEVICES = os.path.join(ROOT, "device")   # device/<id>/device.conf
 BOARD_DTS = os.path.join(ROOT, "buildroot", "board", "giochi", "dts")
 
 # Onde procurar o DTS upstream: as árvores de kernel já extraídas em dist/.
@@ -60,9 +60,9 @@ FORA_DA_ARVORE = {"rocknix,generic-dsi": "ROCKNIX generic-dsi (fora da árvore)"
 
 def ler_device(device_id):
     for nome in sorted(os.listdir(DEVICES)):
-        if not nome.endswith(".conf"):
+        caminho = os.path.join(DEVICES, nome, "device.conf")
+        if not os.path.isfile(caminho):
             continue
-        caminho = os.path.join(DEVICES, nome)
         conf = {}
         with open(caminho, encoding="utf-8") as fh:
             for linha in fh:
@@ -158,9 +158,9 @@ def main():
     elif args.dts:
         alvos.append((args.dts, os.path.basename(args.dts)))
     else:
-        ids = [args.aparelho] if args.aparelho else [
-            nome[:-5] for nome in sorted(os.listdir(DEVICES))
-            if nome.endswith(".conf")]
+        ids = [args.aparelho] if args.aparelho else sorted(
+            nome for nome in os.listdir(DEVICES)
+            if os.path.isfile(os.path.join(DEVICES, nome, "device.conf")))
         for dev in ids:
             conf = ler_device(dev)
             if conf is None:

@@ -95,7 +95,7 @@ não passam:
 ### O teto é dado, não código
 
 A capacidade de cada aparelho vive em **três** lugares que precisam concordar:
-`buildroot/board/giochi/devices/<id>.conf` (fonte), a tabela por SoC em
+`device/<id>/device.conf` (fonte), a tabela por SoC em
 `src/init/device_profile.c` (o que o aparelho publica em runtime) e os perfis
 manuais do `giochi-forge`. Quem cruza os três é `tools/check-engines.py`, que
 roda no `make lint` e na suíte `engines`.

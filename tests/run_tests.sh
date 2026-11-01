@@ -215,7 +215,7 @@ if command -v python3 >/dev/null 2>&1; then
     fi
 fi
 
-# Escala do override por aparelho: cada numero de assets/devices/x55/*.json tem
+# Escala do override por aparelho: cada numero de device/x55/layout/*.json tem
 # de ser round(base x 1,5), politica igual ao base, ou um dos especiais do
 # painel. Foi a ausencia deste guarda que deixou 7 fatores implicitos (1,28 a
 # 2,00) e 4,48 MB de thumbnail contra o teto de 4 MB. Sem Pillow: so stdlib.
@@ -253,13 +253,37 @@ if [ -x "$ROOT/tests/integration/devmode_test.sh" ]; then
     fi
 fi
 
-if [ -d "$ROOT/src/forge" ] && command -v python3 >/dev/null 2>&1; then
+# O forge e' app de PC desde a reorganizacao: mora em apps/forge, nao em src/.
+if [ -d "$ROOT/apps/forge" ] && command -v python3 >/dev/null 2>&1; then
     total=$((total + 1))
-    if PYTHONPATH="$ROOT/src/forge" python3 -m unittest discover \
+    if PYTHONPATH="$ROOT/apps/forge" python3 -m unittest discover \
             -s "$ROOT/tests/forge" >/dev/null 2>&1; then
         echo "OK     forge (python)"
     else
         echo "FALHA  forge (python)"
+        fail=$((fail + 1))
+    fi
+fi
+
+# Catalogo de temas: schema, contraste medido, paridade do indice e o efeito
+# REAL no layout (o binario tem de mudar a grade, nao so' a cor).
+if [ -x "$ROOT/build/host/bin/dump-geometry" ] && command -v python3 >/dev/null 2>&1; then
+    total=$((total + 1))
+    if (cd "$ROOT" && python3 -m unittest tests.test_themes) >/dev/null 2>&1; then
+        echo "OK     temas (python)"
+    else
+        echo "FALHA  temas (python)"
+        fail=$((fail + 1))
+    fi
+fi
+
+# App de loja do PC: validacao do .giochi, news.json e copia conferida.
+if [ -d "$ROOT/apps/store" ] && command -v python3 >/dev/null 2>&1; then
+    total=$((total + 1))
+    if (cd "$ROOT" && python3 -m unittest tests.test_store) >/dev/null 2>&1; then
+        echo "OK     loja-do-pc (python)"
+    else
+        echo "FALHA  loja-do-pc (python)"
         fail=$((fail + 1))
     fi
 fi

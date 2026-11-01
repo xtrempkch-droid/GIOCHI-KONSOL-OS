@@ -179,7 +179,7 @@ const HintPair kHintSettings1[] = {{"A", "hint.choose"},
 
 }  // namespace
 
-std::string ui_hint_text(const I18n &i18n, UiHintContext ctx)
+std::string ui_hint_text(const I18n &i18n, UiHintContext ctx, int hints_mode)
 {
     const HintPair *pares = kHintTabs;
     std::size_t n = sizeof(kHintTabs) / sizeof(kHintTabs[0]);
@@ -219,6 +219,14 @@ std::string ui_hint_text(const I18n &i18n, UiHintContext ctx)
         out += pares[i].button;
         out += ':';
         out += i18n.tr(pares[i].key);
+    }
+
+    /* Modo `completo` acrescenta o atalho de teclado — o "Use setas do teclado"
+     * dos mockups. Vem DEPOIS dos botoes do controle porque no aparelho o
+     * controle e' o caminho normal. */
+    if (hints_mode != 0) {
+        out += "|Setas:";
+        out += i18n.tr("hint.keyboard");
     }
     return out;
 }

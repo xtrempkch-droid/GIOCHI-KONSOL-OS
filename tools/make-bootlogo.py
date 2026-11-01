@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Giochi Konsol OS v1.2 — gera os assets de bootsplash a partir do logo.
 
-Produz, para cada aparelho de buildroot/board/giochi/devices/*.conf:
+Produz, para cada aparelho de device/*/device.conf:
 
   assets/bootlogo/<device>/splash.bmp   24-bit BMP do tamanho do painel
                                        (fundo do tema + logo centralizado).
@@ -33,7 +33,7 @@ EXIT_OK = 0
 EXIT_USAGE = 2
 EXIT_NO_PIL = 3
 
-# Fundo do tema escuro (assets/theme.json -> colors.background).
+# Fundo do tema escuro (assets/themes/dark_default.json -> colors.background).
 BACKGROUND = (0x0F, 0x0F, 0x0F)
 
 # Teto do RGBA do Launcher: 640x360x4 = 900 KB (bem abaixo do teto de VRAM
@@ -45,7 +45,7 @@ RGBA_MAX_H = 360
 def device_panels(devices_dir: Path) -> dict[str, tuple[int, int]]:
     """Le GIOCHI_PANEL/GIOCHI_ROTATION de cada <aparelho>.conf."""
     panels: dict[str, tuple[int, int]] = {}
-    for conf in sorted(devices_dir.glob("*.conf")):
+    for conf in sorted(devices_dir.glob("*/device.conf")):
         values: dict[str, str] = {}
         for line in conf.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -121,7 +121,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--out", default=str(root / "assets" / "bootlogo"),
                         help="diretorio de saida (default: assets/bootlogo)")
     parser.add_argument("--devices", default=str(
-        root / "buildroot" / "board" / "giochi" / "devices"),
+        root / "device"),
         help="diretorio dos <aparelho>.conf")
     args = parser.parse_args(argv)
 

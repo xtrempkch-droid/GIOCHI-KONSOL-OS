@@ -5,6 +5,34 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
 
 ## [Não publicado]
 
+### Adicionado
+- **Seis temas, cinco deles novos** ([docs/TEMAS.md](docs/TEMAS.md)): além do
+  `dark_default` original, `neon_rose`, `ember_dark`, `mono_minimal`,
+  `mono_gamepad` e `ios_glass`, transpostos dos cinco mockups do mantenedor.
+  Um tema agora é **cor + métrica**: raio de canto, borda do tile, anel de
+  foco, densidade da grade, escala da capa do álbum e modo da barra de dicas.
+  - `schemas/theme.schema.json` (novo) e `assets/themes/` com `index.json`.
+  - Troca a quente em **Select → Sistema → Tema**, gravada em
+    `settings.json` (`theme_id`); `--theme ID` e `GIOCHI_THEME` para testes.
+  - A densidade muda a grade de verdade (medido): compacta 6×4, normal 5×3,
+    espaçosa 4×3 em 1280×720 — e 4×4 / 4×3 / 3×3 em 640×480. Com o tile fixo
+    as três dariam a mesma contagem, então o tile escala junto (88/100/115 %).
+  - Galeria: `make tema-galeria` gera `docs/temas/*.png` + contato 2×3.
+  - Guarda: `tests/test_themes.py` (19 testes) cobra schema, **contraste
+    medido** (WCAG), paridade do índice e efeito real no binário.
+- **`device/`**: uma pasta por aparelho com `device.conf`, `theme.json` e
+  `layout/`. Antes a mesma identidade vivia em duas árvores
+  (`buildroot/board/giochi/devices/` e `assets/devices/`) e as duas divergiam —
+  a armadilha do §3.20 do AGENTS.md.
+- **`apps/`**: aplicações do PC separadas do núcleo. `apps/forge` (movido de
+  `src/forge`) e **`apps/store`** (novo): `catalogo` produz `store.json` e
+  `news.json`, `instalar` copia para o cartão conferindo o sha256 **no
+  destino**, `listar` mostra o catálogo. Fecha o buraco do `news.json` sem
+  produtor: agora a Home mostra a novidade da Loja.
+  - Guarda: `tests/test_store.py` (16 testes), inclusive `metadata.json` fora
+    do primeiro lugar (ADR-11) e `.giochi` x86_64 recusado com motivo.
+- `tools/make-theme-gallery.py` e o alvo `make tema-galeria`.
+
 ### Corrigido
 - **A fonte da UI perdia a METADE DE BAIXO de cada letra** (AGENTS.md §3.72).
   `tools/make-font.py` trocava `w` e `line_height` ao desempacotar uma lista de
@@ -384,7 +412,7 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
   `SITE = $(if $(GIOCHI_PKGSRC),$(GIOCHI_PKGSRC),<raiz>)`.
   `tools/check-image-contents.sh` (em `make lint`) recusa `SITE_METHOD = local`
   sem `GIOCHI_PKGSRC` e exige o `export` no `build-image.sh`.
-- **CRLF no índice**: `AGENTS.md` e `assets/devices/x55/library.json` estavam
+- **CRLF no índice**: `AGENTS.md` e `device/x55/layout/library.json` estavam
   commitados com CRLF apesar do `* text=auto eol=lf`, então a edição seguinte
   saía como diff de 2 mil linhas. Normalizados para LF, e
   `tools/check-tracked.sh` passou a falhar em `i/crlf` (via
@@ -500,13 +528,13 @@ e versionamento [SemVer](https://semver.org/lang/pt-BR/).
   suíte nova, então passaram a ser descritos em vez de contados.
 
 ### Adicionado
-- Build multi-aparelho: `buildroot/board/giochi/devices/*.conf` como fonte única
+- Build multi-aparelho: `device/*/device.conf` como fonte única
   e defconfigs gerados por `tools/gen-defconfigs.sh` (X55, X35S, X35H,
   RK3566 genérico, RK3326 genérico).
 - `tools/build-image.sh` com preflight (`--check`), build por aparelho, `--all`,
   DTS externo (`GIOCHI_DTS_PATH`/`GIOCHI_DTB_PATH`) e fallback de teste
   (`--fallback-dts`).
-- Layout próprio da X55 (1280×720 após rotação) em `assets/devices/x55/`.
+- Layout próprio da X55 (1280×720 após rotação) em `device/x55/layout/`.
 - `docs/DEVICES.md` com matriz de aparelhos e receita de DTS externo.
 - CI (`.github/workflows/ci.yml`) e workflow de imagens
   (`.github/workflows/images.yml`).

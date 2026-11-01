@@ -1,6 +1,6 @@
 /* Giochi Konsol OS v1.2 — giochi-launcher (ADR-09: C++17 + SDL2).
  *
- * Esqueleto funcional: carrega layout.json/theme.json/settings.json, mantem o
+ * Esqueleto funcional: carrega layout.json, o catalogo assets/themes, settings.json, mantem o
  * estado das 5 abas, overlay de Configuracoes, cliente do music.sock e
  * transicoes via /run/giochi/transition. A renderizacao dos widgets
  * (grid 4x3, topbar, hint bar) esta marcada com TODO no backend SDL2.
@@ -19,6 +19,7 @@
 #include "theme.hpp"
 
 #include "giochi_deviceconf.h"
+#include "giochi_json.h"
 #include "giochi_log.h"
 #include "giochi_transition.h"
 #include "giochi_util.h"
@@ -39,6 +40,7 @@ struct Options {
     std::string user_dir;
     std::string run_dir;
     std::string buttons_map = "default";
+    std::string theme_id; /* vazio = settings.json -> padrao do aparelho */
     bool headless = false;
     int frames = 0; /* >0 encerra apos N frames (usado em smoke test) */
 };
@@ -47,6 +49,8 @@ struct Launcher {
     Options options;
     giochi_layout layout{};
     giochi_theme theme{};
+    giochi::UiThemeMetrics theme_metrics{};
+    giochi_theme_catalog cat{};
     giochi_settings settings{};
     giochi_overlay overlay{};
     giochi::InputState input{};
@@ -81,6 +85,9 @@ void print_usage(FILE *out)
         "  --user-dir DIR    dados do usuario (default: /user)\n"
         "  --run-dir DIR     runtime (default: /run/giochi)\n"
         "  --buttons-map ID  secao de buttons.map (default: default)\n"
+        "  --theme ID        forca o tema (data/themes/<ID>.json);\n"
+        "                    sem isto vale settings.json e depois o padrao\n"
+        "                    do aparelho (device-theme.json)\n"
         "  --headless        sem SDL2/evdev (diagnostico)\n"
         "  --frames N        encerra apos N frames (smoke test)\n"
         "  --version         imprime a versao\n"
@@ -124,6 +131,8 @@ bool parse_args(int argc, char **argv, Options *opt)
             opt->run_dir = argv[++i];
         } else if (arg == "--buttons-map" && i + 1 < argc) {
             opt->buttons_map = argv[++i];
+        } else if (arg == "--theme" && i + 1 < argc) {
+            opt->theme_id = argv[++i];
         } else {
             std::fprintf(stderr, "giochi-launcher: opcao desconhecida '%s'\n",
                          arg.c_str());
@@ -237,7 +246,7 @@ void set_hint(Launcher &app)
             ctx = giochi::UI_HINT_LIBRARY;
         }
     }
-    app.ui.hint = giochi::ui_hint_text(app.i18n, ctx);
+    app.ui.hint = giochi::ui_hint_text(app.i18n, ctx, app.theme.hints);
 }
 
 /* Idiomas que a imagem entrega: assets/locales/<id>.json. A lista e' curta de
@@ -276,6 +285,105 @@ void cycle_language(Launcher &app)
         GLOG_WARN("settings.json: nao foi possivel gravar language (%s)", err);
     }
     GLOG_INFO("idioma: %s", app.i18n.lang());
+}
+
+/* Primeira linha de /user/.cache/news.json (o app de loja do PC escreve).
+ *
+ * O formato e' {"items":[{"title":...,"body":...}]}. Arquivo ausente NAO e'
+ * erro: a Home cai nas dicas compiladas. Arquivo corrompido tambem nao: aparece
+ * no log e a tela continua funcionando — Home vazia por causa de um JSON de
+ * terceiro seria pior que Home com dica. */
+void carregar_novidade(Launcher &app)
+{
+    char path[512];
+    char err[160];
+
+    app.ui.news_title.clear();
+    app.ui.news_body.clear();
+
+    if (snprintf(path, sizeof(path), "%s/.cache/news.json",
+                 app.options.user_dir.c_str()) >= (int)sizeof(path)) {
+        return;
+    }
+
+    gj_value *doc = gj_parse_file(path, err, sizeof(err));
+
+    if (doc == nullptr) {
+        return; /* ausente e' o caso normal antes da primeira sincronizacao */
+    }
+
+    const gj_value *itens = gj_object_get(doc, "items");
+    const gj_value *item = gj_array_at(itens, 0);
+
+    if (item != nullptr) {
+        app.ui.news_title = gj_as_string(gj_object_get(item, "title"), "");
+        app.ui.news_body = gj_as_string(gj_object_get(item, "body"), "");
+
+        if (!app.ui.news_title.empty()) {
+            GLOG_INFO("novidade: %s", app.ui.news_title.c_str());
+        }
+    }
+    gj_free(doc);
+}
+
+/* Nome de exibicao de um tema do catalogo (o do proprio arquivo, senao o id).
+ * O menu mostra nome, nao id: "Neon Rosé" diz mais que "neon_rose". */
+std::string theme_display_name(Launcher &app, const char *id)
+{
+    if (giochi_theme_catalog_load(&app.cat, app.options.asset_dir.c_str(),
+                                  nullptr, 0) == 0) {
+        const int i = giochi_theme_catalog_find(&app.cat, id);
+
+        if (i >= 0) {
+            return std::string(app.cat.entry[i].name);
+        }
+    }
+    return std::string(id); /* sem catalogo: o id e' o melhor rotulo */
+}
+
+void build_menu(Launcher &app);
+
+/* Troca de tema a quente: carrega o proximo do catalogo, recalcula a metrica e
+ * grava em settings.json. Nao reinicia o Launcher e nao mexe em idioma/aba. */
+void cycle_theme(Launcher &app)
+{
+    if (giochi_theme_catalog_load(&app.cat, app.options.asset_dir.c_str(), nullptr,
+                                  0) != 0 || app.cat.count < 2) {
+        GLOG_WARN("tema: catalogo com menos de 2 temas; nada a alternar");
+        return;
+    }
+
+    int atual = giochi_theme_catalog_find(&app.cat, app.theme.id);
+
+    if (atual < 0) {
+        atual = giochi_theme_catalog_find(&app.cat, app.settings.theme_id);
+    }
+    const char *proximo = app.cat.entry[(atual + 1) % app.cat.count].id;
+    char err[128] = {0};
+
+    if (giochi_theme_load(&app.theme, app.options.asset_dir.c_str(),
+                          (std::string("themes/") + proximo + ".json").c_str(),
+                          err, sizeof(err)) != 0) {
+        GLOG_WARN("tema: '%s' nao carregou (%s); mantendo '%s'", proximo, err,
+                  app.theme.id);
+        return;
+    }
+
+    app.theme_metrics = giochi::ui_theme_metrics_from(app.theme);
+    giochi_strlcpy(app.settings.theme_id, proximo,
+                   sizeof(app.settings.theme_id));
+
+    if (giochi_settings_save(&app.settings, app.options.user_dir.c_str(), err,
+                             sizeof(err)) != 0) {
+        GLOG_WARN("settings.json: nao foi possivel gravar theme_id (%s)", err);
+    }
+    GLOG_INFO("tema: '%s' (%s, densidade %s)", proximo, app.theme.id,
+              giochi_density_name(app.theme.density));
+
+    /* A barra de dicas e os rotulos mudam com o tema: refazer agora evita um
+     * frame com a dica do tema anterior. */
+    set_hint(app);
+    build_menu(app);
 }
 
 /* Monta a lista que o render desenha. O render NAO conhece idioma nem acao:
@@ -335,7 +443,8 @@ void build_menu(Launcher &app)
         {"settings.suspend", suspenso},
         {"settings.usb_mode", mass ? "Mass Storage" : "MTP"},
         {"settings.dev_mode",
-         app.i18n.tr(dev ? "settings.on" : "settings.off")}};
+         app.i18n.tr(dev ? "settings.on" : "settings.off")},
+        {"settings.theme", theme_display_name(app, app.theme.id)}};
 
     for (int i = 0; i < GIOCHI_SYSTEM_ITEM_COUNT; i++) {
         giochi::UiMenuItem item;
@@ -443,6 +552,8 @@ void handle_action(Launcher &app, giochi::Action action)
             } else if (app.overlay.index == GIOCHI_SYSTEM_DEV_MODE_INDEX) {
                 set_developer_mode(app,
                                    app.settings.developer_ssh_usb_enabled == 0);
+            } else if (app.overlay.index == GIOCHI_SYSTEM_THEME_INDEX) {
+                cycle_theme(app);
             }
         } else if (std::strcmp(giochi_layout_tab_id(&app.layout,
                                                     app.current_tab),
@@ -457,6 +568,7 @@ void handle_action(Launcher &app, giochi::Action action)
             (void)giochi_overlay_back(&app.overlay);
         } else {
             app.current_tab = app.layout.default_index;
+    carregar_novidade(app);
         }
         break;
     case giochi::ActionHome:
@@ -551,18 +663,73 @@ bool init(Launcher &app)
                            "layout.json", err, sizeof(err)) != 0) {
         GLOG_WARN("layout: fallback compilado (%s)", err);
     }
-    if (giochi_theme_load(&app.theme, app.options.asset_dir.c_str(),
-                          "theme.json", err, sizeof(err)) != 0) {
-        GLOG_WARN("tema: fallback compilado (%s)", err);
-    }
     if (giochi_settings_load(&app.settings, app.options.user_dir.c_str(),
                              err, sizeof(err)) != 0) {
         GLOG_WARN("settings.json: defaults (%s)", err);
     }
 
+    /* Tema ativo: --theme -> GIOCHI_THEME -> settings.json -> padrao do
+     * aparelho -> padrao do catalogo. O id que valeu vai para o log: sem ele,
+     * "a UI mudou de cor sozinha" e' um mistério sem rastro (§3.47). */
+    {
+        char device_theme[GIOCHI_THEME_ID_LEN] = {0};
+        char used[GIOCHI_THEME_ID_LEN] = {0};
+        const char *env_theme = std::getenv("GIOCHI_THEME");
+
+        /* settings.json AUSENTE nao e' escolha do usuario: o `theme_id` que
+         * esta' em memoria veio do default COMPILADO, nao do arquivo. Se ele
+         * contasse, o tema de fabrica do aparelho (device-theme.json) nunca
+         * valeria — medido: a X55 subia em dark_default com neon_rose na
+         * imagem. */
+        char settings_path[512];
+        const bool tem_settings =
+            snprintf(settings_path, sizeof(settings_path), "%s/settings.json",
+                     app.options.user_dir.c_str()) < (int)sizeof(settings_path) &&
+            access(settings_path, R_OK) == 0;
+
+        const char *pedido = !app.options.theme_id.empty()
+                                 ? app.options.theme_id.c_str()
+                                 : (env_theme != nullptr
+                                        ? env_theme
+                                        : (tem_settings ? app.settings.theme_id
+                                                        : nullptr));
+
+        (void)giochi_theme_device_default(device_theme, sizeof(device_theme),
+                                          app.options.asset_dir.c_str());
+
+        const int rc = giochi_theme_resolve(
+            &app.theme, app.options.asset_dir.c_str(), pedido, device_theme,
+            used, sizeof(used), err, sizeof(err));
+
+        /* `err` pode vir preenchido mesmo com rc=0: e' o caso do tema pedido
+         * que nao existe (cai no padrao, mas o pedido precisa aparecer no log,
+         * senao o settings.json velho muda a UI em silencio). */
+        if (err[0] != '\0') {
+            GLOG_WARN("tema: %s", err);
+        }
+        if (rc == 0) {
+            GLOG_INFO("tema: '%s' (%s, densidade %s, dicas %s)", used,
+                      app.theme.id, giochi_density_name(app.theme.density),
+                      giochi_hints_name(app.theme.hints));
+        } else {
+            GLOG_WARN("tema: fallback compilado");
+        }
+
+        /* settings.json pode apontar para um tema que nao existe mais: nesse
+         * caso o arquivo e' corrigido para o que realmente valeu. */
+        if (used[0] != '\0' &&
+            std::strcmp(app.settings.theme_id, used) != 0) {
+            giochi_strlcpy(app.settings.theme_id, used,
+                           sizeof(app.settings.theme_id));
+        }
+    }
+
     app.ui.layout = &app.layout;
     app.ui.theme = &app.theme;
+    app.ui.theme_metrics = &app.theme_metrics;
+    app.theme_metrics = giochi::ui_theme_metrics_from(app.theme);
     app.current_tab = app.layout.default_index;
+    carregar_novidade(app);
 
     giochi_overlay_init(&app.overlay);
 

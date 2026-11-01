@@ -1,0 +1,35 @@
+{
+  "$schema": "../../schemas/theme.schema.json",
+  "theme_id": "ios_glass",
+  "name": "Glass (iOS)",
+  "description": "Inspirado no iOS: preto puro, cards cinza translucidos, linhas finas e cantos grandes. Barra superior um pouco mais baixa e barra de dicas mais alta.",
+  "origin": "layout5.md do mantenedor (ios.card rgba(28,28,30,.75), border rgba(255,255,255,.12))",
+  "colors": {
+    "background": "#000000",
+    "surface": "#1C1C1E",
+    "surface_elevated": "#2C2C2E",
+    "text_primary": "#F2F2F7",
+    "text_secondary": "#8E8E93",
+    "hint_bar_bg": "#141416",
+    "divider": "#38383A",
+    "accent": "#FFFFFF"
+  },
+  "metrics": {
+    "tile_corner_radius": 12,
+    "tile_border": 1,
+    "focus_ring": 2,
+    "density": "normal",
+    "topbar_height": 36,
+    "hint_bar_height": 34,
+    "cover_pct": 105,
+    "title_scale_pct": 98
+  },
+  "features": {
+    "hints": "so_gamepad"
+  },
+  "typography": {
+    "font_family": "builtin_sans",
+    "topbar_size": 14,
+    "tile_title_size": 12
+  }
+}

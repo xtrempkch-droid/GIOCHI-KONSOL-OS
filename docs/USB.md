@@ -115,7 +115,7 @@ O padrão é ECM (Linux e macOS sem driver; Windows 10+ reconhece via USB
 Composite). Se o Windows não criar a interface de rede:
 
 ```sh
-# em buildroot/board/giochi/devices/x55.conf, antes do build:
+# em device/x55.conf, antes do build:
 GIOCHI_USB_NET=rndis
 ```
 

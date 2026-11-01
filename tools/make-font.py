@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Gera o atlas da fonte embutida do Launcher.
 
-O tema pede `builtin_sans` (assets/theme.json) e nao existe fonte no
+O tema pede `builtin_sans` (assets/themes/dark_default.json) e nao existe fonte no
 repositorio. Duas saidas faceis eram erradas para este projeto:
 
   * depender de SDL2_ttf/freetype no console: ~1,4 MB de biblioteca + um .ttf

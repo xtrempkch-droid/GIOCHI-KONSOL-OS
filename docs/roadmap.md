@@ -81,7 +81,7 @@ sem o aparelho.
 - [ ] Capas: `thumb.rgba` depende do `giochi-thumbgen`, que ainda não extrai
       imagem do pacote — o tile é um retângulo.
 - [ ] Aba Música: now playing, barra de progresso, controles, lista.
-- [ ] Aba Home: hero "Continuar", Novidades e Recentes (`assets/devices/*/home.json`).
+- [ ] Aba Home: hero "Continuar", Novidades e Recentes (`device/*/home.json`).
 - [ ] Aba Loja/Ports: dependem de `giochi-store`/`portmaster`, que não existem
       ([APPS.md](./APPS.md)); a aba hoje diz isso.
 - [ ] `hint_bar` (30/45 px) por **par (botão, ação)** com chip; hoje é uma frase.
@@ -120,7 +120,7 @@ Ou seja: **×2 não cabe** na vertical (só caberia com 2 linhas em vez de 3) e
 ×1,5 deixa 166 px de margem de cada lado — espaço suficiente para uma **quinta
 coluna** (1188 dos 1280). Decisão a tomar, com uma destas saídas:
 
-- [x] **(a) Layout nativo por painel** — `assets/devices/x55/layout.json` com
+- [x] **(a) Layout nativo por painel** — `device/x55/layout/layout.json` com
       métricas próprias de 16:9 (topbar 60, hint 45, tile 228×128, título 30,
       canto 6, 5 colunas). É a que preserva qualidade de texto e aproveita a
       tela; exige um segundo conjunto de números para manter — **aplicado em
@@ -141,7 +141,7 @@ métricas inteiras e `hint_bar`/`topbar` proporcionais.
 medido — perfil ×1,5 (topbar 60, hint 45, tile 228×128, **5 colunas**, 24
 texturas = 2,80 MB de VRAM contra o teto de 4 MB), renders nativos das 5 abas em
 `docs/proposta/` e a análise de usabilidade aba por aba. As opções **(a) e a
-quinta coluna foram aprovadas** e aplicadas em `assets/devices/x55/*.json`
+quinta coluna foram aprovadas** e aplicadas em `device/x55/layout/*.json`
 (antes: 7 fatores implícitos, 1,28 a 2,00, e 4,48 MB de thumbnail);
 `tests/test_device_scale.py` (suíte `escala-x55`) falha se a divergência voltar.
 Falta a implementação em `render.cpp`, que depende da decisão D5 (pipeline de

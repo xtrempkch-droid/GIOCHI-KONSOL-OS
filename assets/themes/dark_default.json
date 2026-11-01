@@ -1,0 +1,35 @@
+{
+  "$schema": "../../schemas/theme.schema.json",
+  "theme_id": "dark_default",
+  "name": "Netflix Dark",
+  "description": "Tema original do projeto: cinza neutro, acento vermelho. E' o que as imagens de docs/screenshots e docs/proposta foram medidas contra.",
+  "origin": "assets/theme.json original (spec §4.1.8)",
+  "colors": {
+    "background": "#0F0F0F",
+    "surface": "#1E1E1E",
+    "surface_elevated": "#2A2A2A",
+    "text_primary": "#E5E5E5",
+    "text_secondary": "#A0A0A0",
+    "hint_bar_bg": "#181818",
+    "divider": "#333333",
+    "accent": "#E50914"
+  },
+  "metrics": {
+    "tile_corner_radius": 4,
+    "tile_border": 0,
+    "focus_ring": 2,
+    "density": "normal",
+    "topbar_height": 40,
+    "hint_bar_height": 30,
+    "cover_pct": 100,
+    "title_scale_pct": 100
+  },
+  "features": {
+    "hints": "so_gamepad"
+  },
+  "typography": {
+    "font_family": "builtin_sans",
+    "topbar_size": 14,
+    "tile_title_size": 12
+  }
+}

@@ -160,7 +160,7 @@ Foi ela que pegou o defeito do `MAX_CARRY` (ver Histórico).
 ## Integração com o repositório
 
 ```console
-$ python3 -m src.forge.giochi_forge check --device rk3566-2gb \
+$ apps/forge/giochi-forge check --device rk3566-2gb \
       --project "Jogos/Colossal Cave Adventure/godot"
 ```
 

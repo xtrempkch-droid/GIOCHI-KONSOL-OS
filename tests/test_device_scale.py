@@ -1,6 +1,6 @@
 """O override do aparelho é o layout canônico ×1,5 — e nada além disso.
 
-`assets/devices/x55/*.json` já esteve fora de escala: cada campo tinha sido
+`device/x55/layout/*.json` já esteve fora de escala: cada campo tinha sido
 escolhido à mão, com sete fatores implícitos diferentes (1,28 a 2,00). Isso não
 é cosmético: 24 texturas de 288×162 RGBA dão 4,48 MB, acima do teto de 4 MB da
 §4.1.6, enquanto o perfil ×1,5 (228×128) dá 2,80 MB.
@@ -27,6 +27,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = ROOT / "assets"
+DEVICE_DIR = ROOT / "device"   # configuracao POR APARELHO (device/<id>/)
 DEVICE = "x55"
 SCALE = 1.5
 
@@ -75,7 +76,7 @@ class DeviceScaleContract(unittest.TestCase):
         for name in FILES:
             base_raw = json.loads((ASSETS / name).read_text(encoding="utf-8"))
             device_raw = json.loads(
-                (ASSETS / "devices" / DEVICE / name).read_text(encoding="utf-8"))
+                (DEVICE_DIR / DEVICE / "layout" / name).read_text(encoding="utf-8"))
             base = flatten(base_raw)
             device = flatten(device_raw)
 
@@ -106,7 +107,7 @@ class DeviceScaleContract(unittest.TestCase):
 
     def test_colunas_cabem(self):
         grid = json.loads(
-            (ASSETS / "devices" / DEVICE / "library.json").read_text())["regions"]["grid"]
+            (DEVICE_DIR / DEVICE / "layout" / "library.json").read_text())["regions"]["grid"]
         tile_w = grid["tile_size"]["width"]
         gap = scaled(8)  # espacamento interno da grade, base 8
         columns = grid["columns"]
@@ -117,7 +118,7 @@ class DeviceScaleContract(unittest.TestCase):
     def test_orcamento_de_vram(self):
         """24 thumbnails do painel têm de caber no teto de 4 MB da §4.1.6."""
         library = json.loads(
-            (ASSETS / "devices" / DEVICE / "library.json").read_text())
+            (DEVICE_DIR / DEVICE / "layout" / "library.json").read_text())
         grid = library["regions"]["grid"]
         thumb = grid["thumbnail_size"]
         total = library["max_textures_per_tab"] * thumb["width"] * thumb["height"] * 4

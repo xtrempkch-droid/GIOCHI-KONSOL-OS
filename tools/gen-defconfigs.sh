@@ -1,7 +1,7 @@
 #!/bin/sh
 # Giochi Konsol OS v1.2 — gera buildroot/configs/giochi_<device>_defconfig.
 #
-# Fonte unica de verdade: buildroot/board/giochi/devices/*.conf (dados do
+# Fonte unica de verdade: device/*/device.conf (dados do
 # aparelho) + buildroot/board/giochi/defconfig/base-<soc>.defconfig.
 # Nunca edite os arquivos gerados: rode `make defconfigs`.
 #
@@ -11,7 +11,7 @@
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-DEV_DIR="$ROOT/buildroot/board/giochi/devices"
+DEV_DIR="$ROOT/device"
 BASE_DIR="$ROOT/buildroot/board/giochi/defconfig"
 OUT_DIR="$ROOT/buildroot/configs"
 CHECK=0
@@ -139,7 +139,7 @@ BR2_TARGET_UBOOT=n"
     fi
 }
 
-for conf in "$DEV_DIR"/*.conf; do
+for conf in "$DEV_DIR"/*/device.conf; do
     [ -f "$conf" ] || continue
     render "$conf"
 done
@@ -149,7 +149,7 @@ if [ "$CHECK" = "1" ]; then
     for target in "$OUT_DIR"/giochi_*_defconfig; do
         [ -f "$target" ] || continue
         found=0
-        for conf in "$DEV_DIR"/*.conf; do
+        for conf in "$DEV_DIR"/*/device.conf; do
             [ -f "$conf" ] || continue
             expected=$(sed -n 's/^GIOCHI_DEFCONFIG=//p' "$conf" | head -n1)
             [ "$expected" = "$(basename "$target")" ] && found=1

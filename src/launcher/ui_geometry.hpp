@@ -17,6 +17,7 @@
 #define GIOCHI_UI_GEOMETRY_HPP
 
 #include "layout.hpp"
+#include "theme.hpp"
 
 #define GIOCHI_MAX_TILES 24
 
@@ -66,6 +67,14 @@ struct UiGeometry {
     int accent_h = 0;   /* espessura do sublinhado da aba ativa */
     int focus_ring = 0; /* espessura do anel de foco da grade */
 
+    /* Do tema: o render nao recalcula, so' obedece. */
+    int border = 0;      /* espessura da borda de TODO tile (0 = so' o foco) */
+    int density = 1;     /* 0 compacta, 1 normal, 2 espacosa */
+    int cover_pct = 100; /* escala da capa do album (100 = token base) */
+    int hints = 0;       /* modo da barra de dicas (theme features.hints) */
+    int topbar_h = 40;   /* altura do token da topbar, no painel base */
+    int hint_bar_h = 30; /* idem para a barra de dicas */
+
     /* Fontes (px) — 12/14/20 no painel base, 18/21/30 na X55. */
     int font_tab = 14;
     int font_title = 12;
@@ -73,9 +82,41 @@ struct UiGeometry {
     int line_h = 15; /* altura de uma linha de font_body (do atlas) */
 };
 
+/* Metricas que vem do TEMA (theme.json -> metrics), em px do painel base.
+ *
+ * Por que este struct existe em vez de o render ler o tema direto: o preview
+ * (tools/preview-ui.py) tem de chegar aos MESMOS numeros que o aparelho. Ele
+ * le o que o dump-geometry publica, e o dump publica o resultado de
+ * ui_geometry_apply_theme(). Uma regra, dois consumidores (§3.71).
+ *
+ * Os defaults reproduzem os tokens compilados: um tema sem `metrics` desenha
+ * exatamente o que desenhava antes. */
+struct UiThemeMetrics {
+    int corner_px = 4;      /* raio do canto */
+    int border_px = 0;      /* borda de todo tile (0 = so' o foco tem) */
+    int focus_ring_px = 2;  /* anel de foco, por fora do tile */
+    int topbar_px = 40;
+    int hint_bar_px = 30;
+    int density = 1;        /* 0 compacta, 1 normal, 2 espacosa */
+    int cover_pct = 100;    /* escala da capa do album (100 = token base) */
+    int hints = 0;          /* modo da barra de dicas (theme features.hints) */
+    int title_scale_pct = 100;
+};
+
 /* Preenche as barras e os tokens. Chamar antes de ui_geometry_tabs e
  * ui_geometry_grid. */
 void ui_geometry_base(UiGeometry *g, int screen_w, int screen_h);
+
+/* Sobrescreve os tokens que o tema controla e RECALCULA grade e areas
+ * (densidade muda gap/altura do titulo, logo muda quantas colunas cabem).
+ * Idempotente: chamar de novo com o mesmo tema da' o mesmo resultado.
+ * Chamar imediatamente depois de ui_geometry_base. */
+void ui_geometry_apply_theme(UiGeometry *g, const UiThemeMetrics &m);
+
+/* Traduz o tema carregado para as metricas da geometria. Existe para que
+ * main.cpp e tools/dump-geometry.cpp nao repitam o mapeamento campo a campo —
+ * repetir foi como rotation e hint bar divergiram (§3.70, §4.1). */
+UiThemeMetrics ui_theme_metrics_from(const giochi_theme &t);
 
 /* Posiciona as abas com as larguras medidas dos rotulos (px). Abas que nao
  * couberem recebem w = 0. */

@@ -22,6 +22,29 @@ constexpr int FONT_TAB = 14;
 constexpr int FONT_TITLE = 12;
 constexpr int FONT_BODY = 12;
 
+/* Densidade da grade (docs/TEMAS.md): o que muda entre "compacta", "normal" e
+ * "espacosa" e' o espaco, nao o tile — o tile e' dado do aparelho, nao do tema.
+ * Valores no painel base; escalam como o resto. */
+struct DensityTokens {
+    int gap;
+    int title_h;
+    int inset;
+    int tile_pct; /* o TILE tambem muda: e' ele que decide quantos cabem */
+};
+
+/* Medido: com o tile fixo, mudar so' o espaco nao altera a contagem de colunas
+ * em nenhum dos dois paineis (4 em 640 e 5 em 1280 nos tres modos) — o modo
+ * seria decorativo. Escalando o tile junto, o resultado muda de verdade:
+ *   compacta  6 colunas em 1280x720 e 4 em 640x480
+ *   normal    5 e 4
+ *   espacosa  4 e 3
+ */
+constexpr DensityTokens DENSITY_TOKENS[3] = {
+    {6, 16, 4, 88},  /* compacta */
+    {8, 20, 4, 100}, /* normal */
+    {12, 22, 8, 115} /* espacosa */
+};
+
 /* Arredonda para o mais proximo em vez de truncar: 85 * 1,5 = 127,5 tem de
  * virar 128 (o valor declarado em assets/devices/x55/library.json). */
 int sc(int value, int screen_h)
@@ -104,41 +127,18 @@ int ui_rect_contains(const UiRect &r, int x, int y)
     return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
 }
 
-void ui_geometry_base(UiGeometry *g, int screen_w, int screen_h)
+/* Recalcula barras, colunas e linhas a partir dos tokens ja' gravados em `g`.
+ * Fica separado de ui_geometry_base porque o tema mexe em gap/titulo/barra e o
+ * resultado tem de ser recalculado com a MESMA formula (senao o preview e o
+ * aparelho divergem na contagem de colunas). */
+static void layout_from_tokens(UiGeometry *g)
 {
-    if (g == nullptr) {
-        return;
-    }
+    const int screen_w = g->screen_w;
+    const int screen_h = g->screen_h;
 
-    if (screen_h <= 0) {
-        screen_h = BASE_H;
-    }
-    if (screen_w <= 0) {
-        screen_w = screen_h * 4 / 3; /* proporcao do painel base (4:3) */
-    }
-
-    *g = UiGeometry{};
-    g->screen_w = screen_w;
-    g->screen_h = screen_h;
-    g->scale_pct = screen_h * 100 / BASE_H;
-
-    g->gap = sc(GAP, screen_h);
-    g->margin = sc(MARGIN, screen_h);
-    g->inset = sc(INSET, screen_h);
-    g->corner = sc(CORNER, screen_h);
-    g->accent_h = sc_down(ACCENT_H, screen_h);
-    g->focus_ring = sc(FOCUS_RING, screen_h);
-    g->tile_w = sc(TILE_W, screen_h);
-    g->tile_h = sc(TILE_H, screen_h);
-    g->title_h = sc(TITLE_H, screen_h);
-    g->font_tab = sc(FONT_TAB, screen_h);
-    g->font_title = sc(FONT_TITLE, screen_h);
-    g->font_body = sc(FONT_BODY, screen_h);
-    g->line_h = sc(15, screen_h);
-
-    g->topbar = UiRect{0, 0, screen_w, sc(TOPBAR_H, screen_h)};
-    g->hint_bar = UiRect{0, screen_h - sc(HINT_H, screen_h), screen_w,
-                         sc(HINT_H, screen_h)};
+    g->topbar = UiRect{0, 0, screen_w, sc(g->topbar_h, screen_h)};
+    g->hint_bar = UiRect{0, screen_h - sc(g->hint_bar_h, screen_h), screen_w,
+                         sc(g->hint_bar_h, screen_h)};
 
     const int content_h = g->hint_bar.y - g->topbar.h;
     g->content = UiRect{g->margin, g->topbar.h,
@@ -175,6 +175,96 @@ void ui_geometry_base(UiGeometry *g, int screen_w, int screen_h)
     }
     g->rows = rows;
     g->capacity = clamp_int(rows * columns, 0, GIOCHI_MAX_TILES);
+}
+
+void ui_geometry_base(UiGeometry *g, int screen_w, int screen_h)
+{
+    if (g == nullptr) {
+        return;
+    }
+
+    if (screen_h <= 0) {
+        screen_h = BASE_H;
+    }
+    if (screen_w <= 0) {
+        screen_w = screen_h * 4 / 3; /* proporcao do painel base (4:3) */
+    }
+
+    *g = UiGeometry{};
+    g->screen_w = screen_w;
+    g->screen_h = screen_h;
+    g->scale_pct = screen_h * 100 / BASE_H;
+
+    g->gap = sc(GAP, screen_h);
+    g->margin = sc(MARGIN, screen_h);
+    g->inset = sc(INSET, screen_h);
+    g->corner = sc(CORNER, screen_h);
+    g->accent_h = sc_down(ACCENT_H, screen_h);
+    g->focus_ring = sc(FOCUS_RING, screen_h);
+    g->tile_w = sc(TILE_W, screen_h);
+    g->tile_h = sc(TILE_H, screen_h);
+    g->title_h = sc(TITLE_H, screen_h);
+    g->font_tab = sc(FONT_TAB, screen_h);
+    g->font_title = sc(FONT_TITLE, screen_h);
+    g->font_body = sc(FONT_BODY, screen_h);
+    g->line_h = sc(15, screen_h);
+
+    layout_from_tokens(g);
+}
+
+UiThemeMetrics ui_theme_metrics_from(const giochi_theme &t)
+{
+    UiThemeMetrics m;
+
+    m.corner_px = t.corner_px;
+    m.border_px = t.border_px;
+    m.focus_ring_px = t.focus_ring_px;
+    m.topbar_px = t.topbar_h_px;
+    m.hint_bar_px = t.hint_bar_h_px;
+    m.density = t.density;
+    m.cover_pct = t.cover_pct;
+    m.hints = t.hints;
+    m.title_scale_pct = t.title_scale_pct;
+    return m;
+}
+
+void ui_geometry_apply_theme(UiGeometry *g, const UiThemeMetrics &m)
+{
+    if (g == nullptr || g->screen_h <= 0) {
+        return;
+    }
+
+    const int h = g->screen_h;
+    const int dens = clamp_int(m.density, 0, 2);
+    const DensityTokens &dt = DENSITY_TOKENS[dens];
+
+    g->corner = sc(m.corner_px > 0 ? m.corner_px : 0, h);
+    g->border = sc(m.border_px > 0 ? m.border_px : 0, h);
+    g->focus_ring = sc(m.focus_ring_px > 0 ? m.focus_ring_px : 0, h);
+    g->density = dens;
+    g->cover_pct = m.cover_pct > 0 ? m.cover_pct : 100;
+    g->hints = m.hints;
+    g->gap = sc(dt.gap, h);
+    g->title_h = sc(dt.title_h, h);
+    g->inset = sc(dt.inset, h);
+    g->tile_w = sc(TILE_W * dt.tile_pct, h) / 100;
+    g->tile_h = sc(TILE_H * dt.tile_pct, h) / 100;
+    g->topbar_h = m.topbar_px > 0 ? m.topbar_px : TOPBAR_H;
+    g->hint_bar_h = m.hint_bar_px > 0 ? m.hint_bar_px : HINT_H;
+
+    if (m.title_scale_pct > 0 && m.title_scale_pct != 100) {
+        g->font_title = sc(FONT_TITLE, h) * m.title_scale_pct / 100;
+        g->font_body = sc(FONT_BODY, h) * m.title_scale_pct / 100;
+        if (g->font_title < 8) {
+            g->font_title = 8;
+        }
+        if (g->font_body < 8) {
+            g->font_body = 8;
+        }
+        g->line_h = g->font_body * 5 / 4;
+    }
+
+    layout_from_tokens(g);
 }
 
 void ui_geometry_tabs(UiGeometry *g, const int *label_width, int count,
@@ -330,7 +420,13 @@ UiTileStyle ui_tile_style(const UiGeometry &g, bool focused, bool valid)
      * RECUA e o foco sobe. Fazer o contrario — tudo claro e o foco so' com
      * anel — vira parede de caixas e some a leitura de "onde eu estou". */
     s.fill = focused ? UI_ROLE_ELEVATED : UI_ROLE_SURFACE;
-    s.outline = focused ? UI_ROLE_ACCENT : UI_ROLE_NONE;
+    /* Tema com `tile_border` > 0 desenha contorno em TODO tile (o look "caixa"
+     * das propostas); sem ele, so' o foco tem contorno. */
+    if (focused) {
+        s.outline = UI_ROLE_ACCENT;
+    } else {
+        s.outline = g.border > 0 ? UI_ROLE_DIVIDER : UI_ROLE_NONE;
+    }
     s.ring = focused ? g.focus_ring : 0;
     s.title = focused ? UI_ROLE_TEXT_PRIMARY : UI_ROLE_TEXT_SECONDARY;
     s.pad = g.gap / 2;

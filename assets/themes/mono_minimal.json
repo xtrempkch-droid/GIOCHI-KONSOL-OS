@@ -1,0 +1,35 @@
+{
+  "$schema": "../../schemas/theme.schema.json",
+  "theme_id": "mono_minimal",
+  "name": "Mono Minimal",
+  "description": "Preto absoluto e acento branco, sem cor nenhuma. Grade compacta, canto quase reto — o mais sobrio da lista.",
+  "origin": "layout3.md do mantenedor (brand.dark #000000, accent #FFFFFF)",
+  "colors": {
+    "background": "#000000",
+    "surface": "#080808",
+    "surface_elevated": "#131313",
+    "text_primary": "#E5E5E5",
+    "text_secondary": "#737373",
+    "hint_bar_bg": "#050505",
+    "divider": "#171717",
+    "accent": "#FFFFFF"
+  },
+  "metrics": {
+    "tile_corner_radius": 3,
+    "tile_border": 1,
+    "focus_ring": 2,
+    "density": "compacta",
+    "topbar_height": 40,
+    "hint_bar_height": 28,
+    "cover_pct": 100,
+    "title_scale_pct": 95
+  },
+  "features": {
+    "hints": "completo"
+  },
+  "typography": {
+    "font_family": "builtin_sans",
+    "topbar_size": 14,
+    "tile_title_size": 12
+  }
+}

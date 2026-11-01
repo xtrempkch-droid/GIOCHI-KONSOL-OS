@@ -1,0 +1,35 @@
+{
+  "$schema": "../../schemas/theme.schema.json",
+  "theme_id": "mono_gamepad",
+  "name": "Mono Gamepad",
+  "description": "Mesma paleta do Mono Minimal, feito para controle: grade arejada e a barra de baixo so' mostra botao de gamepad, sem dica de teclado.",
+  "origin": "layout4.md do mantenedor (navegacao 100% D-Pad/analogico)",
+  "colors": {
+    "background": "#000000",
+    "surface": "#080808",
+    "surface_elevated": "#131313",
+    "text_primary": "#E5E5E5",
+    "text_secondary": "#737373",
+    "hint_bar_bg": "#050505",
+    "divider": "#171717",
+    "accent": "#FFFFFF"
+  },
+  "metrics": {
+    "tile_corner_radius": 4,
+    "tile_border": 1,
+    "focus_ring": 3,
+    "density": "espacosa",
+    "topbar_height": 40,
+    "hint_bar_height": 32,
+    "cover_pct": 105,
+    "title_scale_pct": 100
+  },
+  "features": {
+    "hints": "so_gamepad"
+  },
+  "typography": {
+    "font_family": "builtin_sans",
+    "topbar_size": 14,
+    "tile_title_size": 12
+  }
+}

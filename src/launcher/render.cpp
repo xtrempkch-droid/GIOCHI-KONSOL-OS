@@ -588,8 +588,13 @@ void paint_grid(SDL_Renderer *sdl, const Font &font, const UiGeometry &geo,
         }
 
         if (st.outline != giochi::UI_ROLE_NONE) {
-            draw_ring(sdl, cor_papel(ui.theme, st.outline), t,
-                      geo.focus_ring > 0 ? geo.focus_ring : 1);
+            /* Espessura por PAPEL: o foco usa o anel do tema, o tile comum usa
+             * a borda. Usar o anel nos dois engrossava a grade inteira. */
+            const int esp = i == geo.focus_slot
+                                ? (geo.focus_ring > 0 ? geo.focus_ring : 1)
+                                : (geo.border > 0 ? geo.border : 1);
+
+            draw_ring(sdl, cor_papel(ui.theme, st.outline), t, esp);
         }
 
         if (ui.items != nullptr && index < ui.item_count) {
@@ -908,8 +913,15 @@ void paint_ui(SDL_Renderer *sdl, const Font &font, const UiGeometry &geo,
             paint_grid(sdl, font, geo, ui);
         }
     } else if (std::strcmp(tab_id, "home") == 0) {
+        /* Novidade da Loja tem prioridade sobre a dica: e' a unica informacao
+         * que muda sozinha na Home. Sem news.json, cai nas dicas compiladas. */
+        const bool tem_novidade = !ui.news_title.empty();
+
         paint_message_tab(sdl, font, geo, ui, i18n.tr("tab.home"),
-                          i18n.tr("home.tip.scan"), i18n.tr("home.tip.usb"));
+                          tem_novidade ? ui.news_title.c_str()
+                                       : i18n.tr("home.tip.scan"),
+                          tem_novidade ? ui.news_body.c_str()
+                                       : i18n.tr("home.tip.usb"));
     } else if (std::strcmp(tab_id, "music") == 0) {
         paint_message_tab(sdl, font, geo, ui, i18n.tr("tab.music"),
                           i18n.tr("music.empty"), "");
@@ -1066,14 +1078,33 @@ private:
      * 720x1280 em retrato, e calcular a geometria sobre isso dava escala 2,66x,
      * uma coluna e a UI em pe' — o "layout bugado" de 2026-10-31.
      * A correcao da orientacao fica em `apresentar()`. */
+    static bool mesma_metrica(const UiThemeMetrics &a, const UiThemeMetrics &b)
+    {
+        return a.corner_px == b.corner_px && a.border_px == b.border_px &&
+               a.focus_ring_px == b.focus_ring_px &&
+               a.topbar_px == b.topbar_px &&
+               a.hint_bar_px == b.hint_bar_px && a.density == b.density &&
+               a.cover_pct == b.cover_pct && a.hints == b.hints &&
+               a.title_scale_pct == b.title_scale_pct;
+    }
+
     void calcular_geometria(SDL_Renderer *sdl, const UiState &ui)
     {
         const int log_w = ui.layout->width;
         const int log_h = ui.layout->height;
 
-        if (!geo_valida || log_w != geo_.screen_w || log_h != geo_.screen_h) {
+        const UiThemeMetrics m =
+            ui.theme_metrics != nullptr ? *ui.theme_metrics : UiThemeMetrics{};
+
+        /* O tema tambem invalida a geometria: densidade muda o gap, logo muda
+         * quantas colunas cabem. Sem esta comparacao, trocar de tema a quente
+         * deixaria a grade com a contagem antiga. */
+        if (!geo_valida || log_w != geo_.screen_w || log_h != geo_.screen_h ||
+            !mesma_metrica(metricas_, m)) {
             ui_geometry_base(&geo_, log_w, log_h);
+            ui_geometry_apply_theme(&geo_, m);
             measure_tabs(ui);
+            metricas_ = m;
             geo_valida = true;
         }
 
@@ -1235,6 +1266,7 @@ private:
     Font font_;
     UiGeometry geo_;
     bool geo_valida = false;
+    UiThemeMetrics metricas_{};
     SDL_Texture *target_ = nullptr;
     SDL_Rect dst_{0, 0, 0, 0};
     int angulo_ = 0;

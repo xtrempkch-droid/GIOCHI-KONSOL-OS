@@ -32,9 +32,17 @@ except ImportError:  # pragma: no cover
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 
-def load_theme() -> dict[str, str]:
-    data = json.loads((ROOT / "assets" / "theme.json").read_text(encoding="utf-8"))
-    return dict(data["colors"])
+def load_theme(geo: dict) -> dict[str, str]:
+    """Cores do tema ATIVO, publicadas pelo dump-geometry.
+
+    Antes este script lia assets/theme.json por conta propria: era uma segunda
+    leitura do mesmo dado e, com varios temas, o preview mostraria um e o
+    aparelho outro. O dump resolve o tema com a MESMA giochi_theme_resolve.
+    """
+    bloco = geo.get("theme")
+    if not bloco:
+        sys.exit("erro: dump-geometry sem bloco 'theme' (binario antigo?)")
+    return dict(bloco["colors"])
 
 
 class Atlas:
@@ -122,6 +130,8 @@ def dump(atlas: Atlas, args) -> dict:
             "--assets", str(ROOT / "assets"),
             "--settings", str(args.settings), "--level", str(args.level),
             "--index", str(args.index)]
+    if args.theme:
+        base += ["--theme", args.theme]
 
     primeiro = json.loads(subprocess.check_output(base, text=True,
                                                   stderr=subprocess.DEVNULL))
@@ -191,6 +201,8 @@ def main() -> int:
     ap.add_argument("--settings", type=int, default=0)
     ap.add_argument("--level", type=int, default=1)
     ap.add_argument("--index", type=int, default=0)
+    ap.add_argument("--theme", default=None,
+                    help="id do tema (data/themes/<id>.json); vazio = padrao")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
@@ -199,7 +211,7 @@ def main() -> int:
 
     width, height = geo["screen"]["w"], geo["screen"]["h"]
     tok = geo["tokens"]
-    theme = load_theme()
+    theme = load_theme(geo)
 
     canvas = Image.new("RGB", (width, height), theme["background"])
     draw = ImageDraw.Draw(canvas)
@@ -273,8 +285,13 @@ def main() -> int:
                    max(0, tok["corner"] - recuo), papel(t["inset"]))
 
             if t["outline"]:
+                # Espessura por PAPEL, igual ao render.cpp: foco usa o anel,
+                # tile comum usa a borda do tema (§ theme.metrics.tile_border).
+                eh_foco = t["ring"] > 0
+                esp = max(1, tok["ring"] if eh_foco
+                          else int(geo["theme"].get("border", 0)) or 1)
                 borda((t["x"], t["y"], t["w"], t["h"]), tok["corner"],
-                      papel(t["outline"]), max(1, tok["ring"]))
+                      papel(t["outline"]), esp)
 
             base = t["y"] + t["h"] + t["title_dy"]
             titulo = f"Jogo {geo['first_index'] + i + 1}"

@@ -169,7 +169,7 @@ O projeto declara seus requisitos em [godot/forge.json](./godot/forge.json)
 `giochi-forge` classifica o jogo sem intervenção:
 
 ```console
-$ python3 -m src.forge.giochi_forge check --device rk3566-2gb \
+$ apps/forge/giochi-forge check --device rk3566-2gb \
       --project "Jogos/Arcade Volleyball/godot"
 dispositivo: manual-rk3566-2gb (rk3566, 2048 MB, Mali-G52)
 requisitos : forge.json

@@ -7,7 +7,9 @@ set -eu
 TARGET_DIR=${1:?uso: post-build.sh TARGET_DIR}
 BOARD_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
-ASSETS_DIR="$BOARD_DIR/../../../assets"
+REPO_DIR=$(CDPATH= cd -- "$BOARD_DIR/../../.." && pwd)
+ASSETS_DIR="$REPO_DIR/assets"
+DEVICE_DIR="$REPO_DIR/device"
 SCRIPTS_DIR="$BOARD_DIR/../../../scripts/init.d"
 HELPERS_DIR="$BOARD_DIR/../../../scripts"
 
@@ -19,7 +21,7 @@ if [ -z "$GIOCHI_DEVICE" ]; then
     GIOCHI_DEVICE=rk3326-generic
     echo "post-build: AVISO: GIOCHI_DEVICE nao definido; usando $GIOCHI_DEVICE" >&2
 fi
-DEVICE_CONF="$BOARD_DIR/devices/$GIOCHI_DEVICE.conf"
+DEVICE_CONF="$REPO_DIR/device/$GIOCHI_DEVICE/device.conf"
 if [ ! -f "$DEVICE_CONF" ]; then
     echo "post-build: ERRO: aparelho '$GIOCHI_DEVICE' sem $DEVICE_CONF" >&2
     exit 1
@@ -32,16 +34,32 @@ dev_key() { sed -n "s/^GIOCHI_$1=//p" "$DEVICE_CONF" | head -n1 | tr -d '"'; }
 
 # --- layouts/tema (S6/S7) ---------------------------------------------
 install -d "$TARGET_DIR/usr/share/giochi"
-for f in layout.json home.json library.json music.json theme.json \
+# theme.json NAO entra mais: o tema vem de assets/themes/ (catalogo). O padrao
+# do aparelho e' device/<id>/theme.json, instalado como device-theme.json.
+for f in layout.json home.json library.json music.json \
          defaults.json buttons.default.json buttons.map; do
     [ -f "$ASSETS_DIR/$f" ] && install -m 0644 "$ASSETS_DIR/$f" \
         "$TARGET_DIR/usr/share/giochi/$f"
 done
 
+# theme.json avulso e' RESTO de imagem anterior: o tema agora vem do catalogo
+# (assets/themes/). O TARGET_DIR sobrevive entre builds, entao um arquivo que
+# deixou de ser instalado continua na arvore e vai parar no SquashFS — foi o que
+# aconteceu aqui (medido: theme.json de 01/11 numa imagem de 01/11 03:58).
+rm -f "$TARGET_DIR/usr/share/giochi/theme.json"
+
+# Tema padrao do APARELHO: so' o "theme_id", instalado como device-theme.json.
+# O catalogo completo vai por giochi-assets.mk; aqui e' a escolha de fabrica.
+if [ -f "$DEVICE_DIR/$GIOCHI_DEVICE/theme.json" ]; then
+    install -m 0644 "$DEVICE_DIR/$GIOCHI_DEVICE/theme.json" \
+        "$TARGET_DIR/usr/share/giochi/device-theme.json"
+    echo "post-build: tema padrao de $GIOCHI_DEVICE"
+fi
+
 # Layout especifico do aparelho (secao 4.1.3): a X55 tem painel 720x1280,
 # nao 640x480. O override substitui apenas os arquivos que ele define.
-if [ -d "$ASSETS_DIR/devices/$GIOCHI_LAYOUT" ]; then
-    for f in "$ASSETS_DIR/devices/$GIOCHI_LAYOUT"/*.json; do
+if [ -d "$DEVICE_DIR/$GIOCHI_LAYOUT/layout" ]; then
+    for f in "$DEVICE_DIR/$GIOCHI_LAYOUT/layout"/*.json; do
         [ -f "$f" ] || continue
         install -m 0644 "$f" "$TARGET_DIR/usr/share/giochi/$(basename "$f")"
         echo "post-build: layout $GIOCHI_LAYOUT/$(basename "$f")"

@@ -9,12 +9,12 @@ make screenshots        # equivalente a: tools/make-screenshots.py
 
 | Arquivo | Origem dos dados | O que é |
 |---|---|---|
-| `home.png` | `assets/theme.json`, `assets/layout.json`, `assets/home.json` | composição da aba Home (640×480) |
+| `home.png` | `assets/themes/dark_default.json`, `assets/layout.json`, `assets/home.json` | composição da aba Home (640×480) |
 | `library.png` | `assets/library.json` | grid 4×3, tile 152×85, título 20 px, scrollbar 4 px |
 | `music.png` | `assets/music.json` | now playing 120×120, progresso, controles, fila |
 | `settings.png` | `src/launcher/overlay.cpp` (nível 0) | overlay de Configurações |
 | `settings-system.png` | idem, nível 1 | submenu Sistema com o **Modo Desenvolvedor** |
-| `x55-home.png` | `assets/devices/x55/layout.json` | canvas 1280×720 do painel da X55 |
+| `x55-home.png` | `device/x55/layout/layout.json` | canvas 1280×720 do painel da X55 |
 | `bootlogo.png` | `assets/bootlogo/bootlogo.rgba` | **splash real**, desenhado pelo Launcher |
 
 O alvo de layout (o que a UI **deveria** desenhar, com perfil de painel ×1,5 para

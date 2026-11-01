@@ -6,7 +6,7 @@ Este teste garante que:
   * o script roda e produz todos os arquivos esperados;
   * as dimensões batem com o layout declarado (640x480) e com o painel da X55
     (1280x720, letterbox do 4:3);
-  * o fundo das telas é a cor `background` declarada em assets/theme.json — ou
+  * o fundo das telas é a cor `background` declarada em assets/themes/dark_default.json — ou
     seja, a imagem realmente deriva do tema, não é um mockup solto;
   * o splash é byte a byte o `bootlogo.rgba` que o Launcher desenha.
 """
@@ -35,7 +35,7 @@ SCREENS = {
 
 
 def _theme_background() -> tuple[int, int, int]:
-    theme = json.loads((ROOT / "assets" / "theme.json").read_text())
+    theme = json.loads((ROOT / "assets" / "themes" / "dark_default.json").read_text())
     value = theme["colors"]["background"].lstrip("#")
     return tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))
 
@@ -85,7 +85,7 @@ class ScreenshotContract(unittest.TestCase):
         """O vermelho do tema (#E50914) precisa aparecer na Home."""
         from PIL import Image
 
-        theme = json.loads((ROOT / "assets" / "theme.json").read_text())
+        theme = json.loads((ROOT / "assets" / "themes" / "dark_default.json").read_text())
         accent = theme["colors"]["accent"].lstrip("#")
         accent = tuple(int(accent[i:i + 2], 16) for i in (0, 2, 4))
 

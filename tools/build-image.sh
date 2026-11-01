@@ -29,7 +29,7 @@
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-DEV_DIR="$ROOT/buildroot/board/giochi/devices"
+DEV_DIR="$ROOT/device"
 OUT=${GIOCHI_OUT:-$ROOT/dist}
 JOBS=${GIOCHI_JOBS:-$( (nproc 2>/dev/null || echo 4) )}
 CHECK=0
@@ -60,7 +60,7 @@ EOF
 }
 
 device_ids() {
-    for conf in "$DEV_DIR"/*.conf; do
+    for conf in "$DEV_DIR"/*/device.conf; do
         [ -f "$conf" ] || continue
         sed -n 's/^GIOCHI_ID=//p' "$conf" | head -n1
     done | sort
@@ -68,7 +68,7 @@ device_ids() {
 
 conf_of() {
     id=$1
-    for conf in "$DEV_DIR"/*.conf; do
+    for conf in "$DEV_DIR"/*/device.conf; do
         [ -f "$conf" ] || continue
         [ "$(sed -n 's/^GIOCHI_ID=//p' "$conf" | head -n1)" = "$id" ] && {
             echo "$conf"
@@ -133,8 +133,8 @@ check_device() {
 
     # Layout do aparelho (quando existe override).
     if [ "$GIOCHI_LAYOUT" != "default" ]; then
-        [ -d "$ROOT/assets/devices/$GIOCHI_LAYOUT" ] || {
-            echo "  ERRO layout ausente: assets/devices/$GIOCHI_LAYOUT" >&2
+        [ -d "$ROOT/device/$GIOCHI_LAYOUT/layout" ] || {
+            echo "  ERRO layout ausente: device/$GIOCHI_LAYOUT/layout" >&2
             return 1
         }
     fi

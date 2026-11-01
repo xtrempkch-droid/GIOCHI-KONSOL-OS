@@ -3,14 +3,14 @@
  * Dois niveis desde o adendo 4.6.1:
  *   nivel 0: os 7 itens da secao 4.9.3
  *   nivel 1: submenu de "Sistema" (idioma, fuso, brilho, suspensao,
- *            modo USB e Modo Desenvolvedor)
+ *            modo USB, Modo Desenvolvedor e Tema)
  * B volta um nivel (4.1.2: "sobe um nivel") e, no nivel 0, fecha o overlay.
  */
 #ifndef GIOCHI_OVERLAY_H
 #define GIOCHI_OVERLAY_H
 
 #define GIOCHI_OVERLAY_ITEM_COUNT 7
-#define GIOCHI_SYSTEM_ITEM_COUNT 6
+#define GIOCHI_SYSTEM_ITEM_COUNT 7
 
 typedef struct {
     int open;
@@ -36,8 +36,11 @@ const char *giochi_overlay_item_at(const giochi_overlay *overlay, int index);
 const char *giochi_overlay_item(int index);
 const char *giochi_overlay_current(const giochi_overlay *overlay);
 
-/* Indice de "Modo Desenvolvedor" dentro do submenu Sistema (adendo 4.6.1). */
-#define GIOCHI_SYSTEM_DEV_MODE_INDEX 5
+/* Indices dentro do submenu Sistema. A ordem vive em overlay.cpp e tem de
+ * casar com kSistema em main.cpp — ha teste cobrindo (§ overlap). */
+#define GIOCHI_SYSTEM_LANGUAGE_INDEX 0
 #define GIOCHI_SYSTEM_USB_MODE_INDEX 4
+#define GIOCHI_SYSTEM_DEV_MODE_INDEX 5
+#define GIOCHI_SYSTEM_THEME_INDEX 6
 
 #endif /* GIOCHI_OVERLAY_H */

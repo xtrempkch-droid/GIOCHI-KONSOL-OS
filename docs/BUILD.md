@@ -44,7 +44,7 @@ pacotes Buildroot — não há segunda lista de fontes em `.mk`.
 O diretório `buildroot/` é uma árvore `BR2_EXTERNAL` completa.
 
 **Não edite `buildroot/configs/*_defconfig`**: eles são gerados a partir de
-`buildroot/board/giochi/devices/*.conf` + `defconfig/base-<soc>.defconfig`.
+`device/*/device.conf` + `defconfig/base-<soc>.defconfig`.
 Altere a fonte e rode `make defconfigs`.
 
 ### Versão do Buildroot: 2024.02.x
@@ -98,7 +98,7 @@ Detalhes de DTS externo, fallback de teste e como adicionar placa:
 [docs/DEVICES.md](./DEVICES.md).
 
 `post-build.sh` instala layouts/tema (com override por aparelho em
-`assets/devices/<id>/`), scripts de init, `mdev.conf`, o helper de USB e o
+`device/<id>/layout/`), scripts de init, `mdev.conf`, o helper de USB e o
 `/etc/giochi/device.conf`; `post-image.sh` monta A/B (SquashFS), a partição C
 (ext4), o `extlinux.conf` com o DTB do aparelho e empacota o cartão com
 `genimage`.
@@ -308,7 +308,7 @@ dongle como `=m` (não carregam no boot).
 ## 5. Empacotamento e assinatura (S9/S12)
 
 > **Estas ferramentas rodam no PC, não no console.** `giochi-pack.sh`,
-> `giochi-sign.sh`, `giochi-keys.sh` e `giochi-forge` (`src/forge`) pertencem ao
+> `giochi-sign.sh`, `giochi-keys.sh` e `giochi-forge` (`apps/forge`) pertencem ao
 > lado do autor/publicador: o aparelho apenas **valida** (`giochi-verify`),
 > **extrai** (`giochi-extract`) e **gera thumbnails** (`giochi-thumbgen`).
 >
@@ -332,9 +332,9 @@ A chave privada nunca é versionada (`.gitignore`). A pública vai para
 ## 6. giochi-forge (S13)
 
 ```sh
-PYTHONPATH=src/forge python3 -m giochi_forge check \
+PYTHONPATH=apps/forge python3 -m giochi_forge check \
     --profile device_profile.json --project caminho/do/projeto
-PYTHONPATH=src/forge python3 -m giochi_forge build \
+PYTHONPATH=apps/forge python3 -m giochi_forge build \
     --project caminho/do/projeto --out jogo.giochi --key keys/giochi_ed25519.pem
 ```
 

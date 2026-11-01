@@ -20,7 +20,8 @@ static const char *const system_items[GIOCHI_SYSTEM_ITEM_COUNT] = {
     "Brilho",
     "Suspensão",
     "Modo USB",
-    "Modo Desenvolvedor"
+    "Modo Desenvolvedor",
+    "Tema"
 };
 
 /* Indice do item "Sistema" no nivel 0. */

@@ -1,7 +1,7 @@
 # Aparelhos suportados e geração de imagem
 
 Cada aparelho é descrito por um arquivo em
-[`buildroot/board/giochi/devices/`](../buildroot/board/giochi/devices/) e tem um
+[`device/`](../device/) e tem um
 defconfig gerado em `buildroot/configs/`. **Nunca edite o defconfig gerado**:
 altere o `base-<soc>.defconfig` ou o `<aparelho>.conf` e rode `make defconfigs`.
 
@@ -181,13 +181,13 @@ e em [hardware-e-drivers.md](./hardware-e-drivers.md).
 
 ## Adicionar um aparelho
 
-1. Crie `buildroot/board/giochi/devices/meuplaca.conf` com os campos
+1. Crie `device/meuplaca.conf` com os campos
    `GIOCHI_ID`, `GIOCHI_NAME`, `GIOCHI_SOC`, `GIOCHI_DEFCONFIG`, `GIOCHI_DTS`,
    `GIOCHI_DTS_UPSTREAM`, `GIOCHI_DTB_FILE`, `GIOCHI_PANEL`,
    `GIOCHI_ROTATION`, `GIOCHI_LAYOUT`, `GIOCHI_BUTTONS_MAP`, `GIOCHI_JOYPAD`,
    `GIOCHI_WIFI`, `GIOCHI_BT`, `GIOCHI_USB_GADGET`, `GIOCHI_TESTED`,
    `GIOCHI_NOTES`.
-2. Se o painel não for 640×480, crie `assets/devices/<layout>/` com
+2. Se o painel não for 640×480, crie `device/<layout>/layout/` com
    `layout.json` (e variantes) e aponte `GIOCHI_LAYOUT`.
 3. Rode `make defconfigs && make lint`.
 4. `tools/build-image.sh --check meuplaca`.
@@ -199,4 +199,4 @@ As metas da §8 da especificação valem para todos: SquashFS ≤ 150 MB, RAM em
 repouso ≤ 60 MB, VRAM de UI ≤ 4 MB. A X55 opera em 1280×720 (painel rotacionado),
 o que dobra a área do grid em relação a 640×480 — por isso o layout dela usa
 tiles de 288×162 e teto de VRAM de 2 MB na aba Música
-(`assets/devices/x55/music.json`).
+(`device/x55/layout/music.json`).

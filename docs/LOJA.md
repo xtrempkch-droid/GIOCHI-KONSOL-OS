@@ -56,7 +56,7 @@ problema é dado, não código.
 O pacote já está definido e o ferramental existe:
 
 ```console
-$ python3 -m src.forge.giochi_forge build --project DIR --out jogo.giochi --key chave.pem
+$ apps/forge/giochi-forge build --project DIR --out jogo.giochi --key chave.pem
 ```
 
 Layout exigido (`tools/giochi-pack.sh`, ADR-11):
@@ -83,7 +83,7 @@ toolchain (nenhum `BR2_PACKAGE_GCC/MAKE/CMAKE`) e tem 1–2 GB de RAM. O
 `giochi-forge store` lê uma pasta de projetos baixados e empacota o que já dá:
 
 ```console
-$ python3 -m src.forge.giochi_forge store --src ~/baixados --out ./pacotes \
+$ apps/forge/giochi-forge store --src ~/baixados --out ./pacotes \
       --key chave.pem --device rk3566-2gb --install /media/eu/GIOCHI_USER/games
 
 dispositivo: manual-rk3566-2gb (2048 MB)

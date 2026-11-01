@@ -90,7 +90,13 @@ enum UiHintContext {
     UI_HINT_SETTINGS_1  /* submenu Sistema */
 };
 
-std::string ui_hint_text(const I18n &i18n, UiHintContext ctx);
+/* `hints_mode` vem de theme.json -> features.hints (giochi_hints_mode):
+ *   GIOCHI_HINTS_SO_GAMEPAD  so' botao que existe no aparelho: e' o padrao e o
+ *                            que as imagens de referencia mostram;
+ *   GIOCHI_HINTS_COMPLETO    acrescenta o atalho de teclado ("Setas"), como nos
+ *                            mockups layout1/2, uteis no PC e no modo dev. */
+std::string ui_hint_text(const I18n &i18n, UiHintContext ctx,
+                         int hints_mode = 0);
 
 }  // namespace giochi
 

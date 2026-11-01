@@ -5,7 +5,12 @@
  * tools/preview-ui.py so rasteriza o que este programa imprimiu.
  *
  * Uso: dump-geometry [--size 1280x720] [--tab 1] [--items 3] [--focus 0]
- *                    [--labels 48,80,40,30,40]
+ *                    [--labels 48,80,40,30,40] [--theme neon_rose]
+ *
+ * `--theme` publica tambem a metrica que o tema impoe (raio, borda, densidade,
+ * capa, dicas) e o bloco `theme` com as cores. O preview nao le o theme.json
+ * por conta propria: se lesse, teria de repetir o mapeamento e voltaria a
+ * divergir do aparelho (§3.71).
  */
 #include "i18n.hpp"
 #include "layout.hpp"
@@ -39,7 +44,8 @@ void campo_json(std::string *out, const char *texto)
 }
 
 void emitir_textos(const std::string &assets, const std::string &lang, int tab,
-                   int items, int settings, int level, int index)
+                   int items, int settings, int level, int index,
+                   int hints_mode)
 {
     giochi::I18n i18n;
 
@@ -94,7 +100,7 @@ void emitir_textos(const std::string &assets, const std::string &lang, int tab,
         }
         std::string esc;
 
-        campo_json(&esc, giochi::ui_hint_text(i18n, ctx).c_str());
+        campo_json(&esc, giochi::ui_hint_text(i18n, ctx, hints_mode).c_str());
         std::printf("\"hint\":\"%s\",\n", esc.c_str());
     }
     std::printf("\"status\":{\"battery\":82,\"charging\":0,\"wifi_present\":1,"
@@ -153,6 +159,7 @@ int main(int argc, char **argv)
     std::string labels = "60,96,40,30,44";
     std::string lang = "pt-BR";
     std::string assets = "assets";
+    std::string theme_id;
     int settings = 0;
     int settings_level = 1;
     int settings_index = 0;
@@ -178,6 +185,8 @@ int main(int argc, char **argv)
             lang = argv[++i];
         } else if (arg == "--assets" && has_val) {
             assets = argv[++i];
+        } else if (arg == "--theme" && has_val) {
+            theme_id = argv[++i];
         } else if (arg == "--settings" && has_val) {
             settings = std::atoi(argv[++i]);
         } else if (arg == "--level" && has_val) {
@@ -214,12 +223,35 @@ int main(int argc, char **argv)
 
     giochi::UiGeometry g;
 
+    /* Tema: o pedido na linha de comando, senao o padrao do catalogo. O que
+     * vale de verdade e' o que o aparelho faria — mesma giochi_theme_resolve. */
+    giochi_theme theme;
+    char theme_used[GIOCHI_THEME_ID_LEN] = {0};
+    char theme_err[128] = {0};
+
+    (void)giochi_theme_resolve(&theme, assets.c_str(),
+                               theme_id.empty() ? nullptr : theme_id.c_str(),
+                               nullptr, theme_used, sizeof(theme_used),
+                               theme_err, sizeof(theme_err));
+
     giochi::ui_geometry_base(&g, width, height);
+    giochi::ui_geometry_apply_theme(&g, giochi::ui_theme_metrics_from(theme));
     giochi::ui_geometry_tabs(&g, label_w, label_count, tab);
     giochi::ui_geometry_grid(&g, items, focus);
 
     std::printf("{\n");
     std::printf("\"screen\":{\"w\":%d,\"h\":%d},\n", g.screen_w, g.screen_h);
+    std::printf("\"theme\":{\"id\":\"%s\",\"name\":\"%s\",\"density\":\"%s\","
+                "\"hints\":\"%s\",\"border\":%d,\"cover_pct\":%d,\n"
+                "  \"colors\":{\"background\":\"%s\",\"surface\":\"%s\","
+                "\"surface_elevated\":\"%s\",\"text_primary\":\"%s\","
+                "\"text_secondary\":\"%s\",\"hint_bar_bg\":\"%s\","
+                "\"divider\":\"%s\",\"accent\":\"%s\"}},\n",
+                theme_used, theme.id, giochi_density_name(g.density),
+                giochi_hints_name(g.hints), g.border, g.cover_pct,
+                theme.background, theme.surface, theme.surface_elevated,
+                theme.text_primary, theme.text_secondary, theme.hint_bar_bg,
+                theme.divider, theme.accent);
     std::printf(
         "\"tokens\":{\"gap\":%d,\"margin\":%d,\"inset\":%d,\"corner\":%d,"
         "\"accent\":%d,\"ring\":%d,\"tile_w\":%d,\"tile_h\":%d,\"title_h\":%d,"
@@ -273,6 +305,6 @@ int main(int argc, char **argv)
     std::printf("],\n\"focus_ring\":{\"x\":%d,\"y\":%d,\"w\":%d,\"h\":%d},\n",
                 ring.x, ring.y, ring.w, ring.h);
     emitir_textos(assets, lang, tab, items, settings, settings_level,
-                  settings_index);
+                  settings_index, theme.hints);
     return 0;
 }

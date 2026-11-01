@@ -11,7 +11,7 @@ GIOCHI_NO_COMPRESS=${GIOCHI_NO_COMPRESS:-0}
 
 # --- aparelho ---------------------------------------------------------
 GIOCHI_DEVICE=${GIOCHI_DEVICE:-rk3326-generic}
-DEVICE_CONF="$BOARD_DIR/devices/$GIOCHI_DEVICE.conf"
+DEVICE_CONF="$(CDPATH= cd -- "$BOARD_DIR/../../.." && pwd)/device/$GIOCHI_DEVICE/device.conf"
 if [ ! -f "$DEVICE_CONF" ]; then
     echo "post-image: ERRO: aparelho '$GIOCHI_DEVICE' sem $DEVICE_CONF" >&2
     exit 1

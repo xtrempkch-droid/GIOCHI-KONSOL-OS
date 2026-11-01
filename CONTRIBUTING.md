@@ -29,7 +29,7 @@ tools/build-image.sh --check --all
 > porque os arquivos existiam na máquina. `tools/check-tracked.sh` (dentro de
 > `make lint`) falha se um arquivo do projeto estiver ignorado.
 
-Se você mexeu em `buildroot/board/giochi/devices/*.conf` ou nos templates de
+Se você mexeu em `device/*/device.conf` ou nos templates de
 defconfig, rode também:
 
 ```sh
@@ -71,7 +71,7 @@ arquivos diretamente são recusados; a CI (`gen-defconfigs.sh --check`) falha.
 
 Passo a passo em [docs/DEVICES.md](docs/DEVICES.md#adicionar-um-aparelho).
 Resumo: crie o `.conf` em `board/giochi/devices/`, o layout em
-`assets/devices/<id>/` se o painel não for 640×480, rode `make defconfigs`,
+`device/<id>/layout/` se o painel não for 640×480, rode `make defconfigs`,
 valide com `--check` e atualize a matriz de aparelhos.
 
 ## Licença dos seus commits

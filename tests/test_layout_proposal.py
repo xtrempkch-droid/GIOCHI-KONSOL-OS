@@ -1,7 +1,7 @@
 """Contrato dos renders da proposta de layout (docs/proposta/).
 
 As imagens são geradas por tools/make-layout-proposal.py a partir de
-assets/theme.json + os assets de cada aba. Este teste garante que:
+assets/themes/dark_default.json + os assets de cada aba. Este teste garante que:
 
   * o gerador roda e sai com 0 — ou seja, **nenhuma** asserção geométrica dele
     falhou (texto que não cabe, item de hint bar que colide, caixa que invade
@@ -38,7 +38,7 @@ PANELS = {"default": (640, 480), "x55": (1280, 720)}
 
 
 def _theme_color(name: str) -> tuple[int, int, int]:
-    theme = json.loads((ROOT / "assets" / "theme.json").read_text())
+    theme = json.loads((ROOT / "assets" / "themes" / "dark_default.json").read_text())
     value = theme["colors"][name].lstrip("#")
     return tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))
 

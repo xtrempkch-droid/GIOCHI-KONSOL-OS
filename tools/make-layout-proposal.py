@@ -16,7 +16,7 @@ assets declaram hoje):
 
 Fontes de dados (as mesmas do Launcher em tempo de execucao):
 
-  assets/theme.json                 cores, tipografia e metricas
+  assets/themes/dark_default.json                 cores, tipografia e metricas
   assets/layout.json                ordem das abas, botoes, fonte da barra
   assets/home.json                  hero 112x63, recentes 80x45
   assets/library.json               tile 152x85, titulo 20, scrollbar 4
@@ -83,7 +83,7 @@ PANELS = {
     "default": {"name": "default", "width": 640, "height": 480, "scale": 1.0,
                 "label": "640x480", "dir": None},
     "x55": {"name": "x55", "width": 1280, "height": 720, "scale": 1.5,
-            "label": "1280x720", "dir": "devices/x55"},
+            "label": "1280x720", "dir": "x55"},
 }
 
 # Textos de exemplo: existem para dar escala ao tile, como em make-screenshots.
@@ -149,7 +149,7 @@ class Tokens:
 
     Regra de fonte unica: o que o asset do PAINEL declara (topbar, hint, tile,
     hero, recentes, capa, controle) e usado **como esta** — os arquivos de
-    `assets/devices/<id>/` ja trazem o valor do painel. A escala `s` (1,0 no
+    `device/<id>/layout/` ja trazem o valor do painel. A escala `s` (1,0 no
     canonico, 1,5 no 16:9) so multiplica o que **nao** tem onde ser declarado:
     espacamentos internos, fonte do titulo do tile (que vive no `theme.json`) e
     a tipografia da proposta. Multiplicar o que ja esta declarado aplicaria a
@@ -849,11 +849,18 @@ def main() -> int:
     ap.add_argument("--quiet", action="store_true", help="nao imprime o relatorio")
     args = ap.parse_args()
 
-    theme = load_json(ASSETS / "theme.json")
+    theme = load_json(ASSETS / "themes" / "dark_default.json")
 
     def panel_assets(panel: dict) -> dict:
-        """Assets do painel: base ou o override de `assets/devices/<id>/`."""
-        base = ASSETS if panel.get("dir") is None else ASSETS / panel["dir"]
+        """Assets do painel: base (assets/) ou o override do aparelho.
+
+        O override vive em `device/<id>/layout/` — configuracao POR APARELHO
+        separada dos assets genericos. Antes eram dois diretorios
+        (assets/devices/... e buildroot/board/giochi/devices/...) para a mesma
+        identidade, e os dois divergiam.
+        """
+        base = ASSETS if panel.get("dir") is None else (
+            ROOT / "device" / panel["dir"] / "layout")
         return {
             "layout": load_json(base / "layout.json"),
             "home": load_json(base / "home.json"),

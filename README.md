@@ -59,14 +59,14 @@ Regenerar: `make screenshots` (precisa de `pillow`).
 |---|---|---|
 | Buildroot (`BR2_EXTERNAL`), 5 aparelhos, genimage A/B | ✅ funcional | [buildroot/](buildroot/) |
 | Kernel 6.12 + fragmentos (gadget, dongles, Powkiddy) | ✅ funcional | [board/giochi](buildroot/board/giochi) |
-| U-Boot mainline + BL31/DDR do rkbin (X55) | ✅ configurado, imagem bootável | [devices/x55.conf](buildroot/board/giochi/devices/x55.conf) |
+| U-Boot mainline + BL31/DDR do rkbin (X55) | ✅ configurado, imagem bootável | [device/x55/device.conf](device/x55/device.conf) |
 | `giochi-init`: supervisor, `control.sock`, FIFO, hotkey, `device_profile.json` | ✅ funcional | [src/init](src/init) |
 | Ciclo de vida Launcher/jogo/app (§2.2/§4.7) | ✅ funcional, testado | [tests/integration](tests/integration/lifecycle_test.sh) |
 | Launcher C++17: layout 1.6, 5 abas, `buttons.map`, biblioteca, overlay 2 níveis | 🟡 motor pronto, widgets pendentes | [src/launcher](src/launcher) |
 | `giochi-musicd`: socket/protocolo §4.8.4 | 🟡 protocolo pronto, decode ALSA pendente | [src/musicd](src/musicd) |
 | `.giochi`: pack, extract (ustar embutido), thumbgen | ✅ pack/extract, 🟡 thumbnails | [tools/](tools/) |
 | Update A/B com Ed25519 + SHA-256 | ✅ funcional (verificado ponta a ponta) | [tools/giochi-verify.c](tools/giochi-verify.c) |
-| `giochi-forge`: detecção, classificação, assinatura | ✅ funcional | [src/forge](src/forge) |
+| `giochi-forge`: detecção, classificação, assinatura | ✅ funcional | [apps/forge](apps/forge) |
 | USB: MTP + rede/SSH + Mass Storage (gadget composto) | ✅ funcional | [scripts/giochi-usb-mode](scripts/giochi-usb-mode), [docs/USB.md](docs/USB.md) |
 | Modo Desenvolvedor (SSH via USB, §4.6.1) | ✅ funcional, testado | [tests/integration/devmode_test.sh](tests/integration/devmode_test.sh) |
 | Dongles USB Wi-Fi/BT | ✅ hotplug e scripts, 🟡 UI de rede | [scripts/init.d/S40dongle](scripts/init.d/S40dongle) |
@@ -177,9 +177,10 @@ src/init/       giochi-init: supervisor, control.sock, power, device_profile, ga
 src/launcher/   motor de layout, tema, settings, overlay, evdev, render SDL2
 src/musicd/     giochi-musicd (ALSA + música)
 src/thumbgen/   thumbnails 152x85 RGBA
-src/forge/      giochi-forge (PC): perfil, classificação, empacotamento
-assets/         layout, tema, defaults, buttons.map, devices/<id>/, bootlogo/
-schemas/        JSON Schema (metadata, forge, settings, layout)
+device/<id>/    FONTE ÚNICA por aparelho: device.conf, theme.json e layout/
+apps/           apps de PC: forge (empacota e assina) e store (catálogo da Loja)
+assets/         layouts base, themes/ (6 temas), locales/, buttons.map, bootlogo/
+schemas/        JSON Schema (metadata, forge, settings, layout, theme)
 scripts/        init.d/* e helpers (USB gadget)
 buildroot/      BR2_EXTERNAL: defconfigs, board, packages
 tools/          build-image, gen-defconfigs, bootlogo, screenshots, pack, sign, verify, QA

@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0",
+  "default": "dark_default",
+  "description": "Catalogo de temas do Launcher. A ORDEM aqui e' a ordem do menu Sistema > Tema e a da galeria docs/temas/. Quem manda no tema ativo e' settings.json (theme_id); o padrao do aparelho pode sobrescrever o campo `default` via device/<id>/theme.json.",
+  "themes": [
+    {
+      "theme_id": "dark_default",
+      "file": "dark_default.json",
+      "image": "../../docs/temas/dark_default-1280x720.png"
+    },
+    {
+      "theme_id": "neon_rose",
+      "file": "neon_rose.json",
+      "image": "../../docs/temas/neon_rose-1280x720.png"
+    },
+    {
+      "theme_id": "ember_dark",
+      "file": "ember_dark.json",
+      "image": "../../docs/temas/ember_dark-1280x720.png"
+    },
+    {
+      "theme_id": "mono_minimal",
+      "file": "mono_minimal.json",
+      "image": "../../docs/temas/mono_minimal-1280x720.png"
+    },
+    {
+      "theme_id": "mono_gamepad",
+      "file": "mono_gamepad.json",
+      "image": "../../docs/temas/mono_gamepad-1280x720.png"
+    },
+    {
+      "theme_id": "ios_glass",
+      "file": "ios_glass.json",
+      "image": "../../docs/temas/ios_glass-1280x720.png"
+    }
+  ]
+}

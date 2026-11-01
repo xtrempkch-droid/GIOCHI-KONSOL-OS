@@ -67,9 +67,9 @@ src/init/       giochi-init: supervisor, control.sock, power, game, device_profi
 src/launcher/   layout, theme, settings, overlay, input/evdev, render (SDL2 | null)
 src/musicd/     giochi-musicd (socket texto + ALSA)
 src/thumbgen/   thumbnails 152x85 RGBA
-src/forge/      giochi-forge (PC): perfil, classificação, empacotamento (Python)
+apps/forge/      giochi-forge (PC): perfil, classificação, empacotamento (Python)
 assets/         layout.json, theme.json, defaults.json, buttons.map, bootlogo/
-assets/devices/<id>/    override de layout por aparelho
+device/<id>/layout/    override de layout por aparelho
 schemas/        JSON Schema (metadata, forge, settings, layout)
 scripts/        giochi-usb-mode + init.d/{S05..S99}
 buildroot/      BR2_EXTERNAL
@@ -87,7 +87,7 @@ docs/           arquitetura, hardware, USB, build, QA, handoff, roadmap
 ```
 
 **Regra de ouro:** cada dado de aparelho vive em **um** lugar
-(`devices/<id>.conf`). Se você precisa do mesmo dado em dois arquivos, gere o
+(`device/<id>/device.conf`). Se você precisa do mesmo dado em dois arquivos, gere o
 segundo.
 
 ---
@@ -217,7 +217,7 @@ falhava **sempre**, ocupando espaço no SquashFS.
 - **No console** (elegível ao rootfs): `giochi-verify` (§4.3),
   `giochi-extract` e `giochi-thumbgen` (§4.2).
 - **No PC**: `giochi-pack.sh`, `giochi-sign.sh`, `giochi-keys.sh`,
-  `giochi-forge` (`src/forge`), todos os `tools/*.py`, `build-image.sh` e os
+  `giochi-forge` (`apps/forge`), todos os `tools/*.py`, `build-image.sh` e os
   scripts de stress/bench.
 - Guarda: `tools/check-image-contents.sh` (em `make lint`) falha nos dois
   sentidos — ferramenta de PC instalada no alvo **e** binário obrigatório do
@@ -1019,7 +1019,7 @@ Dois sintomas do mesmo dono de dado, os dois silenciosos:
 - Guardas: `tests/test_deviceconf.cpp` (15 checagens) e suíte `primeiro-boot`.
 
 **Regra que fica:** dado que existe **dentro da imagem** (`/etc/giochi/*.conf`)
-não deve depender de macro de compilação. `devices/<id>.conf` já era a fonte
+não deve depender de macro de compilação. `device/<id>/device.conf` já era a fonte
 única no build (§3.20); isto é a mesma regra em runtime.
 
 ### 3.48 X55: o DSI fazia o bind do DRM de dentro do próprio probe (`-22`)
@@ -1894,6 +1894,57 @@ não vira formato.
 - Regra: `tr()` devolve **texto**, nunca formato. Se a frase tem um número, o
   caminho é `tr_n`.
 
+### 3.74 O `make` do host não compila o desenho: erro de tipo só aparece na imagem
+
+O bloco de desenho do Launcher vive atrás de `#ifdef GIOCHI_HAVE_SDL2`
+(`render.cpp`), e o `Makefile` só define esse macro quando `pkg-config --exists
+sdl2` acha SDL2 **no host**. Nesta máquina não acha. Resultado medido:
+
+- `make && make test && make lint` → tudo verde;
+- `tools/docker-build.sh x55` → falha em `render.cpp` com
+  *"cannot convert 'const std::string' to 'const char*'"*, depois de ~20 min de
+  kernel e toolchain.
+
+O erro foi meu: passei `std::string` num ternário cujo outro lado era
+`const char*`, para um parâmetro `const char*`. Nenhum teste de host pegaria —
+o código nem é compilado lá.
+
+- Guarda: `tools/check-sdl2-compile.sh` (no `make lint`) compila `render.cpp`
+  com `-fsyntax-only -DGIOCHI_HAVE_SDL2`, usando o sysroot do alvo quando a
+  árvore de `dist/` existe (ou o SDL2 do host, se houver). Sem nenhum dos dois,
+  avisa e não falha — clone limpo não tem como checar.
+- **Testada ao contrário**: reintroduzir `ui.news_title` (sem `.c_str()`)
+  devolve rc=1 com o erro do compilador; corrigido, rc=0.
+- Regra que fica: guarda de lint que **pula** em silêncio precisa dizer que
+  pulou. Um `SKIP` explícito evita a leitura de "verde = coberto".
+
+### 3.75 Reorganizar diretório de configuração quebra mais coisa do que parece
+
+Mover `buildroot/board/giochi/devices/*.conf` para `device/<id>/device.conf` e
+`assets/devices/<id>/` para `device/<id>/layout/` tocou **11** consumidores, e
+cada um falhava de um jeito diferente:
+
+| Consumidor | Como falhou |
+|---|---|
+| `tools/gen-defconfigs.sh`, `build-image.sh` | glob `"$DEV_DIR"/*.conf` casando diretório |
+| `post-build.sh`, `post-image.sh` | `$BOARD_DIR/devices/...` deixou de existir |
+| `tools/check-dts-panel.py` | `FileNotFoundError` no `os.listdir` |
+| `tools/check-engines.py` | `profile.py` movido junto com o forge |
+| `tests/test_bootlogo.py` | "nenhum devices/*.conf encontrado" |
+| `tests/test_device_scale.py` | `ASSETS / "devices" / ...` |
+| `tools/check-links.py` | **pegou 4 links quebrados nos docs** |
+
+- O `check-links.py` foi o mais útil: ele reprovou `README.md ->
+  buildroot/board/giochi/devices/x55.conf` e `docs/APPS.md -> ../src/forge`
+  antes de qualquer teste rodar. Link relativo em doc é um consumidor de caminho
+  como outro qualquer.
+- Ordem que funcionou: mover com `git mv` → `sh tools/gen-defconfigs.sh --check`
+  → `make test` (as suítes dizem qual caminho ainda aponta para o antigo) →
+  `make lint` (links + guardas) → `tools/build-image.sh --check` → build real.
+- **Um arquivo que sobrou**: `assets/theme.json` continuou existindo ao lado de
+  `assets/themes/dark_default.json` — a mesma cor em dois lugares. Foi removido;
+  todas as ferramentas leem `assets/themes/dark_default.json` agora.
+
 ## 4. O que NÃO foi verificado
 
 Trate como hipótese até alguém colar evidência (log, captura do aparelho):
@@ -1976,7 +2027,7 @@ uma suíte, registre-a lá **e** no respectivo alvo do `Makefile`.
 
 ## 6. Regras antes de editar
 
-1. **Dado de aparelho**: altere `buildroot/board/giochi/devices/<id>.conf` e
+1. **Dado de aparelho**: altere `device/<id>/device.conf` e
    rode `make defconfigs`. PR que edita `buildroot/configs/` é recusado.
 2. **Símbolo novo no defconfig**: confirme que existe na versão do Buildroot
    usada (`tools/check-buildroot-symbols.py`). Não confie na memória.
@@ -2579,7 +2630,7 @@ colunas) e escolheu implementar no `render.cpp`.
    por painel e **falha (exit 1)** se um texto não cabe, um item de hint bar
    colide, a grade invade topbar/hint bar, a scrollbar encosta na coluna, o chip
    passa da barra, ou as colunas declaradas no asset não cabem na largura.
-3. `assets/devices/x55/*.json` **reescritos** para o perfil ×1,5 (topbar 60,
+3. `device/x55/layout/*.json` **reescritos** para o perfil ×1,5 (topbar 60,
    hint 45, tile 228×128, título 30, scrollbar 6, hero 168×95, recentes 120×68,
    capa 180, controles 75, fonte das abas 21, `columns: 5`). Antes eram 7
    fatores implícitos (1,28 a 2,00) e 24 thumbnails de 288×162 = **4,48 MB**,
@@ -3346,12 +3397,12 @@ aparelho **não dá**. O defconfig não tem `BR2_PACKAGE_GCC`, `MAKE` nem `CMAKE
 (medido), e são 1–2 GB de RAM. Compilar é trabalho de PC; o console **instala**.
 Isso não é limitação contornável — é a arquitetura que o ADR-03 já fixou.
 
-**Entregue: `giochi-forge store`** (`src/forge/giochi_forge/store.py` +
+**Entregue: `giochi-forge store`** (`apps/forge/giochi_forge/store.py` +
 subcomando em `__main__.py`). Lê uma pasta de projetos baixados, diz o que cada
 um é e empacota o que já dá:
 
 ```console
-$ python3 -m src.forge.giochi_forge store --src ~/baixados --out ./pacotes \
+$ apps/forge/giochi-forge store --src ~/baixados --out ./pacotes \
       --device rk3566-2gb --key chave.pem --install /media/user/games
 ```
 
@@ -3523,7 +3574,7 @@ nos perfis manuais do forge, e o `rk3566` ainda dizia GLES 3.2 quando o Mesa diz
 **Entregue:**
 
 1. **`GIOCHI_GPU_DRIVER` / `GIOCHI_GL_DESKTOP` / `GIOCHI_GLES` / `GIOCHI_VULKAN`
-   em `devices/<id>.conf`** (a fonte única, como manda o §6.1), preenchidos com a
+   em `device/<id>/device.conf`** (a fonte única, como manda o §6.1), preenchidos com a
    medição do Mesa: rk3566 = panfrost 3.1/3.1; rk3326 = lima 2.1/2.0.
 2. **Tabela `g_soc_graphics` por SoC** em `device_profile.c` (capacidade é do
    SoC, não do gabinete) + emissão honesta de `gpu.driver`,

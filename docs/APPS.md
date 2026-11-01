@@ -25,7 +25,7 @@ Ordem de trabalho: [roadmap.md](./roadmap.md).
 | 1 | `giochi-init` | daemon C | [src/init](../src/init) | ✅ supervisor, `control.sock`, FIFO, hotkey, `device_profile.json`; ciclo de vida coberto por `lifecycle_test.sh` |
 | 2 | `giochi-launcher` | C++17 + SDL2 | [src/launcher](../src/launcher) | 🟡 motor de layout, tema, `settings.json`, overlay, biblioteca prontos; **desenho dos widgets é esboço** (`TODO(v1.2)`) |
 | 3 | `giochi-musicd` | daemon C + ALSA | [src/musicd](../src/musicd) | 🟡 socket e protocolo §4.8.4 prontos; **decodificação PCM pendente** |
-| 4 | `giochi-store` | app externo | — | ⛔ **não existe**. `layout.json` aponta `APP:giochi-store` e o `giochi-init` responde `ERR launch_failed` com log claro. Fontes avaliadas e contrato do pacote: [LOJA.md](LOJA.md) |
+| 4 | `giochi-store` | app externo | — | ⛔ **não existe no console**. `layout.json` aponta `APP:giochi-store` e o `giochi-init` responde `ERR launch_failed` com log claro. O **lado PC** existe: [apps/store](../apps/store) monta o catálogo e o `news.json`. Fontes avaliadas e contrato do pacote: [LOJA.md](LOJA.md) |
 | 5 | `portmaster` | app externo | — | ⛔ **não existe**. Mesmo caso da Loja (`APP:portmaster`) |
 | 6 | `giochi-thumbgen` | utilitário C | [src/thumbgen](../src/thumbgen) | 🟡 gera o `.rgba` 152×85 e o placeholder; **extração de `thumb.png`/`capa.png` do tar pendente** (precisa de libarchive) |
 | 7 | `dropbear` | daemon SSH | [scripts/init.d/S62sshd](../scripts/init.d/S62sshd) | ✅ Modo Desenvolvedor, desligado por padrão, só em `10.55.0.2:22`, senha ou chave |
@@ -47,7 +47,8 @@ Também no console, embora não estejam na lista de "apps":
 
 | # | Componente | Tipo | Onde | Estado |
 |---|---|---|---|---|
-| 11 | `giochi-forge` | app desktop (Python) | [src/forge](../src/forge) | 🟡 `profile`, `check` (classificação §4.5.3), `build` (empacota + assina) e `keys` prontos; **faltam**: detectar o console via USB, transferir o `.giochi` e compilar Godot → ARM64 |
+| 10 | `giochi-store` | app desktop (Python) | [apps/store](../apps/store) | ✅ `catalogo` (store.json + news.json), `instalar` (copia conferindo o sha256 no destino) e `listar`; recusa `arch` ≠ aarch64 e tar com `metadata.json` fora do primeiro lugar |
+| 11 | `giochi-forge` | app desktop (Python) | [apps/forge](../apps/forge) | 🟡 `profile`, `check` (classificação §4.5.3), `build` (empacota + assina) e `keys` prontos; **faltam**: detectar o console via USB, transferir o `.giochi` e compilar Godot → ARM64 |
 
 Ferramentas de PC que **não** vão para a imagem (ver
 [AGENTS.md §3.12](../AGENTS.md) e `tools/check-image-contents.sh`):
@@ -59,7 +60,7 @@ Ferramentas de PC que **não** vão para a imagem (ver
 
 | Artefato | Fica em | Estado |
 |---|---|---|
-| `layout.json` (schema 1.6) | SquashFS `/usr/share/giochi/` | ✅ [assets/layout.json](../assets/layout.json) + override por aparelho em `assets/devices/<id>/` |
+| `layout.json` (schema 1.6) | SquashFS `/usr/share/giochi/` | ✅ [assets/layout.json](../assets/layout.json) + override por aparelho em `device/<id>/layout/` |
 | `home.json` | idem | ✅ três regiões (Continuar, Novidades, Recentes) |
 | `library.json` | idem | ✅ grid 4×3, tile 152×85, título 20, scrollbar 4 |
 | `music.json` | idem | ✅ now playing 120×120, progresso, controles, fila |
@@ -68,7 +69,7 @@ Ferramentas de PC que **não** vão para a imagem (ver
 | `settings.json` | `/user/` (rw) | ✅ escrito **só** pelo Launcher (§4.9.5) |
 | `device_profile.json` | `/user/.giochi/` (rw) | ✅ regenerado a cada boot pelo `giochi-init` |
 | `buttons.map` | SquashFS `/etc/giochi/` | ✅ canônico, com seção `[default]` e por aparelho |
-| `news.json` | `/user/.cache/` (rw) | 🟡 o Launcher lê com fallback de dicas compiladas; **ninguém escreve** — depende da Loja (⛔) |
+| `news.json` | `/user/.cache/` (rw) | ✅ escrito por `apps/store giochi-store catalogo` e lido pela Home (`carregar_novidade`); sem o arquivo, cai nas dicas compiladas |
 | `forge.json` | raiz do projeto Godot | ✅ lido pelo `giochi-forge` + [schema](../schemas/forge.schema.json) |
 | `metadata.json` | dentro do `.giochi` | ✅ [schema](../schemas/metadata.schema.json), validado pelo pack e pelo Launcher |
 
@@ -94,7 +95,9 @@ Ferramentas de PC que **não** vão para a imagem (ver
    `.giochi`. A fonte mais alinhada é o `PortMaster-New` (MIT, ≥488 ports com
    binários `.aarch64` prontos), seguido do **Alpine aarch64** (musl como nós:
    serve de binário e de receita) e do **TIC-80** (MIT, 4,9 MB).
-2. **`news.json` sem produtor.** A Home mostra as dicas compiladas; a Loja
+2. ~~**`news.json` sem produtor.**~~ **Fechado**: a Home mostra as dicas
+   compiladas quando o arquivo não existe, e o `apps/store` passou a escrevê-lo.
+   Histórico: a Home mostrava as dicas compiladas; a Loja
    deveria alimentar o arquivo.
 3. **`giochi-forge` sem o lado "físico"**: detecção por USB, leitura de
    `device_profile.json` do aparelho, `scp`/MTP e o export do Godot. Hoje ele

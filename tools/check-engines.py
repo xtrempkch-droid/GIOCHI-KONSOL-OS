@@ -4,7 +4,7 @@
 Fonte unica: assets/engines.json. Este script faz duas coisas:
 
   1. VALIDA a coerencia entre os tres lugares onde a capacidade do aparelho
-     aparece -- buildroot/board/giochi/devices/<id>.conf, a tabela por SoC de
+     aparece -- device/<id>/device.conf, a tabela por SoC de
      src/init/device_profile.c e os perfis manuais do giochi-forge. Se
      discordarem, o aparelho mente sobre o que pode rodar e a Loja recomenda
      engine errada.
@@ -29,9 +29,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CATALOG = ROOT / "assets" / "engines.json"
-DEVICES_DIR = ROOT / "buildroot" / "board" / "giochi" / "devices"
+DEVICES_DIR = ROOT / "device"
 DEVICE_C = ROOT / "src" / "init" / "device_profile.c"
-PROFILE_PY = ROOT / "src" / "forge" / "giochi_forge" / "profile.py"
+PROFILE_PY = ROOT / "apps" / "forge" / "giochi_forge" / "profile.py"
 METADATA_SCHEMA = ROOT / "schemas" / "metadata.schema.json"
 
 
@@ -65,7 +65,7 @@ class Device:
 def load_devices() -> list[Device]:
     """Le devices/<id>.conf -- a fonte de verdade por aparelho."""
     devices: list[Device] = []
-    for path in sorted(DEVICES_DIR.glob("*.conf")):
+    for path in sorted(DEVICES_DIR.glob("*/device.conf")):
         conf: dict[str, str] = {}
         for line in path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -74,7 +74,7 @@ def load_devices() -> list[Device]:
             key, _, value = line.partition("=")
             conf[key.strip()] = value.strip().strip('"')
         if "GIOCHI_GPU_DRIVER" not in conf:
-            raise SystemExit(f"{path.name}: falta GIOCHI_GPU_DRIVER "
+            raise SystemExit(f"{path.parent.name}: falta GIOCHI_GPU_DRIVER "
                              f"(capacidade grafica do SoC)")
         devices.append(Device(
             device_id=conf.get("GIOCHI_ID", path.stem),

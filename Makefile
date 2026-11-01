@@ -205,7 +205,7 @@ TESTS_CXX := \
 TEST_BINS := $(patsubst tests/%.c,$(BIN)/%,$(TESTS_C)) \
              $(patsubst tests/%.cpp,$(BIN)/%,$(TESTS_CXX))
 
-.PHONY: all clean test install info check-config defconfigs lint images \
+.PHONY: all clean test install info check-config defconfigs lint images tema-galeria \
         bootlogo screenshots proposta font ui-preview \
         $(BIN)/dump-geometry
 
@@ -306,7 +306,7 @@ $(BIN)/test_settings: $(OBJ)/tests/test_settings.o $(OBJ)/launcher/settings.o $(
 	@mkdir -p $(BIN)
 	$(CXX) $^ -o $@ $(LDFLAGS) $(EXTRA_LDFLAGS) $(CRYPTO_LIBS)
 
-$(BIN)/dump-geometry: $(OBJ)/tools/dump-geometry.o $(OBJ)/launcher/ui_geometry.o $(OBJ)/launcher/layout.o $(OBJ)/launcher/i18n.o $(OBJ)/launcher/settings.o $(COMMON_OBJ)
+$(BIN)/dump-geometry: $(OBJ)/tools/dump-geometry.o $(OBJ)/launcher/ui_geometry.o $(OBJ)/launcher/layout.o $(OBJ)/launcher/i18n.o $(OBJ)/launcher/settings.o $(OBJ)/launcher/theme.o $(COMMON_OBJ)
 	@mkdir -p $(BIN)
 	$(CXX) $^ -o $@ $(LDFLAGS) $(EXTRA_LDFLAGS) $(CRYPTO_LIBS)
 
@@ -382,6 +382,12 @@ ui-preview: $(BIN)/dump-geometry
 	@python3 tools/preview-ui.py --size 1280x720 --lang en --tab 1 --items 15 \
 		--out docs/proposta/ui-1280x720-en.png
 
+# Galeria dos temas (docs/temas/): uma imagem por tema e por painel, mais o
+# contato 2x3 para comparar. Nada aqui e' desenhado pelo script: ele chama o
+# preview, que le a geometria do dump-geometry (mesma regra do ui-preview).
+tema-galeria: $(BIN)/dump-geometry
+	@python3 tools/make-theme-gallery.py
+
 images:
 	@if [ "$(BUILD)" = "1" ]; then \
 		sh tools/build-image.sh --all $(if $(FALLBACK),--fallback-dts,); \
@@ -422,7 +428,7 @@ lint:
 	@# o RK3326 saia como panfrost/GLES 3.2 e a Loja recomendava engine errada.
 	@python3 tools/check-engines.py --quiet
 	@echo "== json =="
-	@python3 -c 'import glob,json,sys; [json.load(open(p)) for p in glob.glob("assets/*.json")+glob.glob("assets/devices/*/*.json")+glob.glob("schemas/*.json")]; print("ok")'
+	@python3 -c 'import glob,json,sys; [json.load(open(p)) for p in glob.glob("assets/*.json")+glob.glob("assets/themes/*.json")+glob.glob("device/*/layout/*.json")+glob.glob("device/*/*.json")+glob.glob("schemas/*.json")]; print("ok")'
 	@echo "== defconfigs =="
 	@sh tools/gen-defconfigs.sh --check
 	@# Um bloco de DTS por defconfig: se o gerador casar o marcador tambem em
@@ -460,8 +466,14 @@ lint:
 	@python3 -m unittest tests.test_layout_proposal 2>&1 | tail -3
 	@echo "== escala do override por aparelho =="
 	@python3 -m unittest tests.test_device_scale 2>&1 | tail -3
+	@echo "== catalogo de temas =="
+	@python3 -m unittest tests.test_themes 2>&1 | tail -3
+	@echo "== app de loja do PC =="
+	@python3 -m unittest tests.test_store 2>&1 | grep -E "Ran|OK|FAILED" | tail -2
 	@echo "== fonte embutida (atlas gerado) =="
 	@python3 tests/test_font.py
+	@echo "== desenho SDL2 compila (mesmo sem SDL2 no host) =="
+	@sh tools/check-sdl2-compile.sh
 	@echo "== ferramentas python =="
 	@python3 -m py_compile tools/make-screenshots.py \
 	           tools/make-layout-proposal.py \
@@ -469,7 +481,9 @@ lint:
 	           tools/check-links.py tools/make-bootlogo.py \
 	           tools/serial-capture.py tools/verify-card.py \
 	           tools/check-dts-panel.py tools/make-font.py \
-	           tools/preview-ui.py && echo "ok"
+	           tools/preview-ui.py tools/make-theme-gallery.py \
+	           apps/store/giochi_store/*.py apps/forge/giochi_forge/*.py \
+	           && echo "ok"
 
 # 'all' antes dos testes: a suite de integracao roda o giochi-init REAL, e num
 # clone limpo 'make test' sozinho nao o teria compilado.

@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://giochi.local/schemas/theme.schema.json",
+  "title": "Tema do Giochi Konsol OS",
+  "description": "Cores e METRICAS que mudam o desenho da UI. Antes de 2026-11 o tema so trocava cor; as cinco propostas de layout exigiram que ele tambem dissesse raio de canto, borda, espessura do anel de foco, densidade da grade, escala da capa e modo da barra de dicas. A regra da §3.71 continua: o tema e' DADO; quem traduz para pixel e' ui_geometry_apply_theme() + render.cpp, e o preview le os mesmos numeros pelo dump-geometry.",
+  "type": "object",
+  "required": ["theme_id", "name", "colors", "metrics"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "theme_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{2,31}$",
+      "description": "Identificador estavel. E' o valor de settings.theme_id, de --theme e da chave em assets/themes/index.json."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 48,
+      "description": "Nome para humano, mostrado no menu Sistema > Tema."
+    },
+    "description": { "type": "string", "maxLength": 200 },
+    "origin": {
+      "type": "string",
+      "maxLength": 200,
+      "description": "De onde a proposta veio (o mockup HTML que o mantenedor anexou)."
+    },
+    "colors": {
+      "type": "object",
+      "required": [
+        "background",
+        "surface",
+        "surface_elevated",
+        "text_primary",
+        "text_secondary",
+        "hint_bar_bg",
+        "divider",
+        "accent"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "background": { "$ref": "#/$defs/cor" },
+        "surface": { "$ref": "#/$defs/cor" },
+        "surface_elevated": { "$ref": "#/$defs/cor" },
+        "text_primary": { "$ref": "#/$defs/cor" },
+        "text_secondary": { "$ref": "#/$defs/cor" },
+        "hint_bar_bg": { "$ref": "#/$defs/cor" },
+        "divider": { "$ref": "#/$defs/cor" },
+        "accent": { "$ref": "#/$defs/cor" }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "required": ["tile_corner_radius", "tile_border", "focus_ring", "density"],
+      "additionalProperties": false,
+      "properties": {
+        "tile_corner_radius": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 24,
+          "description": "Raio do canto do tile/painel NO PAINEL BASE 640x480. ui_geometry escala pelo painel real, como todos os outros tokens."
+        },
+        "tile_border": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4,
+          "description": "Espessura da borda de TODO tile (0 = so' o foco tem contorno). E' o que da' o look 'caixa' dos mockups."
+        },
+        "focus_ring": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 6,
+          "description": "Espessura do anel de foco, por fora do tile."
+        },
+        "density": {
+          "type": "string",
+          "enum": ["compacta", "normal", "espacosa"],
+          "description": "Espaco entre tiles e altura do titulo. Muda quantas colunas/linhas cabem — e' a diferenca de 'Grid Dinamico' entre as propostas."
+        },
+        "topbar_height": {
+          "type": "integer",
+          "minimum": 24,
+          "maximum": 56,
+          "description": "Altura da barra superior no painel base. Opcional (default 40)."
+        },
+        "hint_bar_height": {
+          "type": "integer",
+          "minimum": 20,
+          "maximum": 48,
+          "description": "Altura da barra de dicas no painel base. Opcional (default 30)."
+        },
+        "cover_pct": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 160,
+          "description": "Escala da capa do album na aba Musica (100 = o token base 120x120). 'Capas de Albuns Maiores' das propostas."
+        },
+        "title_scale_pct": {
+          "type": "integer",
+          "minimum": 80,
+          "maximum": 140,
+          "description": "Escala dos tamanhos de fonte NO PAINEL BASE (100 = 14/12/12)."
+        }
+      }
+    },
+    "features": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hints": {
+          "type": "string",
+          "enum": ["so_gamepad", "completo"],
+          "default": "so_gamepad",
+          "description": "'so_gamepad' mostra apenas botao que existe no aparelho (padrao, e o que a referencia aprovada desenha). 'completo' acrescenta o atalho de teclado, como nos mockups layout1/2."
+        }
+      }
+    },
+    "typography": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "font_family": { "type": "string" },
+        "topbar_size": { "type": "integer", "minimum": 8, "maximum": 40 },
+        "tile_title_size": { "type": "integer", "minimum": 8, "maximum": 40 }
+      }
+    }
+  },
+  "$defs": {
+    "cor": {
+      "type": "string",
+      "pattern": "^#[0-9A-Fa-f]{6}$",
+      "description": "Hex RGB. Alfa nao e' suportado: o desenho mistura camadas em A8/RGB e transparencia exigiria composicao que o backend KMSDRM nao garante."
+    }
+  }
+}

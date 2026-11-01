@@ -3,12 +3,12 @@
 
 Fonte de verdade (as mesmas que o Launcher le em tempo de execucao):
 
-  assets/theme.json            cores, tipografia e metricas (topbar 40, hint 30)
+  assets/themes/dark_default.json            cores, tipografia e metricas (topbar 40, hint 30)
   assets/layout.json           abas, ordem, central, botoes
   assets/home.json             regioes da aba Home (hero, noticias, recentes)
   assets/library.json          grid 4x3, tile 152x85, titulo 20, scrollbar 4
   assets/music.json            now playing 120x120, progresso, controles, lista
-  assets/devices/x55/layout.json  override da X55 (1280x720)
+  device/x55/layout/layout.json  override da X55 (1280x720)
   assets/bootlogo/bootlogo.rgba   splash real desenhado pelo Launcher
 
 O desenho aqui reproduz a GEOMETRIA e as CORES declaradas nesses arquivos.
@@ -440,12 +440,12 @@ def main() -> int:
     args = ap.parse_args()
 
     out_dir = Path(args.out_dir)
-    theme = load_json(ASSETS / "theme.json")
+    theme = load_json(ASSETS / "themes" / "dark_default.json")
     layout = load_json(ASSETS / "layout.json")
     home = load_json(ASSETS / "home.json")
     library = load_json(ASSETS / "library.json")
     music = load_json(ASSETS / "music.json")
-    x55_layout = load_json(ASSETS / "devices" / "x55" / "layout.json")
+    x55_layout = load_json(ROOT / "device" / "x55" / "layout" / "layout.json")
 
     base = {
         "home": screen_home(theme, layout, home, 1),
