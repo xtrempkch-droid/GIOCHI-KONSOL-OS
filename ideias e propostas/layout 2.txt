@@ -1,0 +1,1593 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>HandheldOS — Bloco 1</title>
+<style>
+:root {
+  --bg-deep: #0b0f19;
+  --bg-panel: #1b2838;
+  --bg-card: #2a475e;
+  --bg-card-2: #1e3346;
+  --border: #3b5c78;
+  --accent: #66c0f4;
+  --accent-dim: rgba(102, 192, 244, 0.15);
+  --danger: #ef4444;
+  --ok: #10b981;
+  --text: #f8fafc;
+  --text-dim: #94a3b8;
+  --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, 'Cascadia Code', 'Roboto Mono', Menlo, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  color: var(--text);
+  font-family: var(--font);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#canvas {
+  position: absolute;
+  width: 1280px;
+  height: 720px;
+  transform-origin: top left;
+  overflow: hidden;
+}
+
+#ambient {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 15% 25%, rgba(102, 192, 244, 0.07), transparent 55%),
+    radial-gradient(ellipse at 85% 75%, rgba(147, 51, 234, 0.05), transparent 55%),
+    var(--bg-deep);
+}
+
+#safe-area {
+  position: absolute;
+  left: 160px;
+  top: 0;
+  width: 960px;
+  height: 720px;
+  display: grid;
+  grid-template-rows: 60px 610px 50px;
+  padding: 0 8px;
+}
+
+/* ─── Top bar ─── */
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(59, 92, 120, 0.4);
+  padding: 0 4px;
+}
+.tabs { display: flex; gap: 4px; }
+.tab {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s;
+  font-family: var(--font);
+}
+.tab:hover { color: var(--text); }
+.tab.active {
+  color: var(--text);
+  background: var(--bg-card);
+  border-color: rgba(102, 192, 244, 0.4);
+}
+.indicators {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.menu-btn, .power-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: var(--font);
+}
+.menu-btn {
+  background: rgba(42, 71, 94, 0.5);
+  border: 1px solid rgba(102, 192, 244, 0.3);
+  color: var(--accent);
+}
+.menu-btn:hover { background: var(--bg-card); }
+.power-btn {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  justify-content: center;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: var(--danger);
+}
+.power-btn:hover { background: rgba(239, 68, 68, 0.25); }
+.power-ring {
+  position: absolute;
+  inset: -2px;
+  width: 36px;
+  height: 36px;
+  pointer-events: none;
+}
+.power-ring-progress {
+  transition: none;
+  stroke-linecap: round;
+}
+.power-icon { display: flex; }
+.battery {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  font-family: var(--mono);
+}
+.battery-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+.clock {
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.5px;
+  color: var(--text);
+}
+
+/* ─── Main view ─── */
+#main-view {
+  position: relative;
+  overflow: hidden;
+  padding: 12px 4px 8px;
+}
+.view-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.view-header h2 {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-dim);
+}
+.view-hint {
+  font-size: 10px;
+  color: rgba(148, 163, 184, 0.6);
+  font-family: var(--mono);
+}
+
+/* ─── Library ─── */
+.view-library { height: 100%; display: flex; flex-direction: column; }
+.game-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 10px;
+  flex: 1;
+}
+.game-card {
+  position: relative;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(59, 92, 120, 0.35);
+  background: linear-gradient(135deg, var(--c1, #1e3a5f), var(--c2, #0f172a));
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+  transition: transform 0.15s, border-color 0.15s;
+}
+.game-card.focused {
+  border-color: var(--accent);
+  outline: 1px solid var(--accent);
+  outline-offset: -3px;
+  transform: translateY(-2px);
+}
+.game-category {
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.5);
+  color: var(--accent);
+  align-self: flex-start;
+}
+.game-info { }
+.game-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.15;
+}
+.game-status {
+  font-size: 10px;
+  color: rgba(148, 163, 184, 0.8);
+  margin-top: 2px;
+}
+
+/* ─── Music ─── */
+.view-music {
+  display: grid;
+  grid-template-columns: 400px 1fr;
+  gap: 12px;
+  height: 100%;
+}
+.music-panel {
+  background: rgba(27, 40, 56, 0.85);
+  border: 1px solid rgba(102, 192, 244, 0.15);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+}
+.music-now {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: center;
+}
+.music-cover {
+  width: 130px; height: 130px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #4c1d95, #1e3a5f);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  animation: spin 20s linear infinite;
+}
+@keyframes spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+.music-label {
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  align-self: center;
+}
+.music-title { font-size: 16px; font-weight: 700; }
+.music-artist { font-size: 11px; color: var(--text-dim); }
+.music-album { font-size: 10px; color: rgba(148, 163, 184, 0.6); }
+.music-queue {
+  flex-direction: column;
+  justify-content: space-between;
+}
+.music-queue-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--accent);
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+.music-queue-item {
+  font-size: 11px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  display: flex;
+  justify-content: space-between;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.music-queue-item span:last-child { color: var(--text-dim); font-family: var(--mono); }
+.music-controls {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.music-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font);
+  transition: background 0.15s, border-color 0.15s;
+}
+.music-btn.focused {
+  border-color: var(--accent);
+  background: var(--bg-card);
+  color: var(--accent);
+}
+.music-btn.primary {
+  background: var(--bg-card);
+  color: var(--accent);
+  border-color: rgba(102, 192, 244, 0.3);
+}
+
+/* ─── Home / Store ─── */
+.view-centered {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.center-card {
+  background: rgba(27, 40, 56, 0.85);
+  border: 1px solid rgba(102, 192, 244, 0.15);
+  border-radius: 16px;
+  padding: 24px 32px;
+  max-width: 480px;
+  text-align: center;
+}
+.center-icon {
+  width: 56px; height: 56px;
+  border-radius: 12px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 12px;
+  font-size: 26px;
+  font-weight: 700;
+}
+.center-icon.amber {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+.center-title { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+.center-text { font-size: 12px; color: var(--text-dim); line-height: 1.5; margin-bottom: 16px; }
+.center-btn {
+  padding: 9px 18px;
+  border-radius: 8px;
+  background: var(--bg-card);
+  border: 1px solid rgba(102, 192, 244, 0.3);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: var(--font);
+}
+.center-btn.focused { border-color: var(--accent); outline: 1px solid var(--accent); outline-offset: -3px; }
+
+/* ─── Sysinfo ─── */
+.view-sysinfo {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.sysinfo-card {
+  background: rgba(27, 40, 56, 0.85);
+  border: 1px solid rgba(102, 192, 244, 0.15);
+  border-radius: 14px;
+  padding: 20px;
+  width: 100%;
+  max-width: 700px;
+}
+.sysinfo-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(59, 92, 120, 0.4);
+  margin-bottom: 12px;
+  color: var(--accent);
+}
+.sysinfo-header h2 { font-size: 14px; color: var(--text); font-weight: 700; }
+.sysinfo-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.spec-item {
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+.spec-item.span2 { grid-column: span 2; }
+.spec-label {
+  display: block;
+  font-size: 9px;
+  color: var(--text-dim);
+  margin-bottom: 3px;
+}
+.spec-value { font-size: 11px; font-weight: 700; color: var(--text); }
+
+/* ─── Footer ─── */
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+  border-top: 1px solid rgba(59, 92, 120, 0.4);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.hints { display: flex; gap: 12px; }
+.hint { display: flex; align-items: center; gap: 4px; }
+.hint kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--accent);
+  font-family: var(--mono);
+}
+.build-tag {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: rgba(148, 163, 184, 0.5);
+}
+
+/* ─── Overlays ─── */
+.overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.15s ease;
+}
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.menu-panel {
+  width: 800px;
+  height: 480px;
+  background: var(--bg-panel);
+  border: 1px solid rgba(102, 192, 244, 0.3);
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.menu-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(59, 92, 120, 0.4);
+  color: var(--accent);
+}
+.menu-header h3 { font-size: 13px; font-weight: 700; color: var(--text); }
+.menu-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 12px;
+  overflow: hidden;
+}
+.menu-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 10px;
+  border-right: 1px solid rgba(59, 92, 120, 0.3);
+}
+.menu-cat {
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  cursor: pointer;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  font-family: var(--font);
+  transition: background 0.15s, color 0.15s;
+}
+.menu-cat:hover { color: var(--text); background: rgba(255, 255, 255, 0.04); }
+.menu-cat.focused {
+  color: var(--accent);
+  background: var(--bg-card);
+  border-color: rgba(102, 192, 244, 0.3);
+}
+.menu-content {
+  overflow-y: auto;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.menu-content h4 {
+  font-size: 12px;
+  color: var(--text);
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+.menu-setting {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.menu-setting strong { color: var(--text); font-weight: 600; display: block; margin-bottom: 2px; }
+.menu-setting small { font-size: 9px; color: var(--text-dim); }
+.menu-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 8px;
+  border-top: 1px solid rgba(59, 92, 120, 0.4);
+}
+.menu-close-btn {
+  padding: 7px 16px;
+  background: var(--bg-card);
+  border: 1px solid rgba(102, 192, 244, 0.3);
+  color: var(--accent);
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: var(--font);
+}
+
+.power-popup {
+  width: 360px;
+  background: var(--bg-panel);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 16px;
+  padding: 20px;
+  text-align: center;
+}
+.power-popup-icon {
+  width: 48px; height: 48px;
+  border-radius: 12px;
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--danger);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 10px;
+  font-size: 22px;
+}
+.power-popup h3 { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+.power-popup p { font-size: 10px; color: var(--text-dim); margin-bottom: 14px; }
+.power-actions { display: flex; flex-direction: column; gap: 6px; }
+.power-action-btn {
+  padding: 9px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: var(--font);
+  background: var(--bg-card);
+  border: 1px solid rgba(102, 192, 244, 0.3);
+  color: var(--text);
+}
+.power-action-btn.focused { border-color: var(--accent); outline: 1px solid var(--accent); outline-offset: -3px; }
+.power-action-btn.danger {
+  background: rgba(239, 68, 68, 0.9);
+  border-color: var(--danger);
+  color: #fff;
+}
+.power-action-btn.ghost {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--text-dim);
+}
+
+.game-detail {
+  width: 700px;
+  background: var(--bg-panel);
+  border: 1px solid rgba(102, 192, 244, 0.3);
+  border-radius: 16px;
+  padding: 24px;
+}
+.game-detail-hero {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(59, 92, 120, 0.4);
+  margin-bottom: 16px;
+}
+.game-detail-cover {
+  width: 110px; height: 140px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.4);
+  background: linear-gradient(135deg, var(--c1, #1e3a5f), var(--c2, #0f172a));
+}
+.game-detail-info h2 { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
+.game-detail-info p { font-size: 11px; color: var(--text-dim); margin-bottom: 10px; }
+.game-detail-stats {
+  display: flex;
+  gap: 20px;
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.game-detail-stats span { color: var(--text-dim); }
+.game-detail-stats strong { color: var(--accent); display: block; font-size: 13px; margin-top: 2px; }
+.game-detail-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.game-detail-btn {
+  padding: 9px 20px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: var(--font);
+  background: var(--bg-card);
+  border: 1px solid rgba(102, 192, 244, 0.3);
+  color: var(--accent);
+}
+.game-detail-btn.focused { outline: 1px solid var(--accent); outline-offset: -3px; }
+.game-detail-btn.primary { background: var(--accent); color: var(--bg-deep); border-color: var(--accent); }
+
+.sleep-overlay {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: rgba(148, 163, 184, 0.8);
+  cursor: pointer;
+  animation: fadeIn 0.3s ease;
+}
+.sleep-overlay svg { color: var(--accent); opacity: 0.6; }
+.sleep-overlay p { font-size: 11px; }
+
+.shutdown-overlay {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(148, 163, 184, 0.5);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.toast {
+  position: absolute;
+  bottom: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-panel);
+  border: 1px solid rgba(102, 192, 244, 0.4);
+  color: var(--text);
+  font-size: 11px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 50;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.toast.visible { opacity: 1; }
+.toast svg { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div id="canvas">
+  <div id="ambient"></div>
+  <div id="safe-area">
+    <header class="top-bar" id="top-bar"></header>
+    <main id="main-view"></main>
+    <footer class="footer" id="footer"></footer>
+  </div>
+  <div id="overlays"></div>
+</div>
+
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════════════
+// ICONS (inline SVG — sem CDN, sem dependência)
+// ═══════════════════════════════════════════════════════════════
+const ICONS = {
+  power: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>',
+  moon: '<svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>',
+  gear: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  play: '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>',
+  prev: '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><polygon points="19 20 9 12 19 4 19 20"/><rect x="5" y="4" width="2" height="16"/></svg>',
+  next: '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4"/><rect x="17" y="4" width="2" height="16"/></svg>',
+  check: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>',
+  info: '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+};
+
+// ═══════════════════════════════════════════════════════════════
+// DATA
+// ═══════════════════════════════════════════════════════════════
+const GAMES = [
+  { title: 'Celeste',           category: 'Plataforma',    color: '#1e3a5f', color2: '#0f172a', hours: 24.5 },
+  { title: 'Hollow Knight',     category: 'Metroidvania',  color: '#2d3748', color2: '#111827', hours: 41.2 },
+  { title: 'Stardew Valley',    category: 'RPG / Sim',     color: '#064e3b', color2: '#042f2e', hours: 87.0 },
+  { title: 'Cuphead',           category: 'Run and Gun',   color: '#78350f', color2: '#431407', hours: 12.3 },
+  { title: 'Sonic Mania',       category: 'Plataforma',    color: '#1e40af', color2: '#0c1e5f', hours: 6.8 },
+  { title: 'Dead Cells',        category: 'Roguelike',     color: '#7f1d1d', color2: '#450a0a', hours: 33.1 },
+  { title: 'Ori and the Blind Forest', category: 'Aventura', color: '#134e4a', color2: '#022c22', hours: 9.4 },
+  { title: 'Hades',             category: 'Action Roguelike', color: '#7c2d12', color2: '#431407', hours: 52.7 },
+];
+
+const TABS = ['music', 'home', 'library', 'store', 'sysinfo'];
+const TAB_LABELS = { music: 'Música', home: 'Home', library: 'Biblioteca', store: 'Loja', sysinfo: 'Info' };
+const MENU_CATEGORIES = ['appearance', 'sound', 'network', 'controller', 'system', 'about'];
+const MENU_LABELS = {
+  appearance: '🎨 Aparência',
+  sound: '🔊 Som',
+  network: '📶 Rede & BT',
+  controller: '🎮 Controle',
+  system: '🛠️ Sistema',
+  about: 'ℹ️ Sobre',
+};
+
+// ═══════════════════════════════════════════════════════════════
+// FOCUS CONFIG — quantas colunas/linhas cada zona tem
+// ═══════════════════════════════════════════════════════════════
+const FOCUS_ZONES = {
+  'game-grid':           { cols: 4 },
+  'music-controls':      { cols: 3 },
+  'home-action':         { cols: 1 },
+  'store-action':        { cols: 1 },
+  'menu-sidebar':        { cols: 1 },
+  'power-actions':       { cols: 1 },
+  'game-detail-actions': { cols: 2 },
+};
+
+// ═══════════════════════════════════════════════════════════════
+// STATE (único, imutável por reducer)
+// ═══════════════════════════════════════════════════════════════
+const initialState = () => ({
+  stack: [{ type: 'tab', id: 'library' }],
+  focus: { zone: 'game-grid', index: 0 },
+  savedFocus: {},
+  games: GAMES,
+  selectedGame: null,
+  menuCategory: 'appearance',
+  sleeping: false,
+  shutdown: false,
+  toast: { msg: '', visible: false, timer: 0 },
+  settings: { volume: 75, wifi: true, bluetooth: true, theme: 'dark' },
+});
+
+let State = initialState();
+
+// ═══════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════
+const tabZone = (tabId) => ({
+  music: 'music-controls',
+  home: 'home-action',
+  library: 'game-grid',
+  store: 'store-action',
+  sysinfo: null,
+}[tabId]);
+
+const overlayZone = (overlayId) => ({
+  menu: 'menu-sidebar',
+  'power-popup': 'power-actions',
+  'game-detail': 'game-detail-actions',
+}[overlayId]);
+
+const currentTop = (state) => state.stack[state.stack.length - 1];
+const hasOverlay = (state) => state.stack.some(s => s.type === 'overlay');
+
+function showToast(msg) {
+  if (State.toast.timer) clearTimeout(State.toast.timer);
+  const timer = setTimeout(() => dispatch('HIDE_TOAST'), 2000);
+  dispatch('SHOW_TOAST', { msg, timer });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// REDUCER (puro: state + cmd → state)
+// ═══════════════════════════════════════════════════════════════
+function reduce(state, cmd, payload) {
+  switch (cmd) {
+
+    // ─── Navegação ───
+    case 'NAV_UP': case 'NAV_DOWN': case 'NAV_LEFT': case 'NAV_RIGHT':
+      return navigate(state, cmd.replace('NAV_', ''));
+
+    case 'CONFIRM': {
+      const zone = state.focus.zone;
+      const idx = state.focus.index;
+
+      if (zone === 'game-grid') {
+        return {
+          ...state,
+          stack: [...state.stack, { type: 'overlay', id: 'game-detail' }],
+          selectedGame: state.games[idx],
+          savedFocus: { ...state.savedFocus, 'game-grid': idx },
+          focus: { zone: 'game-detail-actions', index: 0 },
+        };
+      }
+      if (zone === 'music-controls') {
+        showToast(['Faixa anterior', 'Play / Pause', 'Próxima faixa'][idx]);
+        return state;
+      }
+      if (zone === 'home-action' || zone === 'store-action') {
+        return switchTab(state, 'library');
+      }
+      if (zone === 'menu-sidebar') {
+        return { ...state, menuCategory: MENU_CATEGORIES[idx] };
+      }
+      if (zone === 'power-actions') {
+        if (idx === 0) return { ...state, stack: state.stack.slice(0, -1), sleeping: true };
+        if (idx === 1) return { ...state, stack: state.stack.slice(0, -1), shutdown: true };
+        if (idx === 2) return goBack(state);
+      }
+      if (zone === 'game-detail-actions') {
+        if (idx === 0) {
+          showToast(`Iniciando ${state.selectedGame.title}...`);
+          return state;
+        }
+        return goBack(state);
+      }
+      return state;
+    }
+
+    case 'BACK':
+      return goBack(state);
+
+    // ─── Tabs ───
+    case 'TAB_LEFT':
+      if (hasOverlay(state)) return state;
+      return switchTabRelative(state, -1);
+
+    case 'TAB_RIGHT':
+      if (hasOverlay(state)) return state;
+      return switchTabRelative(state, 1);
+
+    // ─── Menu ───
+    case 'TOGGLE_MENU': {
+      const top = currentTop(state);
+      if (top.type === 'overlay') {
+        if (top.id === 'menu') return goBack(state);
+        return state;
+      }
+      return {
+        ...state,
+        stack: [...state.stack, { type: 'overlay', id: 'menu' }],
+        focus: { zone: 'menu-sidebar', index: 0 },
+      };
+    }
+
+    // ─── Power ───
+    case 'POWER_SHORT':
+      if (hasOverlay(state)) return state;
+      return { ...state, sleeping: true };
+
+    case 'POWER_LONG_FIRE': {
+      if (hasOverlay(state)) return state;
+      return {
+        ...state,
+        stack: [...state.stack, { type: 'overlay', id: 'power-popup' }],
+        focus: { zone: 'power-actions', index: 0 },
+      };
+    }
+
+    case 'WAKE':
+      return { ...state, sleeping: false };
+
+    case 'REBOOT':
+      return initialState();
+
+    // ─── Toast ───
+    case 'SHOW_TOAST':
+      return { ...state, toast: { msg: payload.msg, visible: true, timer: payload.timer } };
+    case 'HIDE_TOAST':
+      return { ...state, toast: { ...state.toast, visible: false } };
+
+    default:
+      return state;
+  }
+}
+
+function navigate(state, dir) {
+  const zone = state.focus.zone;
+  if (!zone) return state;
+  const config = FOCUS_ZONES[zone];
+  if (!config) return state;
+
+  const count = zoneCount(state, zone);
+  if (count <= 0) return state;
+
+  const cols = Math.min(config.cols, count);
+  const rows = Math.ceil(count / cols);
+  const idx = state.focus.index;
+  const row = Math.floor(idx / cols);
+  const col = idx % cols;
+
+  let r = row, c = col;
+  if (dir === 'UP')    r = Math.max(0, row - 1);
+  if (dir === 'DOWN')  r = Math.min(rows - 1, row + 1);
+  if (dir === 'LEFT')  c = Math.max(0, col - 1);
+  if (dir === 'RIGHT') c = Math.min(cols - 1, col + 1);
+
+  let newIdx = r * cols + c;
+  if (newIdx >= count) newIdx = count - 1;
+
+  if (newIdx === idx) return state;
+  return { ...state, focus: { ...state.focus, index: newIdx } };
+}
+
+function zoneCount(state, zone) {
+  if (zone === 'game-grid') return state.games.length;
+  if (zone === 'music-controls') return 3;
+  if (zone === 'menu-sidebar') return MENU_CATEGORIES.length;
+  if (zone === 'power-actions') return 3;
+  if (zone === 'game-detail-actions') return 2;
+  if (zone === 'home-action' || zone === 'store-action') return 1;
+  return 0;
+}
+
+function goBack(state) {
+  if (state.stack.length <= 1) return state;
+  const newStack = state.stack.slice(0, -1);
+  const top = newStack[newStack.length - 1];
+  let newFocus;
+  if (top.type === 'tab') {
+    const z = tabZone(top.id);
+    newFocus = { zone: z, index: z ? (state.savedFocus[z] || 0) : 0 };
+  } else {
+    newFocus = { zone: overlayZone(top.id), index: 0 };
+  }
+  return { ...state, stack: newStack, focus: newFocus };
+}
+
+function switchTab(state, tabId) {
+  const z = tabZone(tabId);
+  return {
+    ...state,
+    stack: [{ type: 'tab', id: tabId }],
+    focus: { zone: z, index: z ? (state.savedFocus[z] || 0) : 0 },
+  };
+}
+
+function switchTabRelative(state, dir) {
+  const currentId = state.stack[0].id;
+  const idx = TABS.indexOf(currentId);
+  const newId = TABS[(idx + dir + TABS.length) % TABS.length];
+  return switchTab(state, newId);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DISPATCH + RENDER LOOP
+// ═══════════════════════════════════════════════════════════════
+function dispatch(cmd, payload) {
+  const prev = State;
+  State = reduce(State, cmd, payload);
+  if (State !== prev) render();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════════════════════════
+function render() {
+  renderTopBar();
+  renderMain();
+  renderFooter();
+  renderOverlays();
+  updatePowerRing();
+  renderToast();
+}
+
+function renderTopBar() {
+  const currentTab = State.stack[0].id;
+  const tabsHTML = TABS.map(id => `
+    <button class="tab ${id === currentTab ? 'active' : ''}" data-tab="${id}">${TAB_LABELS[id]}</button>
+  `).join('');
+
+  const ringCirc = 2 * Math.PI * 16;
+  document.getElementById('top-bar').innerHTML = `
+    <div class="tabs">${tabsHTML}</div>
+    <div class="indicators">
+      <button class="menu-btn" data-action="menu">${ICONS.gear} Menu</button>
+      <button class="power-btn" id="power-btn" title="Clique: dormir • Segure: opções">
+        <svg class="power-ring" viewBox="0 0 36 36">
+          <circle cx="18" cy="18" r="16" fill="none" stroke="rgba(239,68,68,0.2)" stroke-width="2"/>
+          <circle class="power-ring-progress" cx="18" cy="18" r="16" fill="none" stroke="#ef4444" stroke-width="2"
+                  stroke-dasharray="${ringCirc.toFixed(2)}" stroke-dashoffset="${ringCirc.toFixed(2)}"
+                  transform="rotate(-90 18 18)"/>
+        </svg>
+        <span class="power-icon">${ICONS.power}</span>
+      </button>
+      <div class="battery"><span class="battery-dot"></span>89%</div>
+      <div class="clock" id="clock-time">--:--</div>
+    </div>
+  `;
+  bindPowerButton();
+  updateClock();
+}
+
+function renderMain() {
+  const tabId = State.stack[0].id;
+  const content = {
+    library: renderLibrary,
+    music: renderMusic,
+    home: renderHome,
+    store: renderStore,
+    sysinfo: renderSysinfo,
+  }[tabId]?.() || '';
+
+  document.getElementById('main-view').innerHTML = content;
+}
+
+function renderLibrary() {
+  const focused = State.focus.zone === 'game-grid' ? State.focus.index : -1;
+  const cards = State.games.map((g, i) => `
+    <div class="game-card ${i === focused ? 'focused' : ''}"
+         data-game-index="${i}"
+         style="--c1:${g.color};--c2:${g.color2}">
+      <div class="game-category">${g.category}</div>
+      <div class="game-info">
+        <div class="game-title">${g.title}</div>
+        <div class="game-status">Pronto para iniciar</div>
+      </div>
+    </div>
+  `).join('');
+
+  return `
+    <div class="view-library">
+      <div class="view-header">
+        <h2>Biblioteca de Jogos</h2>
+        <span class="view-hint">A Abrir • Q/E Trocar aba</span>
+      </div>
+      <div class="game-grid">${cards}</div>
+    </div>
+  `;
+}
+
+function renderMusic() {
+  const focused = State.focus.zone === 'music-controls' ? State.focus.index : -1;
+  const btns = [
+    { icon: ICONS.prev, label: 'Anterior', cls: '' },
+    { icon: ICONS.pause, label: 'Pausar', cls: 'primary' },
+    { icon: ICONS.next, label: 'Próxima', cls: '' },
+  ].map((b, i) => `
+    <button class="music-btn ${b.cls} ${i === focused ? 'focused' : ''}" data-music-btn="${i}">
+      ${b.icon} ${b.label}
+    </button>
+  `).join('');
+
+  return `
+    <div class="view-music">
+      <div class="music-panel music-now">
+        <div class="music-cover">${ICONS.play}</div>
+        <div class="music-label">Reproduzindo</div>
+        <div class="music-title">Neon Horizon</div>
+        <div class="music-artist">CyberPulse & Synthetics</div>
+        <div class="music-album">Retrowave Sessions Vol. 1</div>
+      </div>
+      <div class="music-panel music-queue">
+        <div>
+          <div class="music-queue-title">Fila de Reprodução</div>
+          <div class="music-queue-item"><span>1. Midnight Runner — Synthwave Boy</span><span>3:15</span></div>
+          <div class="music-queue-item"><span>2. Starlight Highway — Nebula</span><span>4:02</span></div>
+          <div class="music-queue-item"><span>3. Afterglow — Vector</span><span>3:48</span></div>
+        </div>
+        <div class="music-controls">${btns}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderHome() {
+  const focused = State.focus.zone === 'home-action' ? 'focused' : '';
+  return `
+    <div class="view-centered">
+      <div class="center-card">
+        <div class="center-icon">🎮</div>
+        <div class="center-title">HandheldOS Home</div>
+        <p class="center-text">
+          Última atividade: <strong>Celeste</strong> (24.5 horas jogadas).<br>
+          Seus amigos estão online jogando <strong>Hollow Knight</strong>.
+        </p>
+        <button class="center-btn ${focused}" data-action="goto-library">Ver Biblioteca</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderStore() {
+  const focused = State.focus.zone === 'store-action' ? 'focused' : '';
+  return `
+    <div class="view-centered">
+      <div class="center-card">
+        <div class="center-icon amber">🛒</div>
+        <div class="center-title">Loja HandheldOS</div>
+        <p class="center-text">
+          Explore lançamentos otimizados para arquitetura portátil
+          com aceleração gráfica nativa.
+        </p>
+        <button class="center-btn ${focused}" data-action="goto-library">Explorar</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderSysinfo() {
+  return `
+    <div class="view-sysinfo">
+      <div class="sysinfo-card">
+        <div class="sysinfo-header">
+          ${ICONS.info}
+          <h2>Informações do Sistema</h2>
+        </div>
+        <div class="sysinfo-grid">
+          <div class="spec-item"><span class="spec-label">Sistema Operacional</span><span class="spec-value">HandheldOS v2.4 (Bloco 1)</span></div>
+          <div class="spec-item"><span class="spec-label">Processador</span><span class="spec-value">RK3326 (4×A35 @ 1.5GHz)</span></div>
+          <div class="spec-item"><span class="spec-label">GPU</span><span class="spec-value">Mali-G31 MP2</span></div>
+          <div class="spec-item"><span class="spec-label">RAM</span><span class="spec-value">1 GB LPDDR3</span></div>
+          <div class="spec-item span2"><span class="spec-label">Armazenamento</span><span class="spec-value">32 GB eMMC • Leitura ~150 MB/s</span></div>
+          <div class="spec-item"><span class="spec-label">Display</span><span class="spec-value">640×480 / 720p escalável</span></div>
+          <div class="spec-item"><span class="spec-label">Entrada</span><span class="spec-value">Gamepad-first (D-pad + A/B)</span></div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderFooter() {
+  const top = currentTop(State);
+  let hints;
+  if (top.type === 'overlay' && top.id === 'menu') {
+    hints = [['↑↓', 'Navegar'], ['A', 'Selecionar'], ['B', 'Fechar']];
+  } else if (top.type === 'overlay' && top.id === 'power-popup') {
+    hints = [['↑↓', 'Navegar'], ['A', 'Confirmar'], ['B', 'Cancelar']];
+  } else if (top.type === 'overlay' && top.id === 'game-detail') {
+    hints = [['←→', 'Navegar'], ['A', 'Confirmar'], ['B', 'Voltar']];
+  } else {
+    hints = [['A', 'Selecionar'], ['B', 'Voltar'], ['Q/E', 'Aba'], ['Tab', 'Menu'], ['P', 'Power']];
+  }
+
+  document.getElementById('footer').innerHTML = `
+    <div class="hints">
+      ${hints.map(([k, l]) => `<span class="hint"><kbd>${k}</kbd> ${l}</span>`).join('')}
+    </div>
+    <div class="build-tag">HandheldOS • Bloco 1 • 1280×720</div>
+  `;
+}
+
+function renderOverlays() {
+  const overlays = document.getElementById('overlays');
+  let html = '';
+
+  // Camadas da stack que são overlays
+  State.stack.filter(s => s.type === 'overlay').forEach(o => {
+    if (o.id === 'menu') html += renderMenuOverlay();
+    if (o.id === 'power-popup') html += renderPowerPopup();
+    if (o.id === 'game-detail') html += renderGameDetail();
+  });
+
+  // Sleep / Shutdown têm prioridade máxima
+  if (State.sleeping) {
+    html += `
+      <div class="sleep-overlay" id="sleep-overlay">
+        ${ICONS.moon}
+        <p>Sistema em suspensão. Toque ou pressione qualquer tecla para acordar.</p>
+      </div>
+    `;
+  }
+  if (State.shutdown) {
+    html += `<div class="shutdown-overlay">Sistema desligado.</div>`;
+  }
+
+  overlays.innerHTML = html;
+
+  // Bind do wake
+  const sleep = document.getElementById('sleep-overlay');
+  if (sleep) sleep.addEventListener('pointerdown', (e) => {
+    e.stopPropagation();
+    dispatch('WAKE');
+  });
+}
+
+function renderMenuOverlay() {
+  const focused = State.focus.zone === 'menu-sidebar' ? State.focus.index : -1;
+  const cats = MENU_CATEGORIES.map((c, i) => `
+    <button class="menu-cat ${i === focused ? 'focused' : ''}" data-menu-cat="${c}">
+      ${MENU_LABELS[c]}
+    </button>
+  `).join('');
+
+  const content = {
+    appearance: `
+      <h4>Aparência & Temas</h4>
+      <div class="menu-setting"><div><strong>Tema SteamDeck Dark</strong><small>Visual padrão otimizado OLED</small></div><span>✓</span></div>
+      <div class="menu-setting"><div><strong>Brilho Automático</strong><small>Ajusta conforme sensor de luz</small></div><span>✓</span></div>
+    `,
+    sound: `
+      <h4>Som & Mix</h4>
+      <div class="menu-setting"><div><strong>Volume Geral</strong><small>${State.settings.volume}%</small></div><span>75%</span></div>
+      <div class="menu-setting"><div><strong>Efeitos de UI</strong><small>Sons ao navegar</small></div><span>✓</span></div>
+    `,
+    network: `
+      <h4>Rede & Bluetooth</h4>
+      <div class="menu-setting"><div><strong>Wi-Fi</strong><small>Conectado — Gamer_5G</small></div><span style="color:#10b981">Ligado</span></div>
+      <div class="menu-setting"><div><strong>Bluetooth</strong><small>Pareado com Controle Pro</small></div><span style="color:#66c0f4">Ativo</span></div>
+    `,
+    controller: `
+      <h4>Mapeamento de Controle</h4>
+      <div class="menu-setting"><div><strong>Start</strong><small>Menu contextual</small></div><span>Fixo</span></div>
+      <div class="menu-setting"><div><strong>Select</strong><small>Abrir menu principal</small></div><span>Fixo</span></div>
+      <div class="menu-setting"><div><strong>Volume +/-</strong><small>Controle físico</small></div><span>Fixo</span></div>
+    `,
+    system: `
+      <h4>Sistema & Atualizações</h4>
+      <div class="menu-setting"><div><strong>Versão</strong><small>HandheldOS v2.4 Stable</small></div><span>Atualizado</span></div>
+    `,
+    about: `
+      <h4>Sobre o HandheldOS</h4>
+      <p style="line-height:1.6">Desenvolvido em Rust para consoles portáteis ARM. Oferece alto desempenho, consumo otimizado de bateria e suporte a múltiplos launchers.</p>
+    `,
+  }[State.menuCategory] || '';
+
+  return `
+    <div class="overlay-backdrop">
+      <div class="menu-panel">
+        <div class="menu-header">
+          ${ICONS.gear}
+          <h3>Menu de Configurações</h3>
+        </div>
+        <div class="menu-body">
+          <div class="menu-sidebar">${cats}</div>
+          <div class="menu-content">${content}</div>
+        </div>
+        <div class="menu-footer">
+          <button class="menu-close-btn" data-action="close-menu">Salvar & Fechar</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderPowerPopup() {
+  const focused = State.focus.zone === 'power-actions' ? State.focus.index : -1;
+  const actions = [
+    { label: '🌙 Suspender Tela', cls: '' },
+    { label: '⏻ Desligar Sistema', cls: 'danger' },
+    { label: 'Cancelar', cls: 'ghost' },
+  ].map((a, i) => `
+    <button class="power-action-btn ${a.cls} ${i === focused ? 'focused' : ''}" data-power-action="${i}">
+      ${a.label}
+    </button>
+  `).join('');
+
+  return `
+    <div class="overlay-backdrop">
+      <div class="power-popup">
+        <div class="power-popup-icon">${ICONS.power}</div>
+        <h3>Opções de Energia</h3>
+        <p>O que deseja fazer com o HandheldOS?</p>
+        <div class="power-actions">${actions}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderGameDetail() {
+  const g = State.selectedGame;
+  if (!g) return '';
+  const focused = State.focus.zone === 'game-detail-actions' ? State.focus.index : -1;
+
+  return `
+    <div class="overlay-backdrop">
+      <div class="game-detail">
+        <div class="game-detail-hero">
+          <div class="game-detail-cover" style="--c1:${g.color};--c2:${g.color2}">
+            ${g.title.charAt(0)}
+          </div>
+          <div class="game-detail-info">
+            <h2>${g.title}</h2>
+            <p>${g.category}</p>
+            <div class="game-detail-stats">
+              <div><span>Horas jogadas</span><strong>${g.hours.toFixed(1)}h</strong></div>
+              <div><span>Última sessão</span><strong>Hoje</strong></div>
+              <div><span>Conquistas</span><strong>12 / 20</strong></div>
+            </div>
+          </div>
+        </div>
+        <div class="game-detail-actions">
+          <button class="game-detail-btn ${focused === 0 ? 'focused' : ''}" data-detail-action="0">▶ Jogar</button>
+          <button class="game-detail-btn primary ${focused === 1 ? 'focused' : ''}" data-detail-action="1">Voltar</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderToast() {
+  let toastEl = document.getElementById('toast-el');
+  if (!toastEl) {
+    toastEl = document.createElement('div');
+    toastEl.id = 'toast-el';
+    toastEl.className = 'toast';
+    document.getElementById('overlays').appendChild(toastEl);
+  }
+  toastEl.innerHTML = `${ICONS.check} <span>${State.toast.msg}</span>`;
+  toastEl.classList.toggle('visible', State.toast.visible);
+}
+
+function updateClock() {
+  const el = document.getElementById('clock-time');
+  if (!el) return;
+  const now = new Date();
+  el.textContent =
+    String(now.getHours()).padStart(2, '0') + ':' +
+    String(now.getMinutes()).padStart(2, '0');
+}
+setInterval(updateClock, 1000);
+
+// ═══════════════════════════════════════════════════════════════
+// POWER HOLD (progress ring + long press)
+// ═══════════════════════════════════════════════════════════════
+let powerHoldTimer = null;
+let powerHoldStart = 0;
+const POWER_HOLD_MS = 1500;
+const POWER_TAP_MS = 500;
+
+function startPowerHold() {
+  if (State.sleeping || State.shutdown) return;
+  powerHoldStart = Date.now();
+  startPowerRing();
+  powerHoldTimer = setTimeout(() => {
+    powerHoldTimer = null;
+    dispatch('POWER_LONG_FIRE');
+    stopPowerRing();
+  }, POWER_HOLD_MS);
+}
+
+function endPowerHold() {
+  if (!powerHoldTimer) return;
+  clearTimeout(powerHoldTimer);
+  powerHoldTimer = null;
+  stopPowerRing();
+  const elapsed = Date.now() - powerHoldStart;
+  if (elapsed < POWER_TAP_MS) {
+    const hasPowerPopup = State.stack.some(s => s.id === 'power-popup');
+    dispatch(hasPowerPopup ? 'BACK' : 'POWER_SHORT');
+  }
+}
+
+function startPowerRing() {
+  const ring = document.querySelector('.power-ring-progress');
+  if (!ring) return;
+  const circ = 2 * Math.PI * 16;
+  ring.style.transition = 'none';
+  ring.style.strokeDashoffset = circ;
+  void ring.getBoundingClientRect();
+  ring.style.transition = `stroke-dashoffset ${POWER_HOLD_MS}ms linear`;
+  ring.style.strokeDashoffset = 0;
+}
+
+function stopPowerRing() {
+  const ring = document.querySelector('.power-ring-progress');
+  if (!ring) return;
+  const circ = 2 * Math.PI * 16;
+  ring.style.transition = 'stroke-dashoffset 0.2s ease';
+  ring.style.strokeDashoffset = circ;
+}
+
+function updatePowerRing() { /* opcional: hook para re-render */ }
+
+function bindPowerButton() {
+  const btn = document.getElementById('power-btn');
+  if (!btn) return;
+  btn.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    btn.setPointerCapture(e.pointerId);
+    startPowerHold();
+  });
+  btn.addEventListener('pointerup', (e) => {
+    e.preventDefault();
+    endPowerHold();
+  });
+  btn.addEventListener('pointercancel', endPowerHold);
+  btn.addEventListener('pointerleave', () => {
+    // Em touch com capture, pointerleave pode não disparar durante o hold
+    if (powerHoldTimer) endPowerHold();
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// INPUT (teclado → comandos)
+// ═══════════════════════════════════════════════════════════════
+const KEYMAP = {
+  'ArrowUp': 'NAV_UP',
+  'ArrowDown': 'NAV_DOWN',
+  'ArrowLeft': 'NAV_LEFT',
+  'ArrowRight': 'NAV_RIGHT',
+  'Enter': 'CONFIRM',
+  ' ': 'CONFIRM',
+  'Escape': 'BACK',
+  'Tab': 'TOGGLE_MENU',
+  'q': 'TAB_LEFT',
+  'e': 'TAB_RIGHT',
+  'p': 'POWER_SHORT',
+};
+
+window.addEventListener('keydown', (e) => {
+  // Shutdown: apenas reboot
+  if (State.shutdown) {
+    if (e.key.toLowerCase() === 'p' || e.key === 'Enter') {
+      e.preventDefault();
+      dispatch('REBOOT');
+    }
+    return;
+  }
+
+  // Sleep: qualquer tecla acorda
+  if (State.sleeping) {
+    e.preventDefault();
+    dispatch('WAKE');
+    return;
+  }
+
+  const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  const cmd = KEYMAP[key];
+  if (cmd) {
+    e.preventDefault();
+    dispatch(cmd);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// CLICK DELEGATION (mouse/touch → comandos)
+// ═══════════════════════════════════════════════════════════════
+document.addEventListener('click', (e) => {
+  // Tab
+  const tab = e.target.closest('[data-tab]');
+  if (tab) { dispatch('TAB_SWITCH', null); /* fallback */ }
+
+  // Tab click (setas Q/E equivalentes não fazem sentido aqui)
+  if (tab) {
+    State = switchTab(State, tab.dataset.tab);
+    render();
+    return;
+  }
+
+  // Game card
+  const gameCard = e.target.closest('[data-game-index]');
+  if (gameCard) {
+    State = { ...State, focus: { zone: 'game-grid', index: parseInt(gameCard.dataset.gameIndex) } };
+    dispatch('CONFIRM');
+    return;
+  }
+
+  // Music buttons
+  const musicBtn = e.target.closest('[data-music-btn]');
+  if (musicBtn) {
+    State = { ...State, focus: { zone: 'music-controls', index: parseInt(musicBtn.dataset.musicBtn) } };
+    dispatch('CONFIRM');
+    return;
+  }
+
+  // Menu category
+  const menuCat = e.target.closest('[data-menu-cat]');
+  if (menuCat) {
+    const idx = MENU_CATEGORIES.indexOf(menuCat.dataset.menuCat);
+    State = { ...State, focus: { zone: 'menu-sidebar', index: idx }, menuCategory: menuCat.dataset.menuCat };
+    render();
+    return;
+  }
+
+  // Menu close
+  if (e.target.closest('[data-action="close-menu"]')) {
+    dispatch('BACK');
+    return;
+  }
+
+  // Menu button in header
+  if (e.target.closest('[data-action="menu"]')) {
+    dispatch('TOGGLE_MENU');
+    return;
+  }
+
+  // Home/Store action
+  if (e.target.closest('[data-action="goto-library"]')) {
+    State = switchTab(State, 'library');
+    render();
+    return;
+  }
+
+  // Power actions
+  const powerAction = e.target.closest('[data-power-action]');
+  if (powerAction) {
+    State = { ...State, focus: { zone: 'power-actions', index: parseInt(powerAction.dataset.powerAction) } };
+    dispatch('CONFIRM');
+    return;
+  }
+
+  // Game detail actions
+  const detailAction = e.target.closest('[data-detail-action]');
+  if (detailAction) {
+    State = { ...State, focus: { zone: 'game-detail-actions', index: parseInt(detailAction.dataset.detailAction) } };
+    dispatch('CONFIRM');
+    return;
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// CANVAS SCALE-TO-FIT (safe area 960×720 como referência)
+// ═══════════════════════════════════════════════════════════════
+function fitCanvas() {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const canvas = document.getElementById('canvas');
+
+  // Escala baseada na SAFE AREA, não no canvas
+  const scale = Math.min(vw / 960, vh / 720);
+  const scaledW = 1280 * scale;
+  const scaledH = 720 * scale;
+  const offsetX = (vw - scaledW) / 2;
+  const offsetY = (vh - scaledH) / 2;
+
+  canvas.style.transform = `scale(${scale})`;
+  canvas.style.left = offsetX + 'px';
+  canvas.style.top = offsetY + 'px';
+}
+window.addEventListener('resize', fitCanvas);
+
+// ═══════════════════════════════════════════════════════════════
+// BOOT
+// ═══════════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  fitCanvas();
+  render();
+});
+</script>
+</body>
+</html>
