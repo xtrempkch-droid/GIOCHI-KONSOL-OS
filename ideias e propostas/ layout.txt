@@ -1,0 +1,496 @@
+```html
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HandheldOS - Steam Deck Style (Rust / Web Preview)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        steam: { dark: '#1b2838', card: '#2a475e', border: '#3b5c78', accent: '#66c0f4', hover: '#417aab' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #0b0f19; color: #f8fafc; user-select: none; overflow: hidden; }
+        .steam-panel { background: rgba(27, 40, 56, 0.85); backdrop-filter: blur(12px); border: 1px solid rgba(102, 192, 244, 0.2); }
+        .game-card { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+        .game-card:hover, .game-card.selected { transform: translateY(-4px) scale(1.02); border-color: #66c0f4; box-shadow: 0 10px 25px -5px rgba(102, 192, 244, 0.3); }
+        /* Animação de Tela Apagada (Sleep) */
+        #sleep-screen { transition: opacity 0.4s ease; }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col justify-between p-4 md:p-6 overflow-hidden bg-[#0b0f19] relative">
+
+    <!-- TELA DE SUSPENSÃO (POWER SLEEP SCREEN) -->
+    <div id="sleep-screen" class="absolute inset-0 bg-black z-50 opacity-0 pointer-events-none flex flex-col items-center justify-center text-slate-500">
+        <i class="fa-solid fa-moon text-4xl mb-3 animate-pulse text-steam-accent"></i>
+        <p class="text-sm">Sistema em Suspensão. Pressione qualquer tecla ou o botão Power para acordar.</p>
+    </div>
+
+    <!-- TOPO: Barra de Navegação Estilo SteamOS -->
+    <header class="flex items-center justify-between pb-3 border-b border-[#3b5c78]/40 shrink-0">
+        <!-- 5 Abas Solicitadas -->
+        <nav class="flex items-center space-x-2 md:space-x-4">
+            <button onclick="switchTab('music')" id="tab-music" class="tab-btn px-4 py-1.5 rounded-lg text-sm font-medium transition-all text-slate-400 hover:text-white">Música</button>
+            <button onclick="switchTab('home')" id="tab-home" class="tab-btn px-4 py-1.5 rounded-lg text-sm font-medium transition-all text-slate-400 hover:text-white">Home</button>
+            <button onclick="switchTab('library')" id="tab-library" class="tab-btn px-4 py-1.5 rounded-lg text-sm font-medium transition-all text-white bg-[#2a475e] border border-[#66c0f4]/40 shadow-sm">Biblioteca</button>
+            <button onclick="switchTab('store')" id="tab-store" class="tab-btn px-4 py-1.5 rounded-lg text-sm font-medium transition-all text-slate-400 hover:text-white">Loja</button>
+            <button onclick="switchTab('sysinfo')" id="tab-sysinfo" class="tab-btn px-4 py-1.5 rounded-lg text-sm font-medium transition-all text-slate-400 hover:text-white">Informações</button>
+        </nav>
+
+        <!-- Indicadores & Atalhos Físicos Simulados -->
+        <div class="flex items-center space-x-3 text-xs font-semibold text-slate-300">
+            <!-- Botão Configurações (Abre via Select) -->
+            <button onclick="toggleSettingsMenu()" class="flex items-center space-x-1.5 px-3 py-1 rounded-lg bg-[#2a475e]/50 hover:bg-[#2a475e] border border-[#66c0f4]/30 transition text-steam-accent cursor-pointer">
+                <i class="fa-solid fa-gear"></i>
+                <span class="hidden sm:inline">Menu (Select)</span>
+            </button>
+            <!-- Botão Power Interativo (Clique rápido suspende, Segurar 3s abre popup) -->
+            <button id="power-btn" onclick="handlePowerClick()" onmousedown="startPowerHold()" onmouseup="endPowerHold()" onttouchstart="startPowerHold()" ontouchend="endPowerHold()" class="flex items-center space-x-1.5 px-3 py-1 rounded-lg bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/40 text-rose-400 transition cursor-pointer" title="Clique para suspender / Segure 3s para desligar">
+                <i class="fa-solid fa-power-off"></i>
+                <span>Power</span>
+            </button>
+            <div class="flex items-center space-x-2 bg-black/40 px-3 py-1 rounded-full border border-white/5 font-mono">
+                <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>89%</span>
+            </div>
+            <div id="clock" class="font-mono text-sm tracking-wider text-white">12:34</div>
+        </div>
+    </header>
+
+    <!-- CONTEÚDO PRINCIPAL (5 ABAS) -->
+    <main class="flex-1 overflow-hidden relative my-4">
+
+        <!-- ABA 1: MÚSICA -->
+        <div id="view-music" class="absolute inset-0 flex flex-col justify-between hidden opacity-0 transition-opacity duration-300">
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center h-full max-h-[440px]">
+                <div class="lg:col-span-5 steam-panel p-6 rounded-2xl flex items-center space-x-6 relative overflow-hidden">
+                    <div class="w-32 h-32 rounded-xl bg-gradient-to-br from-indigo-600 to-steam-card flex items-center justify-center shrink-0 shadow-2xl">
+                        <i class="fa-solid fa-compact-disc text-steam-accent text-5xl animate-spin" style="animation-duration: 8s;"></i>
+                    </div>
+                    <div class="space-y-2">
+                        <span class="px-2 py-0.5 rounded bg-steam-accent/20 text-steam-accent text-[10px] font-bold uppercase">Reproduzindo</span>
+                        <h2 class="text-xl font-bold text-white">Neon Horizon</h2>
+                        <p class="text-slate-300 text-xs">CyberPulse & Synthetics</p>
+                        <p class="text-slate-400 text-[11px]">Retrowave Sessions Vol. 1</p>
+                    </div>
+                </div>
+                <div class="lg:col-span-7 steam-panel p-6 rounded-2xl flex flex-col justify-between h-full">
+                    <h3 class="text-sm font-bold text-steam-accent uppercase"><i class="fa-solid fa-list-music mr-2"></i> Fila de Reprodução & Gestão de Biblioteca</h3>
+                    <div class="space-y-2 my-auto">
+                        <div class="flex justify-between items-center text-xs p-2.5 rounded-lg bg-white/5">
+                            <span class="font-medium text-slate-200">1. Midnight Runner - Synthwave Boy</span>
+                            <span class="text-slate-400 font-mono">3:15</span>
+                        </div>
+                        <div class="flex justify-between items-center text-xs p-2.5 rounded-lg bg-white/5">
+                            <span class="font-medium text-slate-200">2. Starlight Highway - Nebula</span>
+                            <span class="text-slate-400 font-mono">4:02</span>
+                        </div>
+                    </div>
+                    <div class="flex justify-center space-x-4 pt-2">
+                        <button class="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold">⏮ Anterior (Y)</button>
+                        <button onclick="showToast('Música Pausada/Reproduzindo')" class="px-6 py-2 rounded-xl bg-steam-card hover:bg-steam-hover text-xs font-bold text-steam-accent border border-steam-accent/30">⏸ Pausar (A)</button>
+                        <button class="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold">Próxima (X) ⏭</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ABA 2: HOME -->
+        <div id="view-home" class="absolute inset-0 flex flex-col justify-center items-center text-center hidden opacity-0 transition-opacity duration-300">
+            <div class="steam-panel p-8 rounded-3xl max-w-lg space-y-4 shadow-2xl">
+                <div class="w-16 h-16 bg-steam-accent/20 rounded-2xl flex items-center justify-center mx-auto text-steam-accent text-3xl">
+                    <i class="fa-solid fa-house-laptop"></i>
+                </div>
+                <h2 class="text-2xl font-bold text-white">HandheldOS SteamDeck Home</h2>
+                <p class="text-slate-400 text-sm">Última atividade: Celeste (24.5 horas jogadas). Seus amigos estão online jogando Hollow Knight.</p>
+                <button onclick="switchTab('library')" class="px-6 py-2.5 bg-steam-card hover:bg-steam-hover text-steam-accent text-xs font-bold rounded-xl border border-steam-accent/30 transition">Ver Biblioteca</button>
+            </div>
+        </div>
+
+        <!-- ABA 3: BIBLIOTECA (Jogos e Aplicativos) -->
+        <div id="view-library" class="absolute inset-0 flex flex-col justify-between opacity-100 transition-opacity duration-300">
+            <div class="flex items-center justify-between mb-2">
+                <h2 class="text-sm font-bold text-slate-300 uppercase tracking-wider"><i class="fa-solid fa-gamepad text-steam-accent mr-2"></i> Biblioteca de Jogos & Aplicativos Nativos</h2>
+                <span class="text-xs text-slate-500 font-mono">L / R para alternar abas • Setas para navegar</span>
+            </div>
+            <div id="game-grid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 overflow-y-auto pr-2 flex-1 pb-4">
+                <!-- Injetado via JS -->
+            </div>
+        </div>
+
+        <!-- ABA 4: LOJA -->
+        <div id="view-store" class="absolute inset-0 flex flex-col justify-center items-center text-center hidden opacity-0 transition-opacity duration-300">
+            <div class="steam-panel p-8 rounded-3xl max-w-lg space-y-4 shadow-2xl">
+                <div class="w-16 h-16 bg-amber-500/20 rounded-2xl flex items-center justify-center mx-auto text-amber-400 text-3xl">
+                    <i class="fa-solid fa-store"></i>
+                </div>
+                <h2 class="text-2xl font-bold text-white">Loja HandheldOS & Indie Ports</h2>
+                <p class="text-slate-400 text-sm">Explore novos lançamentos .giochi otimizados para arquitetura portátil com aceleração gráfica nativa.</p>
+            </div>
+        </div>
+
+        <!-- ABA 5: INFORMAÇÕES DO SISTEMA (Hardware & Software) -->
+        <div id="view-sysinfo" class="absolute inset-0 flex flex-col justify-center items-center hidden opacity-0 transition-opacity duration-300">
+            <div class="steam-panel p-8 rounded-3xl w-full max-w-2xl space-y-6 shadow-2xl">
+                <div class="flex items-center space-x-3 border-b border-[#3b5c78]/40 pb-4">
+                    <i class="fa-solid fa-circle-info text-steam-accent text-2xl"></i>
+                    <h2 class="text-xl font-bold text-white">Informações do Sistema (Hardware & Software)</h2>
+                </div>
+                <div class="grid grid-cols-2 gap-4 text-xs font-mono">
+                    <div class="bg-black/30 p-3 rounded-xl border border-white/5">
+                        <span class="text-slate-400 block mb-1">Sistema Operacional</span>
+                        <span class="text-white font-bold">HandheldOS v2.4 (SteamDeck Edition)</span>
+                    </div>
+                    <div class="bg-black/30 p-3 rounded-xl border border-white/5">
+                        <span class="text-slate-400 block mb-1">Processador (CPU)</span>
+                        <span class="text-white font-bold">AMD Custom APU 4C/8T</span>
+                    </div>
+                    <div class="bg-black/30 p-3 rounded-xl border border-white/5">
+                        <span class="text-slate-400 block mb-1">Placa Gráfica (GPU)</span>
+                        <span class="text-white font-bold">AMD RDNA 2 (8 CUs)</span>
+                    </div>
+                    <div class="bg-black/30 p-3 rounded-xl border border-white/5">
+                        <span class="text-slate-400 block mb-1">Memória RAM</span>
+                        <span class="text-white font-bold">16 GB LPDDR5 (5500 MT/s)</span>
+                    </div>
+                    <div class="bg-black/30 p-3 rounded-xl border border-white/5 col-span-2">
+                        <span class="text-slate-400 block mb-1">Armazenamento NVMe SSD</span>
+                        <span class="text-white font-bold">512GB (412GB Disponíveis) • Leitura 3200MB/s</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- RODAPÉ: Guia de Comandos do Gamepad -->
+    <footer class="flex items-center justify-between pt-3 border-t border-[#3b5c78]/40 text-xs text-slate-400 font-medium shrink-0">
+        <div class="flex items-center space-x-6">
+            <div class="flex items-center space-x-1.5"><span class="w-5 h-5 rounded-full bg-[#2a475e] text-steam-accent flex items-center justify-center font-bold text-[10px]">L/R</span> <span>Trocar Aba</span></div>
+            <div class="flex items-center space-x-1.5"><span class="w-5 h-5 rounded-full bg-[#2a475e] text-steam-accent flex items-center justify-center font-bold text-[10px]">Select</span> <span>Menu Config</span></div>
+            <div class="flex items-center space-x-1.5"><span class="w-5 h-5 rounded-full bg-[#2a475e] text-steam-accent flex items-center justify-center font-bold text-[10px]">Power</span> <span>Suspender / Desligar</span></div>
+        </div>
+        <div class="text-[11px] text-slate-500 font-mono">
+            <span>Rust Backend (iced UI) • Simulação Web</span>
+        </div>
+    </footer>
+
+    <!-- MENU DE CONFIGURAÇÕES (Aberto via Select / Botão Menu) -->
+    <div id="settings-menu" class="fixed inset-0 bg-black/75 backdrop-blur-md z-40 flex items-center justify-center hidden opacity-0 transition-opacity duration-300">
+        <div class="steam-panel p-6 rounded-3xl w-full max-w-3xl h-[480px] flex flex-col justify-between shadow-2xl border border-steam-accent/30">
+            <div class="flex items-center justify-between border-b border-[#3b5c78]/40 pb-4">
+                <div class="flex items-center space-x-2">
+                    <i class="fa-solid fa-gear text-steam-accent text-lg"></i>
+                    <h3 class="font-bold text-white text-base">Menu de Configurações do Sistema</h3>
+                </div>
+                <button onclick="toggleSettingsMenu()" class="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            
+            <div class="grid grid-cols-12 gap-4 flex-1 my-4 overflow-hidden">
+                <!-- Sidebar de Categorias do Menu -->
+                <div class="col-span-4 space-y-1.5 border-r border-[#3b5c78]/30 pr-3 overflow-y-auto">
+                    <button onclick="switchMenuCat('appearance')" id="mcat-appearance" class="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold bg-steam-card text-steam-accent transition">🎨 Aparência (Tela & Temas)</button>
+                    <button onclick="switchMenuCat('sound')" id="mcat-sound" class="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 transition">🔊 Som (Sistema & Mix)</button>
+                    <button onclick="switchMenuCat('network')" id="mcat-network" class="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 transition">📶 Rede & Bluetooth</button>
+                    <button onclick="switchMenuCat('controller')" id="mcat-controller" class="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 transition">🎮 Controle & Joystick</button>
+                    <button onclick="switchMenuCat('system')" id="mcat-system" class="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 transition">🛠️ Sistema (Atualizações)</button>
+                    <button onclick="switchMenuCat('about')" id="mcat-about" class="w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 transition">ℹ️ Sobre o HandheldOS</button>
+                </div>
+                <!-- Conteúdo Dinâmico da Categoria Selecionada -->
+                <div class="col-span-8 pl-2 overflow-y-auto" id="menu-content-area">
+                    <!-- Injetado via JS -->
+                </div>
+            </div>
+
+            <div class="pt-3 border-t border-[#3b5c78]/40 flex justify-end">
+                <button onclick="toggleSettingsMenu()" class="px-6 py-2 bg-steam-card hover:bg-steam-hover text-steam-accent font-bold rounded-xl border border-steam-accent/30 text-xs transition">Salvar & Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- POPUP DE POWER (Aparece ao Segurar Power por 3s) -->
+    <div id="power-popup" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center hidden opacity-0 transition-opacity duration-300">
+        <div class="steam-panel p-6 rounded-3xl w-full max-w-sm space-y-4 text-center shadow-2xl border border-rose-500/40">
+            <div class="w-14 h-14 bg-rose-600/20 rounded-2xl flex items-center justify-center mx-auto text-rose-500 text-2xl">
+                <i class="fa-solid fa-power-off"></i>
+            </div>
+            <h3 class="font-bold text-white text-lg">Opções de Energia</h3>
+            <p class="text-xs text-slate-400">O que deseja fazer com o HandheldOS?</p>
+            <div class="space-y-2 pt-2">
+                <button onclick="triggerSleep()" class="w-full py-2.5 bg-steam-card hover:bg-steam-hover text-white font-bold rounded-xl text-xs border border-steam-accent/30 transition">🌙 Suspender Tela</button>
+                <button onclick="triggerShutdown()" class="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl text-xs transition">⏻ Desligar Sistema</button>
+                <button onclick="closePowerPopup()" class="w-full py-2 bg-white/5 hover:bg-white/10 text-slate-300 font-semibold rounded-xl text-xs transition">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOAST DE NOTIFICAÇÃO -->
+    <div id="toast" class="fixed bottom-16 left-1/2 -translate-x-1/2 bg-[#1b2838] border border-steam-accent/40 text-white text-xs px-4 py-2.5 rounded-xl shadow-2xl flex items-center space-x-2 opacity-0 pointer-events-none transition-opacity duration-300 z-50">
+        <i class="fa-solid fa-circle-check text-steam-accent"></i>
+        <span id="toast-msg">Ação executada</span>
+    </div>
+
+    <!-- SCRIPT DE LÓGICA E INTERATIVIDADE -->
+    <script>
+        const games = [
+            { title: "Celeste", category: "Plataforma / Indie", color: "from-blue-900 to-indigo-950" },
+            { title: "Hollow Knight", category: "Metroidvania", color: "from-slate-800 to-zinc-950" },
+            { title: "Stardew Valley", category: "RPG / Simulação", color: "from-emerald-900 to-teal-950" },
+            { title: "Cuphead", category: "Run and Gun", color: "from-amber-900 to-orange-950" },
+            { title: "Sonic Mania", category: "Plataforma", color: "from-blue-800 to-cyan-950" },
+            { title: "Dead Cells", category: "Roguelike", color: "from-rose-900 to-red-950" },
+            { title: "Ori and the Blind Forest", category: "Aventura", color: "from-teal-900 to-emerald-950" },
+            { title: "Hades", category: "Action Roguelike", color: "from-red-950 to-orange-950" }
+        ];
+
+        let currentTab = 'library';
+        let selectedGameIndex = 0;
+        let powerTimer = null;
+        let currentMenuCat = 'appearance';
+
+        // Renderizar Biblioteca
+        function renderLibrary() {
+            const grid = document.getElementById('game-grid');
+            grid.innerHTML = '';
+            games.forEach((game, idx) => {
+                const isSelected = idx === selectedGameIndex;
+                const card = document.createElement('div');
+                card.className = `game-card steam-panel p-4 rounded-2xl flex flex-col justify-between h-36 cursor-pointer bg-gradient-to-br ${game.color} ${isSelected ? 'border-2 border-steam-accent shadow-lg scale-[1.02]' : 'border-[#3b5c78]/30 opacity-90'}`;
+                card.onclick = () => { selectedGameIndex = idx; renderLibrary(); showToast(`Selecionado: ${game.title}`); };
+                card.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <span class="text-[9px] uppercase font-bold px-2 py-0.5 rounded bg-black/40 text-steam-accent">${game.category}</span>
+                        ${isSelected ? '<span class="w-2 h-2 rounded-full bg-steam-accent animate-ping"></span>' : ''}
+                    </div>
+                    <div>
+                        <h3 class="text-base font-bold text-white">${game.title}</h3>
+                        <p class="text-[11px] text-slate-400">Pronto para iniciar</p>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        // Alternar Abas (Música, Home, Biblioteca, Loja, Informações)
+        function switchTab(tab) {
+            currentTab = tab;
+            ['music', 'home', 'library', 'store', 'sysinfo'].forEach(t => {
+                const view = document.getElementById(`view-${t}`);
+                const btn = document.getElementById(`tab-${t}`);
+                if (t === tab) {
+                    view.classList.remove('hidden');
+                    setTimeout(() => view.classList.remove('opacity-0'), 10);
+                    btn.className = "tab-btn px-4 py-1.5 rounded-lg text-sm font-medium transition-all text-white bg-[#2a475e] border border-[#66c0f4]/40 shadow-sm";
+                } else {
+                    view.classList.add('opacity-0');
+                    setTimeout(() => view.classList.add('hidden'), 300);
+                    btn.className = "tab-btn px-4 py-1.5 rounded-lg text-sm font-medium transition-all text-slate-400 hover:text-white";
+                }
+            });
+        }
+
+        // Menu de Configurações
+        function toggleSettingsMenu() {
+            const menu = document.getElementById('settings-menu');
+            if (menu.classList.contains('hidden')) {
+                menu.classList.remove('hidden');
+                setTimeout(() => menu.classList.remove('opacity-0'), 10);
+                switchMenuCat('appearance');
+            } else {
+                menu.classList.add('opacity-0');
+                setTimeout(() => menu.classList.add('hidden'), 300);
+            }
+        }
+
+        function switchMenuCat(cat) {
+            currentMenuCat = cat;
+            ['appearance', 'sound', 'network', 'controller', 'system', 'about'].forEach(c => {
+                const b = document.getElementById(`mcat-${c}`);
+                if (c === cat) {
+                    b.className = "w-full text-left px-3 py-2 rounded-xl text-xs font-semibold bg-steam-card text-steam-accent transition";
+                } else {
+                    b.className = "w-full text-left px-3 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white hover:bg-white/5 transition";
+                }
+            });
+
+            const area = document.getElementById('menu-content-area');
+            if (cat === 'appearance') {
+                area.innerHTML = `
+                    <div class="space-y-4 text-xs text-slate-300">
+                        <h4 class="font-bold text-white text-sm">Aparência & Temas</h4>
+                        <div class="p-3 rounded-xl bg-black/30 border border-white/5 flex justify-between items-center">
+                            <div><div class="font-bold text-white">Tema SteamDeck Dark</div><div class="text-[11px] text-slate-400">Visual padrão otimizado OLED</div></div>
+                            <input type="checkbox" checked class="accent-steam-accent">
+                        </div>
+                        <div class="p-3 rounded-xl bg-black/30 border border-white/5 flex justify-between items-center">
+                            <div><div class="font-bold text-white">Brilho Automático</div><div class="text-[11px] text-slate-400">Ajusta conforme sensor de luz</div></div>
+                            <input type="checkbox" checked class="accent-steam-accent">
+                        </div>
+                    </div>`;
+            } else if (cat === 'sound') {
+                area.innerHTML = `
+                    <div class="space-y-4 text-xs text-slate-300">
+                        <h4 class="font-bold text-white text-sm">Configurações de Som</h4>
+                        <div class="p-3 rounded-xl bg-black/30 border border-white/5 space-y-2">
+                            <div class="flex justify-between font-bold text-white"><span>Volume Geral do Sistema</span><span>75%</span></div>
+                            <input type="range" value="75" class="w-full accent-steam-accent">
+                        </div>
+                        <div class="p-3 rounded-xl bg-black/30 border border-white/5 flex justify-between items-center">
+                            <div><div class="font-bold text-white">Efeitos Sonoros UI</div><div class="text-[11px] text-slate-400">Sons de clique ao navegar</div></div>
+                            <input type="checkbox" checked class="accent-steam-accent">
+                        </div>
+                    </div>`;
+            } else if (cat === 'network') {
+                area.innerHTML = `
+                    <div class="space-y-4 text-xs text-slate-300">
+                        <h4 class="font-bold text-white text-sm">Rede & Bluetooth</h4>
+                        <div class="p-3 rounded-xl bg-black/30 border border-white/5 flex justify-between items-center">
+                            <div><div class="font-bold text-white">Wi-Fi (Conectado)</div><div class="text-[11px] text-emerald-400">Rede Gamer_5G (Excelente)</div></div>
+                            <button onclick="showToast('Wi-Fi Ativo')" class="px-3 py-1 bg-emerald-600/30 text-emerald-400 font-bold rounded">Ligado</button>
+                        </div>
+                        <div class="p-3 rounded-xl bg-black/30 border border-white/5 flex justify-between items-center">
+                            <div><div class="font-bold text-white">Bluetooth</div><div class="text-[11px] text-slate-400">Pareado com Controle Pro</div></div>
+                            <button onclick="showToast('Bluetooth Ativo')" class="px-3 py-1 bg-steam-card text-steam-accent font-bold rounded">Ativo</button>
+                        </div>
+                    </div>`;
+            } else if (cat === 'controller') {
+                area.innerHTML = `
+                    <div class="space-y-3 text-xs text-slate-300">
+                        <h4 class="font-bold text-white text-sm">Mapeamento de Joystick & Hardware Fixo</h4>
+                        <p class="text-[11px] text-slate-400">Os botões abaixo possuem hardware dedicado no console e não podem ser remapeados:</p>
+                        <div class="grid grid-cols-2 gap-2 font-mono">
+                            <div class="bg-black/30 p-2.5 rounded border border-white/5">🔹 <b>Start:</b> Menu Contextual Fixo</div>
+                            <div class="bg-black/30 p-2.5 rounded border border-white/5">🔹 <b>Select:</b> Acessar Menu Principal</div>
+                            <div class="bg-black/30 p-2.5 rounded border border-white/5">🔹 <b>Volume +/-:</b> Controle Físico de Áudio</div>
+                            <div class="bg-black/30 p-2.5 rounded border border-white/5">🔹 <b>FN:</b> Atalhos e Desempenho</div>
+                        </div>
+                    </div>`;
+            } else if (cat === 'system') {
+                area.innerHTML = `
+                    <div class="space-y-4 text-xs text-slate-300">
+                        <h4 class="font-bold text-white text-sm">Sistema & Atualizações</h4>
+                        <div class="p-3 rounded-xl bg-black/30 border border-white/5 flex justify-between items-center">
+                            <div><div class="font-bold text-white">Versão Atual</div><div class="text-[11px] text-slate-400">HandheldOS v2.4 Stable</div></div>
+                            <button onclick="showToast('Sistema já está atualizado')" class="px-3 py-1 bg-steam-card text-steam-accent font-bold rounded">Verificar Atualizações</button>
+                        </div>
+                    </div>`;
+            } else if (cat === 'about') {
+                area.innerHTML = `
+                    <div class="space-y-3 text-xs text-slate-300">
+                        <h4 class="font-bold text-white text-sm">Sobre o HandheldOS</h4>
+                        <p class="leading-relaxed">Desenvolvido sob arquitetura Linux / Rust para consoles portáteis. Oferece alto desempenho, consumo otimizado de bateria e suporte a múltiplos launchers (.giochi, Steam, Epic).</p>
+                    </div>`;
+            }
+        }
+
+        // Lógica do Botão Power (Clique rápido = Sleep, Segurar 3s = Popup)
+        function startPowerHold() {
+            powerTimer = setTimeout(() => {
+                document.getElementById('power-popup').classList.remove('hidden');
+                setTimeout(() => document.getElementById('power-popup').classList.remove('opacity-0'), 10);
+            }, 3000);
+        }
+
+        function endPowerHold() {
+            if (powerTimer) clearTimeout(powerTimer);
+        }
+
+        function handlePowerClick() {
+            // Se o popup não abriu por segurar, o clique rápido suspende a tela
+            setTimeout(() => {
+                if (document.getElementById('power-popup').classList.contains('hidden')) {
+                    triggerSleep();
+                }
+            }, 100);
+        }
+
+        function triggerSleep() {
+            closePowerPopup();
+            const screen = document.getElementById('sleep-screen');
+            screen.classList.remove('pointer-events-none');
+            screen.classList.remove('opacity-0');
+            showToast("Tela suspensa. Pressione qualquer tecla para voltar.");
+        }
+
+        window.addEventListener('keydown', () => {
+            const screen = document.getElementById('sleep-screen');
+            if (!screen.classList.contains('opacity-0')) {
+                screen.classList.add('opacity-0');
+                screen.classList.add('pointer-events-none');
+            }
+        });
+
+        function triggerShutdown() {
+            closePowerPopup();
+            showToast("Desligando o HandheldOS...");
+            setTimeout(() => {
+                document.body.innerHTML = '<div class="h-screen w-screen bg-black flex items-center justify-center text-slate-600 font-mono text-sm">Sistema Desligado.</div>';
+            }, 1500);
+        }
+
+        function closePowerPopup() {
+            const popup = document.getElementById('power-popup');
+            popup.classList.add('opacity-0');
+            setTimeout(() => popup.classList.add('hidden'), 300);
+        }
+
+        // Controle por Teclado (Simulação Gamepad L/R e Setas)
+        window.addEventListener('keydown', (e) => {
+            const tabs = ['music', 'home', 'library', 'store', 'sysinfo'];
+            let idx = tabs.indexOf(currentTab);
+
+            if (e.key === 'ArrowRight' || e.key === 'e') {
+                if (currentTab === 'library') {
+                    selectedGameIndex = (selectedGameIndex + 1) % games.length;
+                    renderLibrary();
+                }
+            } else if (e.key === 'ArrowLeft' || e.key === 'q') {
+                if (currentTab === 'library') {
+                    selectedGameIndex = (selectedGameIndex - 1 + games.length) % games.length;
+                    renderLibrary();
+                }
+            } else if (e.key === 'r' || e.key === 'PageDown') {
+                idx = (idx + 1) % tabs.length;
+                switchTab(tabs[idx]);
+            } else if (e.key === 'l' || e.key === 'PageUp') {
+                idx = (idx - 1 + tabs.length) % tabs.length;
+                switchTab(tabs[idx]);
+            } else if (e.key === 's' || e.key === 'Escape') {
+                toggleSettingsMenu();
+            }
+        });
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toast-msg').innerText = msg;
+            toast.classList.remove('opacity-0');
+            setTimeout(() => toast.classList.add('opacity-0'), 2500);
+        }
+
+        // Relógio
+        setInterval(() => {
+            const now = new Date();
+            document.getElementById('clock').innerText = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+        }, 1000);
+
+        window.onload = () => {
+            renderLibrary();
+            switchTab('library');
+        };
+    </script>
+</body>
+</html>
+```
